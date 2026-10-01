@@ -8,6 +8,7 @@
     "dev:server": "tsx watch server/index.ts",
     "dev:all": "concurrently -k -n web,api -c cyan,magenta \"npm run dev\" \"npm run dev:server\"",
     "build": "vite build",
+    "start": "tsx server/index.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
@@ -31,6 +32,7 @@
     "react-plaid-link": "^3.6.1",
     "recharts": "^3.10.1",
     "stripe": "^18.0.0",
+    "tsx": "^4.21.0",
     "vite": "^8.3.0"
   },
   "devDependencies": {
@@ -44,7 +46,6 @@
     "concurrently": "^9.1.2",
     "esbuild": "^0.27.0",
     "tailwindcss": "^4.3.3",
-    "tsx": "^4.21.0",
     "typescript": "~5.8.3"
   },
   "allowScripts": {
