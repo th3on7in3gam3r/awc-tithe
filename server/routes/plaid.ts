@@ -8,6 +8,8 @@ import {
 } from 'plaid';
 import { env, plaidStatus } from '../config';
 import { buildVoucherNumber, postContributionToDcb, type DcbContributionPayload } from '../dcb/client';
+import { dcbDonorDisplayName } from '../dcb/displayName';
+import { createGift } from '../gifts/store';
 
 const router = Router();
 
@@ -156,6 +158,7 @@ router.post('/create-transfer', async (req: Request, res: Response) => {
     amount,
     donorName,
     donorEmail,
+    fundId,
     fundCode,
     fundName,
     feeAmount = 0,
@@ -163,6 +166,8 @@ router.post('/create-transfer', async (req: Request, res: Response) => {
     accountId,
     institutionName,
     accountMask,
+    isAnonymous = false,
+    frequency = 'one-time',
   } = req.body as Record<string, unknown>;
 
   const amountNum = Number(amount);
@@ -198,10 +203,16 @@ router.post('/create-transfer', async (req: Request, res: Response) => {
     transferStatus = 'queued_sandbox';
   }
 
+  const anonymous = Boolean(isAnonymous);
+  const dcbName = dcbDonorDisplayName({
+    isAnonymous: anonymous,
+    donorName: typeof donorName === 'string' ? donorName : '',
+  });
+
   const payload: DcbContributionPayload = {
     bookId: env.awcDcbBookId,
     voucherNumber,
-    donorName: String(donorName || 'Anonymous'),
+    donorName: dcbName,
     donorEmail: String(donorEmail || ''),
     envelopeNumber: envelopeNumber ? String(envelopeNumber) : undefined,
     amount: amountNum,
@@ -216,6 +227,36 @@ router.post('/create-transfer', async (req: Request, res: Response) => {
 
   const dcb = await postContributionToDcb(payload);
 
+  let donation = null;
+  let donor = null;
+  try {
+    const gift = await createGift({
+      amount: amountNum,
+      feeCovered: Number(feeAmount) > 0,
+      feeAmount: Number(feeAmount) || 0,
+      frequency: (String(frequency) as 'one-time' | 'weekly' | 'bi-weekly' | 'monthly' | 'annually') || 'one-time',
+      fundId: String(fundId || 'fund-tithes'),
+      fundName: String(fundName || 'General Tithes & Offerings'),
+      fundCode: String(fundCode || '1001-OPS'),
+      donorName: String(donorName || dcbName),
+      donorEmail: String(donorEmail || ''),
+      paymentMethod: 'plaid',
+      isAnonymous: anonymous,
+      plaidTransferId: transferId,
+      plaidInstitution: String(institutionName || stored?.institutionName || 'Linked Bank'),
+      plaidAccountMask: String(accountMask || '****'),
+      transactionId: transferId,
+      awcDcbVoucher: dcb.voucherId,
+      awcSynced: dcb.ok,
+      cardBrand: String(institutionName || stored?.institutionName || 'Plaid Bank'),
+      cardLast4: String(accountMask || '****').slice(-4),
+    });
+    donation = gift.donation;
+    donor = gift.donor;
+  } catch (err) {
+    console.error('[plaid] persist gift', err);
+  }
+
   return res.json({
     transferId,
     status: transferStatus,
@@ -225,6 +266,8 @@ router.post('/create-transfer', async (req: Request, res: Response) => {
     dcb,
     voucherNumber: dcb.voucherId,
     awcSynced: dcb.ok,
+    donation,
+    donor,
   });
 });
 

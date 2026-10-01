@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useChurch } from '../context/ChurchContext';
-import { Donor } from '../types';
+import { Donor, Donation, DonationFrequency } from '../types';
+import { fetchGiftsByEmail } from '../lib/api';
 import { PledgeTracker } from './PledgeTracker';
 import { AnnualGivingSummaryCard } from './AnnualGivingSummaryCard';
 import {
@@ -29,8 +30,6 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
   onConsumedInitialEmail,
 }) => {
   const {
-    donors,
-    donations,
     config,
     cancelRecurringPledge,
     requestGdprExport,
@@ -41,68 +40,100 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
   const [emailInput, setEmailInput] = useState('');
   const [unlockedEmail, setUnlockedEmail] = useState<string | null>(null);
   const [lookupError, setLookupError] = useState<string | null>(null);
+  const [lookingUp, setLookingUp] = useState(false);
+  const [currentDonor, setCurrentDonor] = useState<Donor | null>(null);
+  const [donorGifts, setDonorGifts] = useState<Donation[]>([]);
   const [taxYear, setTaxYear] = useState<number>(2026);
   const [showAnnualStatement, setShowAnnualStatement] = useState(false);
   const [activePortalTab, setActivePortalTab] = useState<'pledges' | 'statements'>('pledges');
 
   const normalizeEmail = (value: string) => value.trim().toLowerCase();
 
-  const findDonorForEmail = (email: string): Donor | null => {
-    const normalized = normalizeEmail(email);
-    const byProfile = donors.find((d) => normalizeEmail(d.email) === normalized);
-    if (byProfile) return byProfile;
-
-    const matchingGifts = donations.filter(
-      (d) => normalizeEmail(d.donorEmail) === normalized && d.status === 'completed'
-    );
-    if (matchingGifts.length === 0) return null;
-
-    const sorted = [...matchingGifts].sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    );
-    const first = sorted[0];
-    const last = sorted[sorted.length - 1];
-
-    return {
-      id: first.donorId,
-      name: last.donorName,
-      email: last.donorEmail,
-      phone: '',
-      address: last.donorAddress || '',
-      taxId: '',
-      lifetimeGiving: matchingGifts.reduce((sum, d) => sum + d.amount, 0),
-      totalGiftsCount: matchingGifts.length,
-      firstGiftDate: first.timestamp,
-      lastGiftDate: last.timestamp,
-      recurringActive: false,
-      gdprConsent: true,
-      gdprConsentDate: first.timestamp,
-    };
-  };
-
-  const tryUnlock = (email: string): boolean => {
+  const tryUnlock = async (email: string): Promise<boolean> => {
     const normalized = normalizeEmail(email);
     if (!normalized || !normalized.includes('@')) {
       setLookupError('Enter a valid email address used on your gift receipt.');
       return false;
     }
 
-    const donor = findDonorForEmail(normalized);
-    const hasGifts = donations.some(
-      (d) => normalizeEmail(d.donorEmail) === normalized && d.status === 'completed'
-    );
-
-    if (!donor && !hasGifts) {
-      setLookupError('No gifts found for this email. Check the address on your receipt, or give first.');
-      setUnlockedEmail(null);
-      sessionStorage.removeItem(SESSION_EMAIL_KEY);
-      return false;
-    }
-
+    setLookingUp(true);
     setLookupError(null);
-    setUnlockedEmail(normalized);
-    sessionStorage.setItem(SESSION_EMAIL_KEY, normalized);
-    return true;
+    try {
+      const result = await fetchGiftsByEmail(normalized);
+      if (!result.donor && result.donations.length === 0) {
+        setLookupError('No gifts found for this email. Check the address on your receipt, or give first.');
+        setUnlockedEmail(null);
+        setCurrentDonor(null);
+        setDonorGifts([]);
+        sessionStorage.removeItem(SESSION_EMAIL_KEY);
+        return false;
+      }
+
+      const gifts: Donation[] = result.donations.map((sd) => ({
+        id: sd.id,
+        transactionId: sd.transactionId,
+        receiptNumber: sd.receiptNumber,
+        donorId: sd.donorId,
+        donorName: sd.donorName,
+        donorEmail: sd.donorEmail,
+        donorAddress: sd.donorAddress,
+        amount: sd.amount,
+        feeCovered: sd.feeCovered,
+        feeAmount: sd.feeAmount,
+        totalCharged: sd.totalCharged,
+        frequency: sd.frequency as DonationFrequency,
+        fundId: sd.fundId,
+        fundName: sd.fundName,
+        paymentMethod: sd.paymentMethod as Donation['paymentMethod'],
+        cardBrand: sd.cardBrand,
+        cardLast4: sd.cardLast4,
+        status: sd.status as Donation['status'],
+        dedication: sd.dedication,
+        isAnonymous: sd.isAnonymous,
+        timestamp: sd.timestamp,
+        nextBillingDate: sd.nextBillingDate,
+        stripePaymentIntentId: sd.stripePaymentIntentId || '',
+        encryptedToken: sd.encryptedToken,
+        envelopeNumber: sd.envelopeNumber,
+        awcDcbVoucher: sd.awcDcbVoucher,
+        awcSynced: sd.awcSynced,
+        plaidInstitution: sd.plaidInstitution,
+        plaidAccountMask: sd.plaidAccountMask,
+        plaidTransferId: sd.plaidTransferId,
+      }));
+
+      const donor: Donor =
+        result.donor
+          ? {
+              ...result.donor,
+              recurringFrequency: result.donor.recurringFrequency as DonationFrequency | undefined,
+            }
+          : {
+              id: gifts[0]?.donorId || `donor-email-${normalized}`,
+              name: gifts[0]?.donorName || 'Donor',
+              email: normalized,
+              phone: '',
+              address: gifts[0]?.donorAddress || '',
+              lifetimeGiving: gifts.reduce((s, g) => s + g.amount, 0),
+              totalGiftsCount: gifts.length,
+              firstGiftDate: gifts[gifts.length - 1]?.timestamp || new Date().toISOString(),
+              lastGiftDate: gifts[0]?.timestamp || new Date().toISOString(),
+              recurringActive: false,
+              gdprConsent: true,
+              gdprConsentDate: gifts[0]?.timestamp || new Date().toISOString(),
+            };
+
+      setCurrentDonor(donor);
+      setDonorGifts(gifts);
+      setUnlockedEmail(normalized);
+      sessionStorage.setItem(SESSION_EMAIL_KEY, normalized);
+      return true;
+    } catch (err) {
+      setLookupError(err instanceof Error ? err.message : 'Could not look up giving history.');
+      return false;
+    } finally {
+      setLookingUp(false);
+    }
   };
 
   useEffect(() => {
@@ -111,21 +142,11 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
     const candidate = fromPrefill || fromSession;
     if (candidate) {
       setEmailInput(candidate);
-      tryUnlock(candidate);
+      void tryUnlock(candidate);
       if (fromPrefill) onConsumedInitialEmail?.();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- unlock once on mount / prefill
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialEmail]);
-
-  const currentDonor = unlockedEmail ? findDonorForEmail(unlockedEmail) : null;
-
-  const donorGifts = unlockedEmail
-    ? donations.filter(
-        (d) =>
-          normalizeEmail(d.donorEmail) === unlockedEmail ||
-          (currentDonor && d.donorId === currentDonor.id)
-      )
-    : [];
 
   const taxYearGifts = donorGifts.filter((d) => {
     const giftYear = new Date(d.timestamp).getFullYear();
@@ -136,13 +157,15 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
 
   const handleAccessSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    tryUnlock(emailInput);
+    void tryUnlock(emailInput);
   };
 
   const handleSignOut = () => {
     setUnlockedEmail(null);
     setEmailInput('');
     setLookupError(null);
+    setCurrentDonor(null);
+    setDonorGifts([]);
     setShowAnnualStatement(false);
     sessionStorage.removeItem(SESSION_EMAIL_KEY);
   };
@@ -200,10 +223,11 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
 
             <button
               type="submit"
-              className="w-full rounded-lg py-2.5 text-sm font-semibold text-white shadow-sm transition-colors"
+              disabled={lookingUp}
+              className="w-full rounded-lg py-2.5 text-sm font-semibold text-white shadow-sm transition-colors disabled:opacity-60"
               style={{ backgroundColor: '#4A0404' }}
             >
-              Access My Giving
+              {lookingUp ? 'Looking up…' : 'Access My Giving'}
             </button>
           </form>
 

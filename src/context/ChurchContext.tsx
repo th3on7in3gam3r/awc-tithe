@@ -26,6 +26,7 @@ import {
   initialDcuDeposits,
   initialReconciliationDiscrepancies,
 } from '../data/initialData';
+import { recordGift } from '../lib/api';
 
 interface DonationInput {
   amount: number;
@@ -269,11 +270,102 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const makeDonation = async (input: DonationInput): Promise<Donation> => {
-    // Processing fee calculation (standard 2.9% + $0.30)
-    const feeAmount = input.feeCovered ? Number(((input.amount * 0.029) + 0.30).toFixed(2)) : 0;
+    const feeAmount = input.feeCovered ? Number((input.amount * 0.029 + 0.3).toFixed(2)) : 0;
     const totalCharged = Number((input.amount + feeAmount).toFixed(2));
     const now = new Date();
     const timestamp = now.toISOString();
+    const targetFund = funds.find((f) => f.id === input.fundId) || funds[0];
+    const displayName = input.isAnonymous ? 'Anonymous' : input.donorName;
+
+    // Persist to server ledger (Neon when DATABASE_URL is set; otherwise memory on API)
+    let serverDonation: Donation | null = null;
+    let serverDonorId: string | null = null;
+    try {
+      const recorded = await recordGift({
+        amount: input.amount,
+        feeCovered: input.feeCovered,
+        feeAmount,
+        frequency: input.frequency,
+        fundId: targetFund.id,
+        fundName: targetFund.name,
+        fundCode: targetFund.code,
+        donorName: input.donorName,
+        donorEmail: input.donorEmail,
+        donorAddress: input.donorAddress,
+        paymentMethod: input.paymentMethod,
+        cardBrand: input.cardBrand,
+        cardLast4: input.cardLast4,
+        dedication: input.dedication,
+        isAnonymous: input.isAnonymous,
+        stripePaymentIntentId: input.stripePaymentIntentId,
+        plaidTransferId: input.plaidTransferId,
+        plaidInstitution: input.plaidInstitution,
+        plaidAccountMask: input.plaidAccountMask,
+        awcDcbVoucher: input.awcDcbVoucher,
+        awcSynced: input.awcSynced,
+        transactionId: input.stripePaymentIntentId || input.plaidTransferId,
+      });
+
+      serverDonorId = recorded.donor.id;
+      const sd = recorded.donation;
+      serverDonation = {
+        id: sd.id,
+        transactionId: sd.transactionId,
+        receiptNumber: sd.receiptNumber,
+        donorId: sd.donorId,
+        donorName: sd.donorName,
+        donorEmail: sd.donorEmail,
+        donorAddress: sd.donorAddress,
+        amount: sd.amount,
+        feeCovered: sd.feeCovered,
+        feeAmount: sd.feeAmount,
+        totalCharged: sd.totalCharged,
+        frequency: sd.frequency as DonationFrequency,
+        fundId: sd.fundId,
+        fundName: sd.fundName,
+        paymentMethod: sd.paymentMethod as PaymentMethod,
+        cardBrand: sd.cardBrand,
+        cardLast4: sd.cardLast4,
+        status: sd.status as Donation['status'],
+        dedication: sd.dedication,
+        isAnonymous: sd.isAnonymous,
+        timestamp: sd.timestamp,
+        nextBillingDate: sd.nextBillingDate,
+        stripePaymentIntentId: sd.stripePaymentIntentId || '',
+        encryptedToken: sd.encryptedToken,
+        envelopeNumber: sd.envelopeNumber,
+        awcDcbVoucher: sd.awcDcbVoucher,
+        awcSynced: sd.awcSynced,
+        plaidInstitution: sd.plaidInstitution,
+        plaidAccountMask: sd.plaidAccountMask,
+        plaidTransferId: sd.plaidTransferId,
+      };
+
+      // Mirror server donor into local UI state
+      setDonors((prev) => {
+        const existing = prev.find((d) => d.id === recorded.donor.id || d.email.toLowerCase() === recorded.donor.email.toLowerCase());
+        if (existing) {
+          return prev.map((d) =>
+            d.id === existing.id
+              ? {
+                  ...d,
+                  ...recorded.donor,
+                  recurringFrequency: recorded.donor.recurringFrequency as DonationFrequency | undefined,
+                }
+              : d
+          );
+        }
+        return [
+          {
+            ...recorded.donor,
+            recurringFrequency: recorded.donor.recurringFrequency as DonationFrequency | undefined,
+          },
+          ...prev,
+        ];
+      });
+    } catch (err) {
+      console.warn('[makeDonation] server persist failed; using local fallback', err);
+    }
 
     // Next billing date if recurring
     let nextBillingDate: string | undefined = undefined;
@@ -286,60 +378,62 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       nextBillingDate = nextDate.toISOString();
     }
 
-    const receiptNumber = `REC-${now.getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
-    const transactionId = `ch_3N${Math.random().toString(36).substring(2, 10).toUpperCase()}${Date.now().toString().slice(-6)}`;
-    const targetFund = funds.find((f) => f.id === input.fundId) || funds[0];
+    const receiptNumber =
+      serverDonation?.receiptNumber || `REC-${now.getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
+    const transactionId =
+      serverDonation?.transactionId ||
+      input.stripePaymentIntentId ||
+      input.plaidTransferId ||
+      `ch_3N${Math.random().toString(36).substring(2, 10).toUpperCase()}${Date.now().toString().slice(-6)}`;
 
-    // Find or create donor
     let donor = donors.find((d) => d.email.toLowerCase() === input.donorEmail.toLowerCase());
-    let donorId = donor ? donor.id : `donor-${Date.now()}`;
+    let donorId = serverDonorId || (donor ? donor.id : `donor-${Date.now()}`);
 
-    if (donor) {
-      setDonors((prev) =>
-        prev.map((d) => {
-          if (d.id === donor!.id) {
-            return {
-              ...d,
-              name: input.donorName || d.name,
-              address: input.donorAddress || d.address,
-              lifetimeGiving: d.lifetimeGiving + input.amount,
-              totalGiftsCount: d.totalGiftsCount + 1,
-              lastGiftDate: timestamp,
-              recurringActive: input.frequency !== 'one-time' ? true : d.recurringActive,
-              recurringAmount: input.frequency !== 'one-time' ? input.amount : d.recurringAmount,
-              recurringFrequency: input.frequency !== 'one-time' ? input.frequency : d.recurringFrequency,
-            };
-          }
-          return d;
-        })
-      );
-    } else {
-      const newDonor: Donor = {
-        id: donorId,
-        name: input.donorName || (input.isAnonymous ? 'Anonymous Contributor' : 'Grace Friend'),
-        email: input.donorEmail,
-        phone: '(415) 555-0100',
-        address: input.donorAddress || '1000 Church Way, San Francisco, CA',
-        taxId: '***-**-' + Math.floor(1000 + Math.random() * 9000),
-        lifetimeGiving: input.amount,
-        totalGiftsCount: 1,
-        firstGiftDate: timestamp,
-        lastGiftDate: timestamp,
-        recurringActive: input.frequency !== 'one-time',
-        recurringAmount: input.frequency !== 'one-time' ? input.amount : undefined,
-        recurringFrequency: input.frequency !== 'one-time' ? input.frequency : undefined,
-        gdprConsent: true,
-        gdprConsentDate: timestamp,
-      };
-      setDonors((prev) => [newDonor, ...prev]);
+    if (!serverDonation) {
+      if (donor) {
+        setDonors((prev) =>
+          prev.map((d) => {
+            if (d.id === donor!.id) {
+              return {
+                ...d,
+                name: input.isAnonymous ? d.name : input.donorName || d.name,
+                address: input.donorAddress || d.address,
+                lifetimeGiving: d.lifetimeGiving + input.amount,
+                totalGiftsCount: d.totalGiftsCount + 1,
+                lastGiftDate: timestamp,
+                recurringActive: input.frequency !== 'one-time' ? true : d.recurringActive,
+                recurringAmount: input.frequency !== 'one-time' ? input.amount : d.recurringAmount,
+                recurringFrequency: input.frequency !== 'one-time' ? input.frequency : d.recurringFrequency,
+              };
+            }
+            return d;
+          })
+        );
+      } else {
+        const newDonor: Donor = {
+          id: donorId,
+          name: displayName || 'Friend',
+          email: input.donorEmail,
+          phone: '',
+          address: input.donorAddress || '',
+          lifetimeGiving: input.amount,
+          totalGiftsCount: 1,
+          firstGiftDate: timestamp,
+          lastGiftDate: timestamp,
+          recurringActive: input.frequency !== 'one-time',
+          recurringAmount: input.frequency !== 'one-time' ? input.amount : undefined,
+          recurringFrequency: input.frequency !== 'one-time' ? input.frequency : undefined,
+          gdprConsent: true,
+          gdprConsentDate: timestamp,
+        };
+        setDonors((prev) => [newDonor, ...prev]);
+      }
     }
 
-    // Update target fund currentAmount
     setFunds((prev) =>
       prev.map((f) => (f.id === targetFund.id ? { ...f, currentAmount: f.currentAmount + input.amount } : f))
     );
 
-    // Update matching pledge progress if active for this donor and fund
     setPledges((prev) =>
       prev.map((p) => {
         if (p.donorId === donorId && p.fundId === targetFund.id && p.taxYear === now.getFullYear()) {
@@ -356,55 +450,73 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       })
     );
 
-    const envelopeNumber = input.envelopeNumber || donor?.envelopeNumber || `ENV-${Math.floor(1000 + Math.random() * 9000)}`;
-    const awcDcbVoucher = `AWC-VOUCH-${receiptNumber.replace('REC-', '')}`;
+    const envelopeNumber = input.envelopeNumber || donor?.envelopeNumber;
+    const awcDcbVoucher =
+      input.awcDcbVoucher || serverDonation?.awcDcbVoucher || `AWC-VOUCH-${receiptNumber.replace('REC-', '')}`;
     const dcuSettlementRef = `DCU-DEP-${Math.floor(10000 + Math.random() * 90000)}`;
 
-    const newDonation: Donation = {
-      id: `don-${Date.now()}`,
-      transactionId,
-      receiptNumber,
-      donorId,
-      donorName: input.isAnonymous ? 'Anonymous' : input.donorName,
-      donorEmail: input.donorEmail,
-      donorAddress: input.donorAddress,
-      amount: input.amount,
-      feeCovered: input.feeCovered,
-      feeAmount,
-      totalCharged,
-      frequency: input.frequency,
-      fundId: targetFund.id,
-      fundName: targetFund.name,
-      paymentMethod: input.paymentMethod,
-      cardBrand: input.cardBrand || (input.paymentMethod === 'plaid' ? (input.plaidInstitution || 'Plaid Bank Link') : input.paymentMethod === 'ach' ? 'Bank ACH' : 'Visa'),
-      cardLast4: input.cardLast4 || (input.paymentMethod === 'plaid' ? (input.plaidAccountMask || '3310') : input.paymentMethod === 'ach' ? '9012' : '4242'),
-      status: 'completed',
-      dedication: input.dedication,
-      isAnonymous: Boolean(input.isAnonymous),
-      timestamp,
-      nextBillingDate,
-      stripePaymentIntentId: input.stripePaymentIntentId || `pi_3P${Math.random().toString(36).substring(2, 12)}`,
-      encryptedToken: `enc_sec_${Math.random().toString(36).substring(2, 16)}`,
-      envelopeNumber,
-      awcDcbVoucher: input.awcDcbVoucher || awcDcbVoucher,
-      awcSynced: input.awcSynced !== undefined ? input.awcSynced : true,
-      dcuSettlementRef,
-      plaidInstitution: input.plaidInstitution,
-      plaidAccountMask: input.plaidAccountMask,
-      plaidTransferId:
-        input.plaidTransferId ||
-        (input.paymentMethod === 'plaid' ? `plaid_xfer_${Date.now()}_${Math.random().toString(36).substring(2, 8)}` : undefined),
-    };
+    const newDonation: Donation =
+      serverDonation ||
+      ({
+        id: `don-${Date.now()}`,
+        transactionId,
+        receiptNumber,
+        donorId,
+        donorName: displayName,
+        donorEmail: input.donorEmail,
+        donorAddress: input.donorAddress,
+        amount: input.amount,
+        feeCovered: input.feeCovered,
+        feeAmount,
+        totalCharged,
+        frequency: input.frequency,
+        fundId: targetFund.id,
+        fundName: targetFund.name,
+        paymentMethod: input.paymentMethod,
+        cardBrand:
+          input.cardBrand ||
+          (input.paymentMethod === 'plaid'
+            ? input.plaidInstitution || 'Plaid Bank Link'
+            : input.paymentMethod === 'ach'
+              ? 'Bank ACH'
+              : 'Visa'),
+        cardLast4:
+          input.cardLast4 ||
+          (input.paymentMethod === 'plaid'
+            ? input.plaidAccountMask
+            : input.paymentMethod === 'ach'
+              ? undefined
+              : undefined),
+        status: 'completed',
+        dedication: input.dedication,
+        isAnonymous: Boolean(input.isAnonymous),
+        timestamp,
+        nextBillingDate,
+        stripePaymentIntentId: input.stripePaymentIntentId,
+        encryptedToken: `enc_sec_${Math.random().toString(36).substring(2, 16)}`,
+        envelopeNumber,
+        awcDcbVoucher,
+        awcSynced: input.awcSynced !== undefined ? input.awcSynced : true,
+        dcuSettlementRef,
+        plaidInstitution: input.plaidInstitution,
+        plaidAccountMask: input.plaidAccountMask,
+        plaidTransferId: input.plaidTransferId,
+      } as Donation);
 
-    setDonations((prev) => [newDonation, ...prev]);
+    setDonations((prev) => {
+      if (prev.some((d) => d.id === newDonation.id || d.transactionId === newDonation.transactionId)) {
+        return prev;
+      }
+      return [newDonation, ...prev];
+    });
 
-    // Automatically generate synchronized DCU Credit Union cleared deposit entry
     const newDeposit: DcuBankDeposit = {
       id: `dep-${Date.now()}`,
       date: timestamp,
-      description: input.paymentMethod === 'plaid'
-        ? `PLAID INSTANT BANK TRANSFER - ${input.plaidInstitution || 'DCU Depository'} (${input.isAnonymous ? 'Anonymous' : input.donorName})`
-        : `STRIPE SETTLEMENT BATCH - DCU BATCH (${input.cardBrand || 'Card'} *${input.cardLast4 || '4242'})`,
+      description:
+        input.paymentMethod === 'plaid'
+          ? `PLAID INSTANT BANK TRANSFER - ${input.plaidInstitution || 'DCU Depository'} (${displayName})`
+          : `STRIPE SETTLEMENT BATCH - DCU BATCH (${input.cardBrand || 'Card'} *${input.cardLast4 || '****'})`,
       amount: input.amount,
       type: input.paymentMethod === 'plaid' ? 'plaid_bank_transfer' : 'card_batch_settlement',
       batchReference: dcuSettlementRef,

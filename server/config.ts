@@ -17,6 +17,7 @@ function present(value: string | undefined): boolean {
 
 export const env = {
   port: Number(process.env.PORT || 3001),
+  databaseUrl: process.env.DATABASE_URL?.trim() || '',
   stripeSecretKey: process.env.STRIPE_SECRET_KEY?.trim() || '',
   stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY?.trim() || '',
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET?.trim() || '',
@@ -30,7 +31,19 @@ export const env = {
     || process.env.AWC_DCB_API_KEY?.trim()
     || '',
   awcDcbBookId: process.env.AWC_DCB_BOOK_ID?.trim() || 'AWC-DCB-2026-GCC',
+  /** Optional AWC Vault CMS lead webhook for newcomer opt-in from Tithe */
+  awcVaultInterestUrl: process.env.AWC_VAULT_INTEREST_URL?.trim() || '',
+  awcVaultSetupUrl:
+    process.env.AWC_VAULT_SETUP_URL?.trim()
+    || 'https://anointedworshipcenter.com',
 };
+
+export function databaseStatus(): IntegrationStatus {
+  if (!present(env.databaseUrl)) {
+    return { configured: false, mode: 'simulator' };
+  }
+  return { configured: true, mode: 'live' };
+}
 
 export function stripeStatus(): IntegrationStatus {
   const configured = present(env.stripeSecretKey) && present(env.stripePublishableKey);

@@ -12,8 +12,63 @@ export interface ApiConfig {
     stripe: IntegrationStatus;
     plaid: IntegrationStatus;
     dcb: IntegrationStatus;
+    database?: IntegrationStatus;
   };
   dcbBookId: string;
+  giftStore?: 'neon' | 'memory';
+}
+
+export interface ServerDonor {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  taxId?: string;
+  lifetimeGiving: number;
+  totalGiftsCount: number;
+  firstGiftDate: string;
+  lastGiftDate: string;
+  recurringActive: boolean;
+  recurringAmount?: number;
+  recurringFrequency?: string;
+  gdprConsent: boolean;
+  gdprConsentDate: string;
+  isAnonymized?: boolean;
+}
+
+export interface ServerDonation {
+  id: string;
+  transactionId: string;
+  receiptNumber: string;
+  donorId: string;
+  donorName: string;
+  donorEmail: string;
+  donorAddress?: string;
+  amount: number;
+  feeCovered: boolean;
+  feeAmount: number;
+  totalCharged: number;
+  frequency: string;
+  fundId: string;
+  fundName: string;
+  fundCode: string;
+  paymentMethod: string;
+  cardBrand?: string;
+  cardLast4?: string;
+  status: string;
+  dedication?: string;
+  isAnonymous: boolean;
+  timestamp: string;
+  nextBillingDate?: string;
+  stripePaymentIntentId?: string;
+  plaidTransferId?: string;
+  plaidInstitution?: string;
+  plaidAccountMask?: string;
+  awcDcbVoucher?: string;
+  awcSynced: boolean;
+  encryptedToken: string;
+  envelopeNumber?: string;
 }
 
 async function parseJson<T>(res: Response): Promise<T> {
@@ -47,6 +102,7 @@ export async function createStripePaymentIntent(body: {
   feeAmount: number;
   envelopeNumber?: string;
   frequency: string;
+  isAnonymous?: boolean;
 }): Promise<{ clientSecret: string; paymentIntentId: string }> {
   const res = await fetch('/api/stripe/create-payment-intent', {
     method: 'POST',
@@ -61,6 +117,8 @@ export async function confirmStripeAndSync(paymentIntentId: string): Promise<{
   amount: number;
   voucherNumber: string;
   awcSynced: boolean;
+  donation?: ServerDonation;
+  donor?: ServerDonor;
 }> {
   const res = await fetch('/api/stripe/confirm-and-sync', {
     method: 'POST',
@@ -99,6 +157,7 @@ export async function createPlaidTransfer(body: {
   amount: number;
   donorName: string;
   donorEmail: string;
+  fundId?: string;
   fundCode: string;
   fundName: string;
   feeAmount: number;
@@ -106,14 +165,93 @@ export async function createPlaidTransfer(body: {
   accountId?: string;
   institutionName?: string;
   accountMask?: string;
+  isAnonymous?: boolean;
+  frequency?: string;
 }): Promise<{
   transferId: string;
   institutionName: string;
   accountMask: string;
   voucherNumber: string;
   awcSynced: boolean;
+  donation?: ServerDonation;
+  donor?: ServerDonor;
 }> {
   const res = await fetch('/api/plaid/create-transfer', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return parseJson(res);
+}
+
+export async function recordGift(body: {
+  amount: number;
+  feeCovered: boolean;
+  feeAmount?: number;
+  frequency: string;
+  fundId: string;
+  fundName: string;
+  fundCode?: string;
+  donorName: string;
+  donorEmail: string;
+  donorAddress?: string;
+  paymentMethod: string;
+  cardBrand?: string;
+  cardLast4?: string;
+  dedication?: string;
+  isAnonymous?: boolean;
+  stripePaymentIntentId?: string;
+  plaidTransferId?: string;
+  plaidInstitution?: string;
+  plaidAccountMask?: string;
+  awcDcbVoucher?: string;
+  awcSynced?: boolean;
+  transactionId?: string;
+}): Promise<{ donor: ServerDonor; donation: ServerDonation; mode: 'neon' | 'memory' }> {
+  const res = await fetch('/api/gifts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await parseJson<{
+    ok: boolean;
+    mode: 'neon' | 'memory';
+    donor: ServerDonor;
+    donation: ServerDonation;
+  }>(res);
+  return { donor: data.donor, donation: data.donation, mode: data.mode };
+}
+
+export async function fetchGiftsByEmail(email: string): Promise<{
+  donor: ServerDonor | null;
+  donations: ServerDonation[];
+  mode: 'neon' | 'memory';
+}> {
+  const res = await fetch(`/api/gifts/by-email?email=${encodeURIComponent(email)}`);
+  const data = await parseJson<{
+    ok: boolean;
+    mode: 'neon' | 'memory';
+    donor: ServerDonor | null;
+    donations: ServerDonation[];
+  }>(res);
+  return { donor: data.donor, donations: data.donations, mode: data.mode };
+}
+
+export async function submitVaultInterest(body: {
+  name: string;
+  email: string;
+  phone?: string;
+  address?: string;
+  source?: string;
+  notes?: string;
+}): Promise<{
+  ok: boolean;
+  leadId: string;
+  forwarded: boolean;
+  setupUrl: string;
+  message: string;
+}> {
+  const res = await fetch('/api/vault/interest', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

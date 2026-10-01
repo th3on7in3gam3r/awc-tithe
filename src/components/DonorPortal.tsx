@@ -24,6 +24,7 @@ import {
 import { fetchApiConfig, type ApiConfig } from '../lib/api';
 import { StripeCheckout } from './StripeCheckout';
 import { PlaidBankLink } from './PlaidBankLink';
+import { GivingOnboardingWizard } from './GivingOnboardingWizard';
 
 export const getTangibleImpact = (amount: number, fundId: string) => {
   if (amount <= 0) return null;
@@ -73,8 +74,10 @@ export const getTangibleImpact = (amount: number, fundId: string) => {
 
 export const DonorPortal: React.FC<{
   onViewMyGiving?: (email: string) => void;
-}> = ({ onViewMyGiving }) => {
+  initialMode?: 'classic' | 'guided';
+}> = ({ onViewMyGiving, initialMode = 'classic' }) => {
   const { funds, makeDonation, addNotification } = useChurch();
+  const [giveMode, setGiveMode] = useState<'classic' | 'guided'>(initialMode);
 
   const [frequency, setFrequency] = useState<DonationFrequency>('monthly');
   const [selectedFundId, setSelectedFundId] = useState<string>(funds[0]?.id || 'fund-tithes');
@@ -227,6 +230,13 @@ export const DonorPortal: React.FC<{
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      {giveMode === 'guided' ? (
+        <GivingOnboardingWizard
+          onExitToClassic={() => setGiveMode('classic')}
+          onViewMyGiving={onViewMyGiving}
+        />
+      ) : (
+        <>
       {lastGiftEmail && onViewMyGiving && (
         <div
           className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border px-5 py-4 shadow-sm"
@@ -253,6 +263,27 @@ export const DonorPortal: React.FC<{
           </button>
         </div>
       )}
+
+      <div
+        className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border px-5 py-4"
+        style={{ borderColor: 'rgba(212,175,55,0.35)', backgroundColor: 'rgba(74,4,4,0.04)' }}
+      >
+        <div>
+          <p className="text-sm font-semibold text-slate-900 dark:text-white">Prefer a guided walkthrough?</p>
+          <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+            Warm welcome, scripture, and step-by-step giving — including an invitation to join AWC Vault if you are new.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setGiveMode('guided')}
+          className="shrink-0 inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider text-white"
+          style={{ backgroundColor: '#4A0404' }}
+        >
+          Start guided giving
+          <ArrowRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
 
       {/* Vault-style burgundy hero */}
       <div
@@ -574,6 +605,9 @@ export const DonorPortal: React.FC<{
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   Payment Method
                 </span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                  Card (Stripe) or Bank (Plaid) — your choice
+                </span>
               </div>
 
               {/* Method Tabs */}
@@ -633,12 +667,13 @@ export const DonorPortal: React.FC<{
                 <StripeCheckout
                   amount={principalAmount}
                   feeAmount={feeAmount}
-                  donorName={isAnonymous ? 'Anonymous Donor' : donorName}
+                  donorName={isAnonymous ? 'Anonymous' : donorName}
                   donorEmail={donorEmail}
                   fundId={selectedFund.id}
                   fundCode={selectedFund.code}
                   fundName={selectedFund.name}
                   frequency={frequency}
+                  isAnonymous={isAnonymous}
                   publishableKey={apiConfig.stripePublishableKey}
                   onError={handlePaymentError}
                   onSuccess={async (result) => {
@@ -713,10 +748,13 @@ export const DonorPortal: React.FC<{
                 <PlaidBankLink
                   amount={principalAmount}
                   feeAmount={feeAmount}
-                  donorName={isAnonymous ? 'Anonymous Donor' : donorName}
+                  donorName={isAnonymous ? 'Anonymous' : donorName}
                   donorEmail={donorEmail}
+                  fundId={selectedFund.id}
                   fundCode={selectedFund.code}
                   fundName={selectedFund.name}
+                  frequency={frequency}
+                  isAnonymous={isAnonymous}
                   onError={handlePaymentError}
                   onSuccess={async (result) => {
                     setPlaidInstitution(result.institutionName);
@@ -1108,6 +1146,8 @@ export const DonorPortal: React.FC<{
         </div>
       )}
 
+        </>
+      )}
     </div>
   );
 };

@@ -13,6 +13,7 @@ interface StripeCheckoutProps {
   fundCode: string;
   fundName: string;
   frequency: string;
+  isAnonymous?: boolean;
   publishableKey: string;
   onSuccess: (result: {
     paymentIntentId: string;
@@ -90,6 +91,7 @@ export const StripeCheckout: React.FC<StripeCheckoutProps> = ({
   fundCode,
   fundName,
   frequency,
+  isAnonymous = false,
   publishableKey,
   onSuccess,
   onError,
@@ -118,6 +120,7 @@ export const StripeCheckout: React.FC<StripeCheckoutProps> = ({
           fundCode,
           fundName,
           frequency,
+          isAnonymous,
         });
         if (!cancelled) setClientSecret(intent.clientSecret);
       } catch (err) {
@@ -129,7 +132,7 @@ export const StripeCheckout: React.FC<StripeCheckoutProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [amount, feeAmount, donorName, donorEmail, fundId, fundCode, fundName, frequency, onError]);
+  }, [amount, feeAmount, donorName, donorEmail, fundId, fundCode, fundName, frequency, isAnonymous, onError]);
 
   if (loading || !clientSecret || !stripePromise) {
     return (

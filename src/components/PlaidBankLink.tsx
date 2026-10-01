@@ -8,8 +8,11 @@ interface PlaidBankLinkProps {
   feeAmount: number;
   donorName: string;
   donorEmail: string;
+  fundId?: string;
   fundCode: string;
   fundName: string;
+  frequency?: string;
+  isAnonymous?: boolean;
   onSuccess: (result: {
     transferId: string;
     institutionName: string;
@@ -25,8 +28,11 @@ export const PlaidBankLink: React.FC<PlaidBankLinkProps> = ({
   feeAmount,
   donorName,
   donorEmail,
+  fundId,
   fundCode,
   fundName,
+  frequency = 'one-time',
+  isAnonymous = false,
   onSuccess,
   onError,
 }) => {
@@ -86,8 +92,11 @@ export const PlaidBankLink: React.FC<PlaidBankLinkProps> = ({
         feeAmount,
         donorName,
         donorEmail,
+        fundId,
         fundCode,
         fundName,
+        frequency,
+        isAnonymous,
         accountId: linked.accountId,
         institutionName: linked.institutionName,
         accountMask: linked.accountMask,

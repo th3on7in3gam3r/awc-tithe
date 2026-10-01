@@ -6,20 +6,25 @@ import {
   postContributionToDcb,
   type DcbContributionPayload,
 } from '../dcb/client';
+import { dcbDonorDisplayName } from '../dcb/displayName';
 
 const router = Router();
 
 /** Dev mock endpoint — receives the same payload AWC DCB would */
 router.post('/mock/entries', (req: Request, res: Response) => {
-  const body = req.body as Partial<DcbContributionPayload>;
+  const body = req.body as Partial<DcbContributionPayload> & { isAnonymous?: boolean };
   if (body.amount == null || !body.donorName) {
     return res.status(400).json({ error: 'MISSING_FIELDS', message: 'donorName and amount are required' });
   }
+  const donorName = dcbDonorDisplayName({
+    isAnonymous: Boolean(body.isAnonymous),
+    donorName: body.donorName,
+  });
   const voucherNumber = body.voucherNumber || buildVoucherNumber(body.transactionId || String(Date.now()));
   const entry = {
     bookId: body.bookId || env.awcDcbBookId,
     voucherNumber,
-    donorName: body.donorName,
+    donorName,
     donorEmail: body.donorEmail || '',
     envelopeNumber: body.envelopeNumber,
     amount: Number(body.amount),
@@ -43,11 +48,15 @@ router.get('/mock/entries', (_req: Request, res: Response) => {
 
 /** Manual / retry sync for admin console */
 router.post('/sync', async (req: Request, res: Response) => {
-  const body = req.body as Partial<DcbContributionPayload> | { donations?: Partial<DcbContributionPayload>[] };
+  const body = req.body as
+    | (Partial<DcbContributionPayload> & { isAnonymous?: boolean })
+    | { donations?: Array<Partial<DcbContributionPayload> & { isAnonymous?: boolean }> };
 
-  const items: Partial<DcbContributionPayload>[] = Array.isArray(body.donations)
-    ? body.donations
-    : [body as Partial<DcbContributionPayload>];
+  const items: Array<Partial<DcbContributionPayload> & { isAnonymous?: boolean }> = Array.isArray(
+    (body as { donations?: unknown }).donations
+  )
+    ? ((body as { donations: Array<Partial<DcbContributionPayload> & { isAnonymous?: boolean }> }).donations)
+    : [body as Partial<DcbContributionPayload> & { isAnonymous?: boolean }];
 
   const results = [];
   for (const item of items) {
@@ -59,7 +68,10 @@ router.post('/sync', async (req: Request, res: Response) => {
     const payload: DcbContributionPayload = {
       bookId: item.bookId || env.awcDcbBookId,
       voucherNumber,
-      donorName: item.donorName,
+      donorName: dcbDonorDisplayName({
+        isAnonymous: Boolean(item.isAnonymous),
+        donorName: item.donorName,
+      }),
       donorEmail: item.donorEmail || '',
       envelopeNumber: item.envelopeNumber,
       amount: Number(item.amount),
