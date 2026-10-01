@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+server.js
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Logs / OS / IDE
+*.log
+.DS_Store
+.vscode/
+.idea/
+
+# TypeScript
+*.tsbuildinfo

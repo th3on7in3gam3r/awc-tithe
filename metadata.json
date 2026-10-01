@@ -1,0 +1,6 @@
+{
+  "name": "AWC Tithe",
+  "description": "Church giving front door — Stripe cards and Plaid ACH settle to DCU Credit Union; contributions sync to the AWC Digital Contribution Book.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

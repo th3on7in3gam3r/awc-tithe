@@ -1,0 +1,111 @@
+@import "tailwindcss";
+
+@theme {
+  --color-church-burgundy: #4a0404;
+  --color-church-burgundy-light: #7a1414;
+  --color-church-burgundy-dark: #2a0202;
+  --color-church-gold: #d4af37;
+  --color-church-gold-light: #f4cf67;
+  --color-church-gold-dark: #b4942e;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Playfair Display', Georgia, serif;
+}
+
+/* Explicit Vault utilities — guaranteed even if @theme utilities fail to cascade */
+.bg-church-burgundy { background-color: #4a0404 !important; }
+.bg-church-burgundy-light { background-color: #7a1414 !important; }
+.bg-church-burgundy-dark { background-color: #2a0202 !important; }
+.bg-church-gold { background-color: #d4af37 !important; }
+.bg-church-gold-light { background-color: #f4cf67 !important; }
+.bg-church-gold-dark { background-color: #b4942e !important; }
+.text-church-burgundy { color: #4a0404 !important; }
+.text-church-burgundy-light { color: #7a1414 !important; }
+.text-church-burgundy-dark { color: #2a0202 !important; }
+.text-church-gold { color: #d4af37 !important; }
+.text-church-gold-light { color: #f4cf67 !important; }
+.text-church-gold-dark { color: #b4942e !important; }
+.border-church-burgundy { border-color: #4a0404 !important; }
+.border-church-gold { border-color: #d4af37 !important; }
+.from-church-burgundy { --tw-gradient-from: #4a0404 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent); }
+.from-church-burgundy-dark { --tw-gradient-from: #2a0202 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent); }
+.to-church-burgundy { --tw-gradient-to: #4a0404 !important; }
+.to-church-burgundy-light { --tw-gradient-to: #7a1414 !important; }
+.to-church-burgundy-dark { --tw-gradient-to: #2a0202 !important; }
+.via-church-burgundy { --tw-gradient-via: #4a0404 !important; }
+.via-church-gold { --tw-gradient-via: #d4af37 !important; }
+.hover\:bg-church-burgundy-light:hover { background-color: #7a1414 !important; }
+.hover\:bg-church-gold-light:hover { background-color: #f4cf67 !important; }
+.hover\:text-church-gold:hover { color: #d4af37 !important; }
+.hover\:text-church-burgundy:hover { color: #4a0404 !important; }
+
+.bg-church-burgundy\/95 { background-color: color-mix(in srgb, #4a0404 95%, transparent) !important; }
+.bg-church-burgundy\/90 { background-color: color-mix(in srgb, #4a0404 90%, transparent) !important; }
+.bg-church-burgundy\/80 { background-color: color-mix(in srgb, #4a0404 80%, transparent) !important; }
+.bg-church-burgundy\/40 { background-color: color-mix(in srgb, #4a0404 40%, transparent) !important; }
+.bg-church-burgundy\/30 { background-color: color-mix(in srgb, #4a0404 30%, transparent) !important; }
+.bg-church-burgundy\/20 { background-color: color-mix(in srgb, #4a0404 20%, transparent) !important; }
+.bg-church-burgundy\/10 { background-color: color-mix(in srgb, #4a0404 10%, transparent) !important; }
+.bg-church-burgundy\/5 { background-color: color-mix(in srgb, #4a0404 5%, transparent) !important; }
+.bg-church-gold\/20 { background-color: color-mix(in srgb, #d4af37 20%, transparent) !important; }
+.bg-church-gold\/15 { background-color: color-mix(in srgb, #d4af37 15%, transparent) !important; }
+.bg-church-gold\/10 { background-color: color-mix(in srgb, #d4af37 10%, transparent) !important; }
+.bg-church-gold\/5 { background-color: color-mix(in srgb, #d4af37 5%, transparent) !important; }
+.text-church-burgundy\/80 { color: color-mix(in srgb, #4a0404 80%, transparent) !important; }
+.border-church-gold\/80 { border-color: color-mix(in srgb, #d4af37 80%, transparent) !important; }
+.border-church-gold\/50 { border-color: color-mix(in srgb, #d4af37 50%, transparent) !important; }
+.border-church-gold\/40 { border-color: color-mix(in srgb, #d4af37 40%, transparent) !important; }
+.border-church-gold\/30 { border-color: color-mix(in srgb, #d4af37 30%, transparent) !important; }
+.border-church-gold\/25 { border-color: color-mix(in srgb, #d4af37 25%, transparent) !important; }
+.border-church-gold\/20 { border-color: color-mix(in srgb, #d4af37 20%, transparent) !important; }
+.border-church-gold\/15 { border-color: color-mix(in srgb, #d4af37 15%, transparent) !important; }
+
+@layer base {
+  body {
+    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    background-color: #f8fafc;
+    color: #0f172a;
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, #d4af37 35%, transparent);
+    color: #2a0202;
+  }
+}
+
+.font-serif-display {
+  font-family: 'Playfair Display', Georgia, serif;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #2a0202;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(212, 175, 55, 0.3);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(212, 175, 55, 0.5);
+}
+
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+}
