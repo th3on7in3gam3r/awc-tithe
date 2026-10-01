@@ -98,14 +98,53 @@
 }
 
 @media print {
+  @page {
+    margin: 0.6in;
+  }
+
+  html,
   body {
     background: white !important;
     color: black !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
-  .no-print {
+
+  /* Hide interactive chrome; do not target bare header/footer — letterhead uses those tags */
+  .no-print,
+  [data-toast-root],
+  .ToastContainer {
     display: none !important;
   }
+
+  /* Hide everything by default, then reveal only the letter */
+  body * {
+    visibility: hidden;
+  }
+
+  #printable-receipt,
+  #printable-receipt * {
+    visibility: visible !important;
+  }
+
+  #printable-receipt {
+    display: block !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+    color: black !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+  }
+
   .print-only {
     display: block !important;
+    visibility: visible !important;
   }
 }

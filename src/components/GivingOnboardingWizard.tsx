@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useChurch } from '../context/ChurchContext';
-import { DonationFrequency, PaymentMethod } from '../types';
+import { Donation, DonationFrequency, PaymentMethod } from '../types';
 import { fetchApiConfig, submitVaultInterest, type ApiConfig } from '../lib/api';
 import { StripeCheckout } from './StripeCheckout';
 import { PlaidBankLink } from './PlaidBankLink';
@@ -14,6 +14,7 @@ import {
   Heart,
   Landmark,
   Lock,
+  Printer,
   Sparkles,
   Users,
 } from 'lucide-react';
@@ -50,7 +51,7 @@ export const GivingOnboardingWizard: React.FC<GivingOnboardingWizardProps> = ({
   onExitToClassic,
   onViewMyGiving,
 }) => {
-  const { funds, makeDonation, addNotification } = useChurch();
+  const { funds, makeDonation, addNotification, setSelectedReceipt } = useChurch();
   const [step, setStep] = useState<WizardStep>('welcome');
   const [audience, setAudience] = useState<Audience | null>(null);
   const [vaultOptIn, setVaultOptIn] = useState<boolean | null>(null);
@@ -72,6 +73,7 @@ export const GivingOnboardingWizard: React.FC<GivingOnboardingWizardProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [receiptNumber, setReceiptNumber] = useState<string | null>(null);
+  const [completedDonation, setCompletedDonation] = useState<Donation | null>(null);
 
   // Simulator card fields
   const [cardNumber, setCardNumber] = useState('');
@@ -217,6 +219,9 @@ export const GivingOnboardingWizard: React.FC<GivingOnboardingWizardProps> = ({
         cardLast4: overrides?.cardLast4 || cardNumber.slice(-4),
       });
       setReceiptNumber(donation.receiptNumber);
+      setCompletedDonation(donation);
+      // makeDonation already opens TaxReceiptModal via setSelectedReceipt;
+      // keep a local copy so success can reopen the official letter.
       setStep('success');
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Gift could not be completed.');
@@ -876,12 +881,22 @@ export const GivingOnboardingWizard: React.FC<GivingOnboardingWizardProps> = ({
         </p>
       )}
       <div className="flex flex-col gap-2">
+        {completedDonation && (
+          <button
+            type="button"
+            onClick={() => setSelectedReceipt(completedDonation)}
+            className="flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold text-white"
+            style={{ backgroundColor: '#4A0404' }}
+          >
+            <Printer className="h-4 w-4" />
+            Print official receipt
+          </button>
+        )}
         {onViewMyGiving && donorEmail && (
           <button
             type="button"
             onClick={() => onViewMyGiving(donorEmail)}
-            className="w-full rounded-xl py-3 text-sm font-bold text-white"
-            style={{ backgroundColor: '#4A0404' }}
+            className="w-full rounded-xl border border-slate-300 py-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
           >
             View my giving
           </button>

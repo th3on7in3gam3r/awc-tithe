@@ -9,7 +9,7 @@ export const initialChurchConfig: ChurchConfig = {
   phone: '',
   email: 'stewardship@anointedworshipcenter.org',
   website: 'https://anointedworshipcenter.org',
-  seniorPastor: '',
+  seniorPastor: 'Pastor Kenneth Mutegyeki',
   financialOfficer: '',
   taxExemptStatus: '501(c)(3) Public Religious Organization',
   currency: 'USD',

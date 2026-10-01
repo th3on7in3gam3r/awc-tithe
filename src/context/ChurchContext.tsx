@@ -121,7 +121,13 @@ function generateIntegrityHash(payload: string): string {
 export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [config, setConfig] = useState<ChurchConfig>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_config`);
-    return saved ? JSON.parse(saved) : initialChurchConfig;
+    if (!saved) return initialChurchConfig;
+    const parsed = JSON.parse(saved) as ChurchConfig;
+    // Backfill senior pastor for installs that stored an empty value
+    if (!parsed.seniorPastor?.trim()) {
+      parsed.seniorPastor = initialChurchConfig.seniorPastor;
+    }
+    return { ...initialChurchConfig, ...parsed };
   });
 
   const [funds, setFunds] = useState<Fund[]>(() => {

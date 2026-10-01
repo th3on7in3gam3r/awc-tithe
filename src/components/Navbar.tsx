@@ -73,7 +73,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const isAdmin = portalMode === 'admin';
 
   return (
-    <header className="sticky top-0 z-40 w-full bg-white border-b border-slate-200 shadow-sm">
+    <header className="no-print sticky top-0 z-40 w-full bg-white border-b border-slate-200 shadow-sm">
       <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8 gap-4">
         <button
           onClick={() => setActiveTab(isAdmin ? 'admin' : 'give')}
