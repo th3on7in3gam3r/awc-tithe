@@ -251,7 +251,7 @@ export const DcuBankIntegration: React.FC = () => {
               </div>
             </div>
             <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-              Tithes and offerings processed via Stripe Card, Plaid Bank Link, and ACH auto-clear into Grace Community Church's DCU Credit Union operating accounts with daily sweeps at 11:59 PM EST.
+              Tithes and offerings processed via Stripe Card, Plaid Bank Link, and ACH auto-clear into Anointed Worship Center's DCU Credit Union operating accounts with daily sweeps at 11:59 PM EST.
             </p>
           </div>
         </div>

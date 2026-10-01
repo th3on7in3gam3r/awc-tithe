@@ -63,7 +63,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   const publicNavItems = [
     { id: 'give', label: 'Give Now' },
     { id: 'funds', label: 'Ministries & Goals' },
-    { id: 'my-giving', label: 'My Giving' },
   ];
 
   const adminNavItems = [

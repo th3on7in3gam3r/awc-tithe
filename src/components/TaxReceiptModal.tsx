@@ -174,7 +174,7 @@ export const TaxReceiptModal: React.FC<TaxReceiptModalProps> = ({ donation, onCl
               <span>IRS Section 170(f)(8) Compliance Attestation</span>
             </div>
             <p>
-              Grace Community Church is an exempt religious organization under Section 501(c)(3) of the Internal Revenue Code. No goods or services were provided in whole or partial exchange for this contribution other than intangible religious benefits. Please retain this official receipt for your federal and state tax deduction records.
+              {config.name} is an exempt religious organization under Section 501(c)(3) of the Internal Revenue Code. No goods or services were provided in whole or partial exchange for this contribution other than intangible religious benefits. Please retain this official receipt for your federal and state tax deduction records.
             </p>
           </div>
 

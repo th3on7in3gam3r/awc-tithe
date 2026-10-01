@@ -61,7 +61,7 @@ export const MinistriesView: React.FC<MinistriesViewProps> = ({ onSelectFundToGi
               Ministries, Missions &amp; Financial Targets
             </h1>
             <p className="text-sm text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
-              Every dollar contributed to Grace Community Church is prayerfully stewarded under strict non-profit governance.
+              Every dollar contributed to Anointed Worship Center is prayerfully stewarded under strict non-profit governance.
               Track how close each specific ministry fund is to meeting its annual financial goal in real time.
             </p>
           </div>

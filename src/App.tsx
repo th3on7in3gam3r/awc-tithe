@@ -16,6 +16,7 @@ function MainApp() {
   const [portalMode, setPortalMode] = useState<AppPortalMode>('public');
   const [activeTab, setActiveTab] = useState<string>('give');
   const [isMfaModalOpen, setIsMfaModalOpen] = useState(false);
+  const [donorPortalEmail, setDonorPortalEmail] = useState<string | undefined>(undefined);
   const { selectedReceipt, setSelectedReceipt } = useChurch();
 
   const handleSelectFundToGive = (_fundId: string) => {
@@ -32,9 +33,14 @@ function MainApp() {
     }
   };
 
+  const handleViewMyGiving = (email: string) => {
+    setDonorPortalEmail(email.trim().toLowerCase());
+    setPortalMode('public');
+    setActiveTab('my-giving');
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
-      {/* Dynamic Header with Public vs Admin Separation */}
       <Navbar
         portalMode={portalMode}
         setPortalMode={setPortalMode}
@@ -44,16 +50,19 @@ function MainApp() {
       />
 
       <main className="flex-1">
-        {/* Public Congregant Portal Views */}
         {portalMode === 'public' && (
           <>
-            {activeTab === 'give' && <DonorPortal />}
+            {activeTab === 'give' && <DonorPortal onViewMyGiving={handleViewMyGiving} />}
             {activeTab === 'funds' && <MinistriesView onSelectFundToGive={handleSelectFundToGive} />}
-            {activeTab === 'my-giving' && <DonorSelfService />}
+            {activeTab === 'my-giving' && (
+              <DonorSelfService
+                initialEmail={donorPortalEmail}
+                onConsumedInitialEmail={() => setDonorPortalEmail(undefined)}
+              />
+            )}
           </>
         )}
 
-        {/* Church Staff Stewardship Admin Console Views */}
         {portalMode === 'admin' && (
           <>
             {activeTab === 'admin' && <AdminDashboard />}
@@ -68,19 +77,16 @@ function MainApp() {
         setActiveTab={handleTabChange}
       />
 
-      {/* Tax Deductible Official Receipt Modal */}
       <TaxReceiptModal
         donation={selectedReceipt}
         onClose={() => setSelectedReceipt(null)}
       />
 
-      {/* MFA Challenge Modal */}
       <MfaModal
         isOpen={isMfaModalOpen}
         onClose={() => setIsMfaModalOpen(false)}
       />
 
-      {/* Real-time Push Notification Alerts */}
       <ToastContainer />
     </div>
   );

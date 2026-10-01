@@ -16,9 +16,11 @@ import {
 interface PledgeTrackerProps {
   onNavigateToGive?: (fundId?: string, suggestedAmount?: number) => void;
   donorId?: string;
+  /** When true, hide church-wide pledge aggregates (private donor view). */
+  privateMode?: boolean;
 }
 
-export const PledgeTracker: React.FC<PledgeTrackerProps> = ({ onNavigateToGive, donorId }) => {
+export const PledgeTracker: React.FC<PledgeTrackerProps> = ({ onNavigateToGive, donorId, privateMode = false }) => {
   const {
     pledges,
     funds,
@@ -28,14 +30,14 @@ export const PledgeTracker: React.FC<PledgeTrackerProps> = ({ onNavigateToGive, 
     calculatePledgeGap,
   } = useChurch();
 
-  const activeDonorId = donorId || 'donor-104'; // Default to Jerless Montgomery
+  const activeDonorId = donorId || donors[0]?.id || '';
   const currentDonor = donors.find((d) => d.id === activeDonorId) || donors[0];
 
   const [selectedYear, setSelectedYear] = useState<number>(2026);
   const [selectedFundId, setSelectedFundId] = useState<string>(funds[0]?.id || 'fund-tithes');
   const [isEditingPledge, setIsEditingPledge] = useState<boolean>(false);
-  const [pledgeAmount, setPledgeAmount] = useState<string>('4200');
-  const [pledgeNotes, setPledgeNotes] = useState<string>('Faithful monthly tithing commitment');
+  const [pledgeAmount, setPledgeAmount] = useState<string>('');
+  const [pledgeNotes, setPledgeNotes] = useState<string>('');
 
   // Find pledge for this donor, fund, and year
   const donorPledges = pledges.filter(
@@ -345,7 +347,7 @@ export const PledgeTracker: React.FC<PledgeTrackerProps> = ({ onNavigateToGive, 
               No Faith Pledge Registered for {selectedYear}
             </h3>
             <p className="text-xs text-slate-500 max-w-md mx-auto mt-1 mb-4">
-              Commit your prayerful giving goal for this year to help Grace Community Church plan annual ministry missions.
+              Commit your prayerful giving goal for this year to help Anointed Worship Center plan annual ministry missions.
             </p>
             <button
               onClick={() => setIsEditingPledge(true)}
@@ -358,7 +360,8 @@ export const PledgeTracker: React.FC<PledgeTrackerProps> = ({ onNavigateToGive, 
 
       </div>
 
-      {/* Congregational Stewardship Progress (Collective Impact) */}
+      {/* Congregational Stewardship Progress — staff / public ministry views only */}
+      {!privateMode && (
       <div className="bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -392,6 +395,7 @@ export const PledgeTracker: React.FC<PledgeTrackerProps> = ({ onNavigateToGive, 
           </p>
         </div>
       </div>
+      )}
 
     </div>
   );

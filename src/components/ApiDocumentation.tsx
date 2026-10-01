@@ -44,18 +44,18 @@ export const ApiDocumentation: React.FC = () => {
         currency: 'USD',
         fund_id: 'fund-tithes',
         donor: {
-          name: 'Jerless Montgomery',
-          email: 'JerlessM@gmail.com',
-          address: '108 Montgomery St #12, San Francisco, CA 94104',
+          name: 'Jane Donor',
+          email: 'donor@example.com',
+          address: '123 Main St, City, ST 00000',
         },
-        payment_method_token: 'pm_card_visa_4242',
+        payment_method_token: 'pm_card_visa',
         cover_processing_fees: true,
         dedication_note: 'In honor of missions week',
       },
       sampleResponse: {
         success: true,
-        transaction_id: 'ch_3N82F92eZvKYlo2C194829',
-        receipt_number: 'REC-2026-09382',
+        transaction_id: 'ch_example_001',
+        receipt_number: 'REC-2026-00001',
         amount: 250.0,
         fee_covered: 7.55,
         total_charged: 257.55,
@@ -73,19 +73,19 @@ export const ApiDocumentation: React.FC = () => {
       summary: 'Create recurring giving schedule',
       description: 'Enrolls donor in recurring stewardship billing (weekly, bi-weekly, monthly, annually) with automated receipt delivery.',
       sampleRequest: {
-        donor_email: 'JerlessM@gmail.com',
+        donor_email: 'donor@example.com',
         amount: 350.0,
         frequency: 'monthly',
         fund_id: 'fund-tithes',
-        stripe_customer_token: 'cus_N83910xZ2',
+        stripe_customer_token: 'cus_example',
       },
       sampleResponse: {
-        subscription_id: 'sub_1P82e90ZvK91',
+        subscription_id: 'sub_example_001',
         status: 'active',
         current_period_start: '2026-09-30T10:15:00Z',
         current_period_end: '2026-10-30T10:15:00Z',
         recurring_schedule: 'monthly',
-        receipt_destination_email: 'JerlessM@gmail.com',
+        receipt_destination_email: 'donor@example.com',
       },
     },
     {
@@ -96,8 +96,8 @@ export const ApiDocumentation: React.FC = () => {
       summary: 'Generate annual IRS statement',
       description: 'Compiles annual cumulative tax deduction statements compliant with IRS Code Section 170(f)(8).',
       sampleResponse: {
-        statement_id: 'STMT-2026-DONOR104',
-        donor_name: 'Jerless Montgomery',
+        statement_id: 'STMT-2026-EXAMPLE',
+        donor_name: 'Jane Donor',
         calendar_year: 2026,
         church_legal_name: config.legalEntityName,
         ein: config.ein,
@@ -222,7 +222,7 @@ print(response.json())`;
           Stewardship API Documentation
         </h1>
         <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
-          Comprehensive RESTful APIs for integrating Grace Community Church contributions with external Church Management Systems (Planning Center, Breeze, TouchPoint) and accounting ledgers (QuickBooks, Xero).
+          Comprehensive RESTful APIs for integrating Anointed Worship Center contributions with external Church Management Systems (Planning Center, Breeze, TouchPoint) and accounting ledgers (QuickBooks, Xero).
         </p>
       </div>
 

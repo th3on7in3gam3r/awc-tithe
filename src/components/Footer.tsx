@@ -62,7 +62,7 @@ export const Footer: React.FC<FooterProps> = ({ portalMode, setPortalMode, setAc
                     Ministries &amp; Goals
                   </button>
                   <button onClick={() => setActiveTab('my-giving')} className="hover:text-[#D4AF37] transition-colors">
-                    My Tax Statements
+                    Donor Portal
                   </button>
                   <button
                     onClick={() => {

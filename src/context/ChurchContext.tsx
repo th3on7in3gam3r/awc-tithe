@@ -98,7 +98,7 @@ interface ChurchContextType {
   addNotification: (type: ToastNotification['type'], title: string, message: string) => void;
 }
 
-const STORAGE_KEY = 'gcc_church_stewardship_v1';
+const STORAGE_KEY = 'awc_tithe_stewardship_v2';
 
 const ChurchContext = createContext<ChurchContextType | undefined>(undefined);
 
@@ -864,7 +864,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             ...d,
             status: 'resolved',
             resolutionNote: note,
-            resolvedBy: 'Eleanor Vance, CPA (Finance Director)',
+            resolvedBy: 'Staff Administrator',
             resolvedAt: new Date().toISOString(),
           };
         }
@@ -885,8 +885,8 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const auditRecord: AuditLog = {
       id: `audit-${Date.now()}`,
       timestamp: new Date().toISOString(),
-      actorId: 'usr-admin-cpa',
-      actorName: 'Eleanor Vance, CPA',
+      actorId: 'usr-admin',
+      actorName: 'Staff Administrator',
       actorRole: currentRole,
       action: 'RECONCILIATION_DISCREPANCY_RESOLVED',
       resource: `DCU vs AWC Ledger (${id})`,

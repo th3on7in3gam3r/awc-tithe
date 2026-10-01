@@ -71,7 +71,9 @@ export const getTangibleImpact = (amount: number, fundId: string) => {
   }
 };
 
-export const DonorPortal: React.FC = () => {
+export const DonorPortal: React.FC<{
+  onViewMyGiving?: (email: string) => void;
+}> = ({ onViewMyGiving }) => {
   const { funds, makeDonation, addNotification } = useChurch();
 
   const [frequency, setFrequency] = useState<DonationFrequency>('monthly');
@@ -81,26 +83,27 @@ export const DonorPortal: React.FC = () => {
   const [coverFees, setCoverFees] = useState<boolean>(true);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
   const [apiConfig, setApiConfig] = useState<ApiConfig | null>(null);
+  const [lastGiftEmail, setLastGiftEmail] = useState<string | null>(null);
 
   // Donor credentials
-  const [donorName, setDonorName] = useState<string>('Jerless Montgomery');
-  const [donorEmail, setDonorEmail] = useState<string>('JerlessM@gmail.com');
-  const [donorAddress, setDonorAddress] = useState<string>('108 Montgomery St #12, San Francisco, CA 94104');
+  const [donorName, setDonorName] = useState<string>('');
+  const [donorEmail, setDonorEmail] = useState<string>('');
+  const [donorAddress, setDonorAddress] = useState<string>('');
   const [dedication, setDedication] = useState<string>('');
   const [isAnonymous, setIsAnonymous] = useState<boolean>(false);
 
   // Card details (simulator)
-  const [cardNumber, setCardNumber] = useState<string>('4242 •••• •••• 4242');
-  const [cardExpiry, setCardExpiry] = useState<string>('12/28');
-  const [cardCvc, setCardCvc] = useState<string>('842');
-  const [cardZip, setCardZip] = useState<string>('94104');
-  const [achBankName, setAchBankName] = useState<string>('Chase Premier Checking');
-  const [achRouting, setAchRouting] = useState<string>('121000358');
-  const [achAccount, setAchAccount] = useState<string>('•••• 9012');
+  const [cardNumber, setCardNumber] = useState<string>('');
+  const [cardExpiry, setCardExpiry] = useState<string>('');
+  const [cardCvc, setCardCvc] = useState<string>('');
+  const [cardZip, setCardZip] = useState<string>('');
+  const [achBankName, setAchBankName] = useState<string>('');
+  const [achRouting, setAchRouting] = useState<string>('');
+  const [achAccount, setAchAccount] = useState<string>('');
 
   // Plaid simulator fallback labels
-  const [plaidInstitution, setPlaidInstitution] = useState<string>('DCU Credit Union (Digital Federal CU)');
-  const [plaidAccountMask, setPlaidAccountMask] = useState<string>('3310');
+  const [plaidInstitution, setPlaidInstitution] = useState<string>('');
+  const [plaidAccountMask, setPlaidAccountMask] = useState<string>('');
 
   // Processing state
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -134,27 +137,6 @@ export const DonorPortal: React.FC = () => {
     setErrorMessage(message);
     setIsProcessing(false);
   }, []);
-
-  // Stripe Test Card autofill helpers
-  const handleApplyTestCard = (type: 'success' | '3ds' | 'decline') => {
-    setErrorMessage(null);
-    if (type === 'success') {
-      setCardNumber('4242 •••• •••• 4242');
-      setCardExpiry('12/28');
-      setCardCvc('842');
-      addNotification('info', 'Test Card Applied', 'Pre-filled standard Stripe Success card (Visa 4242).');
-    } else if (type === '3ds') {
-      setCardNumber('4000 •••• •••• 3063');
-      setCardExpiry('10/27');
-      setCardCvc('311');
-      addNotification('info', '3DS Test Card Applied', 'Pre-filled 3D Secure verification card (Stripe 3063).');
-    } else if (type === 'decline') {
-      setCardNumber('4000 •••• •••• 0002');
-      setCardExpiry('08/26');
-      setCardCvc('002');
-      addNotification('warning', 'Declined Card Applied', 'Pre-filled card simulated to trigger bank card decline (0002).');
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -232,6 +214,9 @@ export const DonorPortal: React.FC = () => {
         awcDcbVoucher: overrides?.awcDcbVoucher,
         awcSynced: overrides?.awcSynced,
       });
+      if (donorEmail.trim()) {
+        setLastGiftEmail(donorEmail.trim().toLowerCase());
+      }
     } catch {
       setErrorMessage('An unexpected payment error occurred. Please try again.');
     } finally {
@@ -242,7 +227,33 @@ export const DonorPortal: React.FC = () => {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      
+      {lastGiftEmail && onViewMyGiving && (
+        <div
+          className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border px-5 py-4 shadow-sm"
+          style={{
+            backgroundColor: 'rgba(74,4,4,0.06)',
+            borderColor: 'rgba(212,175,55,0.45)',
+          }}
+        >
+          <div>
+            <p className="text-sm font-semibold" style={{ color: '#4A0404' }}>
+              Gift received — thank you
+            </p>
+            <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+              View your private receipts and tax statements for {lastGiftEmail}.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onViewMyGiving(lastGiftEmail)}
+            className="shrink-0 rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider text-white shadow-sm"
+            style={{ backgroundColor: '#4A0404' }}
+          >
+            View My Giving
+          </button>
+        </div>
+      )}
+
       {/* Vault-style burgundy hero */}
       <div
         className="relative mb-10 overflow-hidden rounded-2xl text-white shadow-xl"
@@ -466,13 +477,25 @@ export const DonorPortal: React.FC = () => {
                     </div>
                     <div className="mt-3">
                       <div className="flex justify-between text-[10px] text-slate-600 dark:text-slate-300 mb-1">
-                        <span>Funded: ${(f.currentAmount / 1000).toFixed(0)}k</span>
-                        <span>Goal: ${(f.goalAmount / 1000).toFixed(0)}k</span>
+                        <span>
+                          Funded:{' '}
+                          {f.currentAmount >= 1000
+                            ? `$${(f.currentAmount / 1000).toFixed(0)}k`
+                            : `$${f.currentAmount.toLocaleString()}`}
+                        </span>
+                        <span>
+                          Goal:{' '}
+                          {f.goalAmount >= 1000
+                            ? `$${(f.goalAmount / 1000).toFixed(0)}k`
+                            : `$${f.goalAmount.toLocaleString()}`}
+                        </span>
                       </div>
                       <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-church-burgundy-light dark:bg-church-gold rounded-full"
-                          style={{ width: `${Math.min(100, (f.currentAmount / f.goalAmount) * 100)}%` }}
+                          style={{
+                            width: `${f.goalAmount > 0 ? Math.min(100, (f.currentAmount / f.goalAmount) * 100) : 0}%`,
+                          }}
                         />
                       </div>
                     </div>
@@ -494,6 +517,7 @@ export const DonorPortal: React.FC = () => {
                     value={donorName}
                     onChange={(e) => setDonorName(e.target.value)}
                     required
+                    placeholder="Your full legal name"
                     className="w-full px-3 py-2 text-xs rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-white"
                   />
                 </div>
@@ -504,6 +528,7 @@ export const DonorPortal: React.FC = () => {
                     value={donorEmail}
                     onChange={(e) => setDonorEmail(e.target.value)}
                     required
+                    placeholder="you@example.com"
                     className="w-full px-3 py-2 text-xs rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-white"
                   />
                 </div>
@@ -513,6 +538,7 @@ export const DonorPortal: React.FC = () => {
                     type="text"
                     value={donorAddress}
                     onChange={(e) => setDonorAddress(e.target.value)}
+                    placeholder="Street, City, State, ZIP"
                     className="w-full px-3 py-2 text-xs rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-white"
                   />
                 </div>
@@ -542,38 +568,12 @@ export const DonorPortal: React.FC = () => {
               </div>
             </div>
 
-            {/* Step 5: Payment Processing & Stripe Test Presets */}
+            {/* Step 5: Payment Processing */}
             <div className="border-t border-slate-200 pt-5 dark:border-slate-800">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   Payment Method
                 </span>
-                
-                {/* Stripe Simulator Presets */}
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-slate-600 dark:text-slate-300 font-mono">Test Cards:</span>
-                  <button
-                    type="button"
-                    onClick={() => handleApplyTestCard('success')}
-                    className="px-2 py-0.5 text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
-                  >
-                    Visa 4242
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleApplyTestCard('3ds')}
-                    className="px-2 py-0.5 text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800"
-                  >
-                    3D Secure
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleApplyTestCard('decline')}
-                    className="px-2 py-0.5 text-[10px] font-medium bg-red-50 text-red-700 border border-red-200 rounded hover:bg-red-100 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800"
-                  >
-                    Decline 0002
-                  </button>
-                </div>
               </div>
 
               {/* Method Tabs */}
@@ -628,26 +628,6 @@ export const DonorPortal: React.FC = () => {
                 </button>
               </div>
 
-              {apiConfig && (
-                <p className="mb-3 text-[10px] text-slate-500 dark:text-slate-400">
-                  Integrations:{' '}
-                  <span className="font-medium">
-                    Stripe {apiConfig.integrations.stripe.mode}
-                  </span>
-                  {' · '}
-                  <span className="font-medium">
-                    Plaid {apiConfig.integrations.plaid.mode}
-                  </span>
-                  {' · '}
-                  <span className="font-medium">
-                    AWC DCB {apiConfig.integrations.dcb.mode}
-                  </span>
-                  {!apiConfig.integrations.stripe.configured && !apiConfig.integrations.plaid.configured
-                    ? ' — using simulator until keys are added to .env.local'
-                    : ''}
-                </p>
-              )}
-
               {/* Card Inputs — live Stripe Elements or simulator */}
               {paymentMethod === 'card' && stripeLive && apiConfig?.stripePublishableKey && (
                 <StripeCheckout
@@ -684,7 +664,8 @@ export const DonorPortal: React.FC = () => {
                         value={cardNumber}
                         onChange={(e) => setCardNumber(e.target.value)}
                         className="w-full pl-3 pr-10 py-2 text-xs font-mono rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white"
-                        placeholder="4242 4242 4242 4242"
+                        placeholder="Card number"
+                        autoComplete="cc-number"
                       />
                       <CreditCard className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                     </div>
@@ -697,6 +678,7 @@ export const DonorPortal: React.FC = () => {
                         value={cardExpiry}
                         onChange={(e) => setCardExpiry(e.target.value)}
                         placeholder="MM/YY"
+                        autoComplete="cc-exp"
                         className="w-full px-2 py-2 text-xs font-mono rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white"
                       />
                     </div>
@@ -707,6 +689,7 @@ export const DonorPortal: React.FC = () => {
                         value={cardCvc}
                         onChange={(e) => setCardCvc(e.target.value)}
                         placeholder="CVC"
+                        autoComplete="cc-csc"
                         className="w-full px-2 py-2 text-xs font-mono rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white"
                       />
                     </div>
@@ -716,7 +699,8 @@ export const DonorPortal: React.FC = () => {
                         type="text"
                         value={cardZip}
                         onChange={(e) => setCardZip(e.target.value)}
-                        placeholder="94104"
+                        placeholder="ZIP"
+                        autoComplete="postal-code"
                         className="w-full px-2 py-2 text-xs font-mono rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white"
                       />
                     </div>
@@ -754,8 +738,7 @@ export const DonorPortal: React.FC = () => {
               {paymentMethod === 'plaid' && !plaidLive && (
                 <div className="space-y-3 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
                   <p className="text-slate-600 dark:text-slate-300">
-                    Plaid simulator mode — add <code className="font-mono">PLAID_CLIENT_ID</code> and{' '}
-                    <code className="font-mono">PLAID_SECRET</code> to enable live bank linking.
+                    Enter your bank details to continue. Live Plaid linking activates once bank credentials are configured.
                   </p>
                   <div>
                     <label className="block text-[11px] text-slate-500 uppercase tracking-wider mb-1">Institution</label>
@@ -763,15 +746,17 @@ export const DonorPortal: React.FC = () => {
                       type="text"
                       value={plaidInstitution}
                       onChange={(e) => setPlaidInstitution(e.target.value)}
+                      placeholder="Your bank or credit union"
                       className="w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white"
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] text-slate-500 uppercase tracking-wider mb-1">Account mask</label>
+                    <label className="block text-[11px] text-slate-500 uppercase tracking-wider mb-1">Account ending in</label>
                     <input
                       type="text"
                       value={plaidAccountMask}
                       onChange={(e) => setPlaidAccountMask(e.target.value)}
+                      placeholder="Last 4 digits"
                       className="w-full px-3 py-2 font-mono rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white"
                     />
                   </div>
@@ -787,6 +772,7 @@ export const DonorPortal: React.FC = () => {
                       type="text"
                       value={achBankName}
                       onChange={(e) => setAchBankName(e.target.value)}
+                      placeholder="Bank name"
                       className="w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white"
                     />
                   </div>
@@ -797,6 +783,7 @@ export const DonorPortal: React.FC = () => {
                         type="text"
                         value={achRouting}
                         onChange={(e) => setAchRouting(e.target.value)}
+                        placeholder="9-digit routing"
                         className="w-full px-3 py-2 font-mono rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white"
                       />
                     </div>
@@ -806,6 +793,7 @@ export const DonorPortal: React.FC = () => {
                         type="text"
                         value={achAccount}
                         onChange={(e) => setAchAccount(e.target.value)}
+                        placeholder="Account number"
                         className="w-full px-3 py-2 font-mono rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white"
                       />
                     </div>
@@ -931,11 +919,15 @@ export const DonorPortal: React.FC = () => {
                 <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-church-burgundy-light dark:bg-church-gold rounded-full transition-all duration-500"
-                    style={{ width: `${Math.min(100, (selectedFund.currentAmount / selectedFund.goalAmount) * 100)}%` }}
+                    style={{
+                      width: `${selectedFund.goalAmount > 0 ? Math.min(100, (selectedFund.currentAmount / selectedFund.goalAmount) * 100) : 0}%`,
+                    }}
                   />
                 </div>
                 <p className="text-[11px] text-slate-600 dark:text-slate-300 text-right">
-                  {((selectedFund.currentAmount / selectedFund.goalAmount) * 100).toFixed(1)}% of annual objective funded
+                  {selectedFund.goalAmount > 0
+                    ? `${((selectedFund.currentAmount / selectedFund.goalAmount) * 100).toFixed(1)}% of annual objective funded`
+                    : 'Campaign goal ready for your first gift'}
                 </p>
               </div>
             </div>
@@ -990,53 +982,53 @@ export const DonorPortal: React.FC = () => {
             </div>
           </div>
 
-          {/* Tangible Ministry Impact Outcomes Card */}
+          {/* How gifts translate into ministry */}
           <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
             <div className="flex items-center gap-2 mb-2">
               <HeartHandshake className="h-4 w-4 text-church-gold-dark dark:text-church-gold" />
               <h4 className="font-serif-display text-sm font-semibold text-slate-900 dark:text-white">
-                Tangible Outcomes Delivered (2026)
+                How Your Gift Translates
               </h4>
             </div>
             <p className="text-[11px] text-slate-500 mb-4">
-              Here is how our congregation's faithful generosity translates into real-world ministry impact:
+              Every contribution fuels tangible ministry across Anointed Worship Center:
             </p>
 
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg">
                 <div className="flex items-center gap-1.5 text-rose-700 dark:text-rose-400 mb-1">
                   <Utensils className="h-3.5 w-3.5" />
-                  <span className="font-mono font-bold text-sm">12,640+</span>
+                  <span className="font-mono font-bold text-sm">$5</span>
                 </div>
-                <span className="text-[11px] font-medium text-slate-900 dark:text-white block">Warm Meals Served</span>
-                <span className="text-[10px] text-slate-500">$5 = 1 warm meal</span>
+                <span className="text-[11px] font-medium text-slate-900 dark:text-white block">Warm Meal</span>
+                <span className="text-[10px] text-slate-500">Food pantry &amp; benevolence</span>
               </div>
 
               <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg">
                 <div className="flex items-center gap-1.5 text-blue-700 dark:text-blue-400 mb-1">
                   <Droplets className="h-3.5 w-3.5" />
-                  <span className="font-mono font-bold text-sm">1,895+</span>
+                  <span className="font-mono font-bold text-sm">$50</span>
                 </div>
-                <span className="text-[11px] font-medium text-slate-900 dark:text-white block">Clean Water Filters</span>
-                <span className="text-[10px] text-slate-500">$50 = 2 families</span>
+                <span className="text-[11px] font-medium text-slate-900 dark:text-white block">Clean Water Filter</span>
+                <span className="text-[10px] text-slate-500">Missions partnerships</span>
               </div>
 
               <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg">
                 <div className="flex items-center gap-1.5 text-church-gold-dark dark:text-church-gold mb-1">
                   <Building2 className="h-3.5 w-3.5" />
-                  <span className="font-mono font-bold text-sm">1,820</span>
+                  <span className="font-mono font-bold text-sm">$100</span>
                 </div>
-                <span className="text-[11px] font-medium text-slate-900 dark:text-white block">Sq Ft of Youth Wing</span>
-                <span className="text-[10px] text-slate-500">$100 = 1 sq ft built</span>
+                <span className="text-[11px] font-medium text-slate-900 dark:text-white block">1 Sq Ft Youth Wing</span>
+                <span className="text-[10px] text-slate-500">Building campaign</span>
               </div>
 
               <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg">
                 <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 mb-1">
                   <GraduationCap className="h-3.5 w-3.5" />
-                  <span className="font-mono font-bold text-sm">2,400+</span>
+                  <span className="font-mono font-bold text-sm">$25</span>
                 </div>
-                <span className="text-[11px] font-medium text-slate-900 dark:text-white block">Pastoral Care Hours</span>
-                <span className="text-[10px] text-slate-500">$25 = 1 hr counseling</span>
+                <span className="text-[11px] font-medium text-slate-900 dark:text-white block">Pastoral Care Hour</span>
+                <span className="text-[10px] text-slate-500">Counseling &amp; discipleship</span>
               </div>
             </div>
           </div>
