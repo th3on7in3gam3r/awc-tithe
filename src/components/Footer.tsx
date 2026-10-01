@@ -1,15 +1,22 @@
 import React from 'react';
 import { useChurch } from '../context/ChurchContext';
 import { AppPortalMode } from '../types';
-import { ShieldCheck, Lock, ArrowLeft } from 'lucide-react';
+import { ShieldCheck, Lock, ArrowLeft, Users } from 'lucide-react';
 
 interface FooterProps {
   portalMode: AppPortalMode;
   setPortalMode: (mode: AppPortalMode) => void;
   setActiveTab: (tab: string) => void;
+  onRequestStaffPortal: () => void;
+  onEnterDonorPortal: () => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ portalMode, setPortalMode, setActiveTab }) => {
+export const Footer: React.FC<FooterProps> = ({
+  portalMode,
+  setActiveTab,
+  onRequestStaffPortal,
+  onEnterDonorPortal,
+}) => {
   const { config } = useChurch();
 
   return (
@@ -61,19 +68,20 @@ export const Footer: React.FC<FooterProps> = ({ portalMode, setPortalMode, setAc
                   <button onClick={() => setActiveTab('funds')} className="hover:text-[#D4AF37] transition-colors">
                     Ministries &amp; Goals
                   </button>
-                  <button onClick={() => setActiveTab('my-giving')} className="hover:text-[#D4AF37] transition-colors">
+                  <button
+                    onClick={onEnterDonorPortal}
+                    className="flex items-center gap-1 hover:text-[#D4AF37] transition-colors"
+                  >
+                    <Users className="h-3 w-3" />
                     Donor Portal
                   </button>
                   <button
-                    onClick={() => {
-                      setPortalMode('admin');
-                      setActiveTab('admin');
-                    }}
+                    onClick={onRequestStaffPortal}
                     className="flex items-center gap-1 font-semibold transition-colors"
                     style={{ color: '#D4AF37' }}
                   >
                     <Lock className="h-3 w-3" />
-                    Church Staff Login
+                    Staff Portal
                   </button>
                 </>
               ) : (
@@ -85,14 +93,11 @@ export const Footer: React.FC<FooterProps> = ({ portalMode, setPortalMode, setAc
                     REST API Sandbox
                   </button>
                   <button
-                    onClick={() => {
-                      setPortalMode('public');
-                      setActiveTab('give');
-                    }}
+                    onClick={onEnterDonorPortal}
                     className="flex items-center gap-1 font-medium text-white/70 hover:text-[#D4AF37] transition-colors"
                   >
                     <ArrowLeft className="h-3 w-3" />
-                    Exit to Public Church Website
+                    Exit to Donor Portal
                   </button>
                 </>
               )}

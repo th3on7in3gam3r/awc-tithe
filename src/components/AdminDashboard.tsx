@@ -42,7 +42,7 @@ export const AdminDashboard: React.FC = () => {
     calculatePledgeGap,
     currentRole,
     isMfaVerified,
-    verifyMfa,
+    verifyStaffAccess,
     resetMfa,
     refundDonation,
     queueOfflineGift,
@@ -77,9 +77,11 @@ export const AdminDashboard: React.FC = () => {
   const [offlineCheckNum, setOfflineCheckNum] = useState('');
   const [offlineNote, setOfflineNote] = useState('');
 
-  // MFA prompt
+  // Staff re-auth (invite + authenticator) if session was locked from dashboard
+  const [inviteInput, setInviteInput] = useState('');
   const [totpInput, setTotpInput] = useState('');
   const [mfaError, setMfaError] = useState(false);
+  const [mfaSubmitting, setMfaSubmitting] = useState(false);
 
   // Financial Calculations
   const completedDonations = donations.filter((d) => d.status === 'completed');
@@ -102,13 +104,16 @@ export const AdminDashboard: React.FC = () => {
     return matchesSearch && matchesFund && matchesStatus;
   });
 
-  const handleMfaSubmit = (e: React.FormEvent) => {
+  const handleMfaSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const success = verifyMfa(totpInput);
+    setMfaSubmitting(true);
+    const success = await verifyStaffAccess(inviteInput, totpInput);
+    setMfaSubmitting(false);
     if (!success) {
       setMfaError(true);
     } else {
       setMfaError(false);
+      setInviteInput('');
       setTotpInput('');
     }
   };
@@ -251,37 +256,48 @@ export const AdminDashboard: React.FC = () => {
       </div>
 
 
-      {/* MFA Challenge Banner if Admin & Not Verified */}
+      {/* Staff access banner if Admin & Not Verified */}
       {currentRole === 'admin' && !isMfaVerified && (
-        <div className="mt-6 p-5 rounded-xl border border-church-gold/40 bg-church-gold/10 dark:bg-church-burgundy/30 dark:border-church-gold/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="mt-6 p-5 rounded-xl border border-church-gold/40 bg-church-gold/10 dark:bg-church-burgundy/30 dark:border-church-gold/30 flex flex-col gap-4">
           <div className="flex items-start gap-3">
             <Lock className="h-5 w-5 text-church-burgundy dark:text-church-gold mt-0.5" />
             <div>
               <h3 className="text-xs font-bold text-church-burgundy-dark dark:text-church-gold-light">
-                Multi-Factor Authentication (MFA) Protected
+                Staff Portal Locked — Invite Required
               </h3>
               <p className="text-xs text-church-burgundy/80 dark:text-church-gold mt-0.5">
-                Financial administrators require 6-digit TOTP verification to refund donations, modify funds, and access unmasked donor banking records.
+                Re-enter your staff invite/access code and 6-digit authenticator. Members without an invite cannot unlock financial controls.
               </p>
             </div>
           </div>
 
-          <form onSubmit={handleMfaSubmit} className="flex items-center gap-2">
+          <form onSubmit={(e) => void handleMfaSubmit(e)} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <input
+              type="password"
+              placeholder="Invite / access code"
+              value={inviteInput}
+              onChange={(e) => setInviteInput(e.target.value)}
+              className="flex-1 px-2.5 py-1.5 text-xs rounded border border-church-gold/40 bg-white dark:bg-slate-800 dark:text-white"
+            />
             <input
               type="text"
               maxLength={6}
-              placeholder="e.g. 123456"
+              placeholder="6-digit MFA"
               value={totpInput}
-              onChange={(e) => setTotpInput(e.target.value)}
+              onChange={(e) => setTotpInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
               className="w-28 px-2.5 py-1.5 text-center font-mono text-xs rounded border border-church-gold/40 bg-white dark:bg-slate-800 dark:text-white"
             />
             <button
               type="submit"
-              className="px-3 py-1.5 text-xs font-semibold text-white bg-church-burgundy hover:bg-church-burgundy-light rounded shadow-sm"
+              disabled={mfaSubmitting}
+              className="px-3 py-1.5 text-xs font-semibold text-white bg-church-burgundy hover:bg-church-burgundy-light rounded shadow-sm disabled:opacity-60"
             >
-              Verify TOTP
+              {mfaSubmitting ? 'Verifying…' : 'Unlock'}
             </button>
           </form>
+          {mfaError && (
+            <p className="text-xs text-red-600">Invalid invite or authenticator code.</p>
+          )}
         </div>
       )}
 

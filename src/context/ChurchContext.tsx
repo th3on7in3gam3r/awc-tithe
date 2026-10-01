@@ -26,7 +26,7 @@ import {
   initialDcuDeposits,
   initialReconciliationDiscrepancies,
 } from '../data/initialData';
-import { recordGift } from '../lib/api';
+import { recordGift, verifyStaffPortalAccess } from '../lib/api';
 
 interface DonationInput {
   amount: number;
@@ -69,7 +69,7 @@ interface ChurchContextType {
   setSelectedReceipt: (d: Donation | null) => void;
   toggleDarkMode: () => void;
   switchRole: (role: UserRole) => void;
-  verifyMfa: (code: string) => boolean;
+  verifyStaffAccess: (inviteCode: string, authenticatorCode: string) => Promise<boolean>;
   resetMfa: () => void;
   makeDonation: (input: DonationInput) => Promise<Donation>;
   refundDonation: (transactionId: string, reason: string) => void;
@@ -248,8 +248,13 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  const verifyMfa = (code: string): boolean => {
-    if (code.trim().length === 6) {
+  const verifyStaffAccess = async (inviteCode: string, authenticatorCode: string): Promise<boolean> => {
+    try {
+      const result = await verifyStaffPortalAccess({ inviteCode, authenticatorCode });
+      if (!result.ok) {
+        addNotification('error', 'Staff Portal Locked', result.error || 'Invalid invite or code.');
+        return false;
+      }
       setIsMfaVerified(true);
       const auditEntry: AuditLog = {
         id: `audit-${Date.now()}`,
@@ -257,22 +262,28 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         actorId: 'usr-admin-session',
         actorName: 'Administrative Steward',
         actorRole: 'admin',
-        action: 'MFA_TOTP_SUCCESS',
+        action: 'STAFF_PORTAL_ACCESS',
         resource: 'Security Perimeter',
-        details: 'Multi-Factor TOTP challenge verified successfully for elevated administrative session.',
+        details: 'Staff invite/access code and authenticator verified for Staff Portal session.',
         ipAddress: '192.168.1.102',
-        integrityHash: generateIntegrityHash(`mfa_success_${Date.now()}`),
+        integrityHash: generateIntegrityHash(`staff_access_${Date.now()}`),
       };
       setAuditLogs((prev) => [auditEntry, ...prev]);
-      addNotification('success', 'MFA Verified', 'Elevated administrative privileges unlocked.');
+      addNotification('success', 'Staff Portal Unlocked', 'Authorized staff session started.');
       return true;
+    } catch (err) {
+      addNotification(
+        'error',
+        'Staff Portal Locked',
+        err instanceof Error ? err.message : 'Could not verify staff access.'
+      );
+      return false;
     }
-    return false;
   };
 
   const resetMfa = () => {
     setIsMfaVerified(false);
-    addNotification('info', 'MFA Reset', 'Administrative elevated session closed.');
+    addNotification('info', 'Staff Portal Locked', 'Staff session closed. Invite code required to re-enter.');
   };
 
   const makeDonation = async (input: DonationInput): Promise<Donation> => {
@@ -1158,7 +1169,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setSelectedReceipt,
         toggleDarkMode,
         switchRole,
-        verifyMfa,
+        verifyStaffAccess,
         resetMfa,
         makeDonation,
         refundDonation,

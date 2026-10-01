@@ -9,6 +9,7 @@ import plaidRoutes from './routes/plaid';
 import dcbRoutes from './routes/dcb';
 import giftsRoutes from './routes/gifts';
 import vaultInterestRoutes from './routes/vaultInterest';
+import staffRoutes from './routes/staff';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distPath = path.resolve(__dirname, '../dist');
@@ -65,6 +66,7 @@ app.use('/api/plaid', plaidRoutes);
 app.use('/api/dcb', dcbRoutes);
 app.use('/api/gifts', giftsRoutes);
 app.use('/api/vault', vaultInterestRoutes);
+app.use('/api/staff', staffRoutes);
 
 // Serve Vite production build (Render single-service deploy)
 app.use(express.static(distPath));

@@ -259,6 +259,29 @@ export async function submitVaultInterest(body: {
   return parseJson(res);
 }
 
+export async function verifyStaffPortalAccess(body: {
+  inviteCode: string;
+  authenticatorCode: string;
+}): Promise<{ ok: boolean; error?: string; message?: string }> {
+  const res = await fetch('/api/staff/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    error?: string;
+    message?: string;
+  };
+  if (!res.ok || !data.ok) {
+    return {
+      ok: false,
+      error: data.error || 'Staff Portal access denied.',
+    };
+  }
+  return { ok: true, message: data.message };
+}
+
 export async function syncDonationsToDcb(
   donations: Array<{
     donorName: string;

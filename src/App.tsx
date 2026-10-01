@@ -17,7 +17,7 @@ function MainApp() {
   const [activeTab, setActiveTab] = useState<string>('give');
   const [isMfaModalOpen, setIsMfaModalOpen] = useState(false);
   const [donorPortalEmail, setDonorPortalEmail] = useState<string | undefined>(undefined);
-  const { selectedReceipt, setSelectedReceipt } = useChurch();
+  const { selectedReceipt, setSelectedReceipt, isMfaVerified, resetMfa } = useChurch();
 
   const handleSelectFundToGive = (_fundId: string) => {
     setPortalMode('public');
@@ -25,12 +25,40 @@ function MainApp() {
   };
 
   const handleTabChange = (tab: string) => {
-    setActiveTab(tab);
+    // Staff routes only when already unlocked — never bounce members into admin via tab id alone
     if (tab === 'admin' || tab === 'api-docs') {
+      if (!isMfaVerified) {
+        setIsMfaModalOpen(true);
+        return;
+      }
       setPortalMode('admin');
-    } else {
-      setPortalMode('public');
+      setActiveTab(tab);
+      return;
     }
+    setPortalMode('public');
+    setActiveTab(tab);
+  };
+
+  const handleEnterDonorPortal = () => {
+    if (portalMode === 'admin') {
+      resetMfa();
+    }
+    setPortalMode('public');
+    setActiveTab('my-giving');
+  };
+
+  const handleRequestStaffPortal = () => {
+    if (isMfaVerified) {
+      setPortalMode('admin');
+      setActiveTab('admin');
+      return;
+    }
+    setIsMfaModalOpen(true);
+  };
+
+  const handleStaffAccessGranted = () => {
+    setPortalMode('admin');
+    setActiveTab('admin');
   };
 
   const handleViewMyGiving = (email: string) => {
@@ -39,6 +67,8 @@ function MainApp() {
     setActiveTab('my-giving');
   };
 
+  const staffUnlocked = portalMode === 'admin' && isMfaVerified;
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
       <Navbar
@@ -46,11 +76,12 @@ function MainApp() {
         setPortalMode={setPortalMode}
         activeTab={activeTab}
         setActiveTab={handleTabChange}
-        onOpenMfaModal={() => setIsMfaModalOpen(true)}
+        onOpenMfaModal={handleRequestStaffPortal}
+        onEnterDonorPortal={handleEnterDonorPortal}
       />
 
       <main className="flex-1">
-        {portalMode === 'public' && (
+        {!staffUnlocked && (
           <>
             {activeTab === 'give' && <DonorPortal onViewMyGiving={handleViewMyGiving} />}
             {activeTab === 'funds' && <MinistriesView onSelectFundToGive={handleSelectFundToGive} />}
@@ -60,10 +91,28 @@ function MainApp() {
                 onConsumedInitialEmail={() => setDonorPortalEmail(undefined)}
               />
             )}
+            {(activeTab === 'admin' || activeTab === 'api-docs') && (
+              <div className="mx-auto max-w-lg px-4 py-16 text-center">
+                <p className="font-serif-display text-xl font-bold text-slate-900 dark:text-white">
+                  Staff Portal is locked
+                </p>
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                  An invite or access code from church leadership is required. Members cannot enter.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsMfaModalOpen(true)}
+                  className="mt-6 rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider text-white"
+                  style={{ backgroundColor: '#4A0404' }}
+                >
+                  Enter invite code
+                </button>
+              </div>
+            )}
           </>
         )}
 
-        {portalMode === 'admin' && (
+        {staffUnlocked && (
           <>
             {activeTab === 'admin' && <AdminDashboard />}
             {activeTab === 'api-docs' && <ApiDocumentation />}
@@ -72,9 +121,11 @@ function MainApp() {
       </main>
 
       <Footer
-        portalMode={portalMode}
+        portalMode={staffUnlocked ? 'admin' : 'public'}
         setPortalMode={setPortalMode}
         setActiveTab={handleTabChange}
+        onRequestStaffPortal={handleRequestStaffPortal}
+        onEnterDonorPortal={handleEnterDonorPortal}
       />
 
       <TaxReceiptModal
@@ -85,6 +136,7 @@ function MainApp() {
       <MfaModal
         isOpen={isMfaModalOpen}
         onClose={() => setIsMfaModalOpen(false)}
+        onAccessGranted={handleStaffAccessGranted}
       />
 
       <ToastContainer />

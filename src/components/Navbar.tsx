@@ -11,8 +11,7 @@ import {
   X,
   ChevronDown,
   Lock,
-  ArrowLeft,
-  Globe,
+  Users,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -21,16 +20,18 @@ interface NavbarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   onOpenMfaModal: () => void;
+  onEnterDonorPortal: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   portalMode,
-  setPortalMode,
   activeTab,
   setActiveTab,
   onOpenMfaModal,
+  onEnterDonorPortal,
 }) => {
-  const { currentRole, switchRole, isMfaVerified, darkMode, toggleDarkMode, offlineGifts } = useChurch();
+  const { currentRole, switchRole, isMfaVerified, darkMode, toggleDarkMode, offlineGifts } =
+    useChurch();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
 
@@ -44,25 +45,26 @@ export const Navbar: React.FC<NavbarProps> = ({
     }
   };
 
-  const handleEnterAdminConsole = () => {
-    setPortalMode('admin');
-    setActiveTab('admin');
-    if (currentRole === 'donor') {
-      switchRole('admin');
-    }
-    if (!isMfaVerified) {
-      onOpenMfaModal();
-    }
+  const handleSelectDonorPortal = () => {
+    onEnterDonorPortal();
+    setMobileMenuOpen(false);
   };
 
-  const handleExitToPublicWebsite = () => {
-    setPortalMode('public');
-    setActiveTab('give');
+  const handleSelectStaffPortal = () => {
+    if (portalMode === 'admin' && isMfaVerified) {
+      setActiveTab('admin');
+      setMobileMenuOpen(false);
+      return;
+    }
+    // Do not enter admin until invite/code succeeds
+    onOpenMfaModal();
+    setMobileMenuOpen(false);
   };
 
   const publicNavItems = [
     { id: 'give', label: 'Give Now' },
     { id: 'funds', label: 'Ministries & Goals' },
+    { id: 'my-giving', label: 'My Giving' },
   ];
 
   const adminNavItems = [
@@ -70,11 +72,51 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'api-docs', label: 'API Docs' },
   ];
 
-  const isAdmin = portalMode === 'admin';
+  const isAdmin = portalMode === 'admin' && isMfaVerified;
+
+  const portalSwitch = (
+    <div
+      className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-slate-700 dark:bg-slate-800"
+      role="group"
+      aria-label="Portal switch"
+    >
+      <button
+        type="button"
+        onClick={handleSelectDonorPortal}
+        className={`inline-flex items-center gap-1.5 rounded-md px-2.5 sm:px-3 py-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.1em] transition-colors ${
+          !isAdmin
+            ? 'bg-white text-[#4A0404] shadow-sm dark:bg-slate-900 dark:text-[#D4AF37]'
+            : 'text-slate-500 hover:text-[#4A0404] dark:hover:text-[#D4AF37]'
+        }`}
+      >
+        <Users className="h-3.5 w-3.5" />
+        <span className="hidden xs:inline sm:inline">Donor Portal</span>
+        <span className="sm:hidden">Donor</span>
+      </button>
+      <button
+        type="button"
+        onClick={handleSelectStaffPortal}
+        className={`inline-flex items-center gap-1.5 rounded-md px-2.5 sm:px-3 py-1.5 text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.1em] transition-colors ${
+          isAdmin
+            ? 'shadow-sm'
+            : 'text-slate-500 hover:text-[#4A0404] dark:hover:text-[#D4AF37]'
+        }`}
+        style={
+          isAdmin
+            ? { backgroundColor: '#D4AF37', color: '#4A0404' }
+            : undefined
+        }
+      >
+        <Lock className="h-3.5 w-3.5" />
+        <span className="hidden sm:inline">Staff Portal</span>
+        <span className="sm:hidden">Staff</span>
+      </button>
+    </div>
+  );
 
   return (
     <header className="no-print sticky top-0 z-40 w-full bg-white border-b border-slate-200 shadow-sm">
-      <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8 gap-4">
+      <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8 gap-3 sm:gap-4">
         <button
           onClick={() => setActiveTab(isAdmin ? 'admin' : 'give')}
           className="flex items-center gap-3 text-left group shrink-0"
@@ -114,16 +156,9 @@ export const Navbar: React.FC<NavbarProps> = ({
         </nav>
 
         <div className="flex items-center gap-2 sm:gap-3">
-          {!isAdmin ? (
-            <button
-              onClick={handleEnterAdminConsole}
-              className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 text-[11px] font-bold uppercase tracking-[0.12em] rounded-lg shadow-sm transition-colors"
-              style={{ backgroundColor: '#D4AF37', color: '#4A0404' }}
-            >
-              <Lock className="h-3.5 w-3.5" />
-              Staff Login
-            </button>
-          ) : (
+          <div className="hidden sm:block">{portalSwitch}</div>
+
+          {isAdmin && (
             <>
               {pendingOfflineCount > 0 ? (
                 <button
@@ -141,7 +176,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
               )}
 
-              <div className="relative">
+              <div className="relative hidden sm:block">
                 <button
                   onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
                   className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
@@ -181,14 +216,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </div>
                 )}
               </div>
-
-              <button
-                onClick={handleExitToPublicWebsite}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded-lg border border-slate-200 text-slate-600 hover:text-[#4A0404] hover:border-[#4A0404]/40"
-              >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Public Site</span>
-              </button>
             </>
           )}
 
@@ -212,6 +239,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {mobileMenuOpen && (
         <div className="md:hidden border-t border-slate-200 bg-white px-4 pt-2 pb-4">
+          <div className="mb-3 sm:hidden flex justify-center">{portalSwitch}</div>
           <nav className="flex flex-col space-y-1">
             {(isAdmin ? adminNavItems : publicNavItems).map((item) => (
               <button
@@ -226,31 +254,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                 {item.label}
               </button>
             ))}
-            {!isAdmin ? (
-              <button
-                onClick={() => {
-                  handleEnterAdminConsole();
-                  setMobileMenuOpen(false);
-                }}
-                className="mt-2 inline-flex items-center justify-center gap-1.5 py-2.5 text-[11px] font-bold uppercase tracking-[0.12em] rounded-lg"
-                style={{ backgroundColor: '#D4AF37', color: '#4A0404' }}
-              >
-                <Lock className="h-3.5 w-3.5" />
-                Staff Login
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  handleExitToPublicWebsite();
-                  setMobileMenuOpen(false);
-                }}
-                className="mt-2 flex items-center gap-1.5 text-xs font-semibold py-1"
-                style={{ color: '#4A0404' }}
-              >
-                <Globe className="h-3.5 w-3.5" />
-                Return to Public Site
-              </button>
-            )}
           </nav>
         </div>
       )}

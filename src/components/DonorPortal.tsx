@@ -11,8 +11,6 @@ import {
   Info,
   ShieldCheck,
   AlertCircle,
-  HelpCircle,
-  HeartHandshake,
   Utensils,
   Droplets,
   GraduationCap,
@@ -25,6 +23,7 @@ import { fetchApiConfig, type ApiConfig } from '../lib/api';
 import { StripeCheckout } from './StripeCheckout';
 import { PlaidBankLink } from './PlaidBankLink';
 import { GivingOnboardingWizard } from './GivingOnboardingWizard';
+import { StewardshipFaq } from './StewardshipFaq';
 
 export const getTangibleImpact = (amount: number, fundId: string) => {
   if (amount <= 0) return null;
@@ -349,11 +348,9 @@ export const DonorPortal: React.FC<{
         </div>
       </div>
 
-      {/* Main Contribution Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        
-        {/* Left Column: Giving Form (7 cols) */}
-        <div className="lg:col-span-7 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 sm:p-8">
+      {/* Giving form — full width under hero; fund progress & contribution totals live in My Giving */}
+      <div className="mx-auto max-w-3xl">
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 sm:p-8">
           
           <form onSubmit={handleSubmit} className="space-y-6">
             
@@ -919,182 +916,7 @@ export const DonorPortal: React.FC<{
 
         </div>
 
-        {/* Right Column: Stewardship Overview & Gift Summary (5 cols) */}
-        <div className="lg:col-span-5 space-y-6">
-          
-          {/* Active Fund Spotlight Card */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-            <div className="h-40 relative">
-              <img
-                src={selectedFund.image || '/assets/images/church_sanctuary_hero_1790791320226.jpg'}
-                alt={selectedFund.name}
-                referrerPolicy="no-referrer"
-                className="h-full w-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
-              <div className="absolute bottom-3 left-4 right-4 text-white">
-                <span className="text-[10px] uppercase font-semibold tracking-wider text-church-gold-light">
-                  {selectedFund.category} Ministry
-                </span>
-                <h3 className="font-serif-display text-lg font-bold text-white leading-snug">
-                  {selectedFund.name}
-                </h3>
-              </div>
-            </div>
-
-            <div className="p-5">
-              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                {selectedFund.description}
-              </p>
-
-              <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">Campaign Progress</span>
-                  <span className="font-mono font-semibold text-slate-900 dark:text-white tabular-nums">
-                    ${selectedFund.currentAmount.toLocaleString()} / ${selectedFund.goalAmount.toLocaleString()}
-                  </span>
-                </div>
-                <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-church-burgundy-light dark:bg-church-gold rounded-full transition-all duration-500"
-                    style={{
-                      width: `${selectedFund.goalAmount > 0 ? Math.min(100, (selectedFund.currentAmount / selectedFund.goalAmount) * 100) : 0}%`,
-                    }}
-                  />
-                </div>
-                <p className="text-[11px] text-slate-600 dark:text-slate-300 text-right">
-                  {selectedFund.goalAmount > 0
-                    ? `${((selectedFund.currentAmount / selectedFund.goalAmount) * 100).toFixed(1)}% of annual objective funded`
-                    : 'Campaign goal ready for your first gift'}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Real-time Order Summary / Tax Calculation */}
-          <div className="bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
-            <h4 className="font-serif-display text-sm font-semibold text-slate-900 dark:text-white mb-3">
-              Contribution Summary
-            </h4>
-
-            <div className="space-y-2.5 text-xs text-slate-600 dark:text-slate-300">
-              <div className="flex justify-between">
-                <span>Direct Ministry Principal</span>
-                <span className="font-mono tabular-nums font-semibold text-slate-900 dark:text-white">
-                  ${principalAmount.toFixed(2)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span>Stripe Processing Cost</span>
-                <span className="font-mono tabular-nums">
-                  {coverFees ? `+$${feeAmount.toFixed(2)} (Covered)` : '$0.00 (Deducted from gift)'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span>Frequency Cadence</span>
-                <span className="capitalize font-medium text-church-burgundy dark:text-church-gold">
-                  {frequency}
-                </span>
-              </div>
-              <div className="flex justify-between pt-2 border-t border-slate-200 dark:border-slate-700 font-semibold text-slate-900 dark:text-white">
-                <span>Total Payment Today</span>
-                <span className="font-mono tabular-nums text-sm text-church-burgundy dark:text-church-gold-light">
-                  ${totalCharged.toFixed(2)}
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700 text-[11px] text-slate-500 dark:text-slate-400 space-y-1">
-              <div className="flex items-center gap-1.5">
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                <span>100% Tax Deductible under IRC § 170</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                <span>Official PDF statement delivered by email</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                <span>Encrypted tokenization (no raw cards stored)</span>
-              </div>
-            </div>
-          </div>
-
-          {/* How gifts translate into ministry */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
-            <div className="flex items-center gap-2 mb-2">
-              <HeartHandshake className="h-4 w-4 text-church-gold-dark dark:text-church-gold" />
-              <h4 className="font-serif-display text-sm font-semibold text-slate-900 dark:text-white">
-                How Your Gift Translates
-              </h4>
-            </div>
-            <p className="text-[11px] text-slate-500 mb-4">
-              Every contribution fuels tangible ministry across Anointed Worship Center:
-            </p>
-
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg">
-                <div className="flex items-center gap-1.5 text-rose-700 dark:text-rose-400 mb-1">
-                  <Utensils className="h-3.5 w-3.5" />
-                  <span className="font-mono font-bold text-sm">$5</span>
-                </div>
-                <span className="text-[11px] font-medium text-slate-900 dark:text-white block">Warm Meal</span>
-                <span className="text-[10px] text-slate-500">Food pantry &amp; benevolence</span>
-              </div>
-
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg">
-                <div className="flex items-center gap-1.5 text-blue-700 dark:text-blue-400 mb-1">
-                  <Droplets className="h-3.5 w-3.5" />
-                  <span className="font-mono font-bold text-sm">$50</span>
-                </div>
-                <span className="text-[11px] font-medium text-slate-900 dark:text-white block">Clean Water Filter</span>
-                <span className="text-[10px] text-slate-500">Missions partnerships</span>
-              </div>
-
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg">
-                <div className="flex items-center gap-1.5 text-church-gold-dark dark:text-church-gold mb-1">
-                  <Building2 className="h-3.5 w-3.5" />
-                  <span className="font-mono font-bold text-sm">$100</span>
-                </div>
-                <span className="text-[11px] font-medium text-slate-900 dark:text-white block">1 Sq Ft Youth Wing</span>
-                <span className="text-[10px] text-slate-500">Building campaign</span>
-              </div>
-
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg">
-                <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 mb-1">
-                  <GraduationCap className="h-3.5 w-3.5" />
-                  <span className="font-mono font-bold text-sm">$25</span>
-                </div>
-                <span className="text-[11px] font-medium text-slate-900 dark:text-white block">Pastoral Care Hour</span>
-                <span className="text-[10px] text-slate-500">Counseling &amp; discipleship</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Frequently Asked Questions */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
-            <h4 className="font-serif-display text-sm font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-1.5">
-              <HelpCircle className="h-4 w-4 text-slate-400" />
-              <span>Stewardship FAQ</span>
-            </h4>
-            <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
-              <div>
-                <p className="font-medium text-slate-900 dark:text-white">How do recurring contributions work?</p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                  Your pledge processes automatically on your selected schedule. You can pause or adjust amount anytime via your self-service portal.
-                </p>
-              </div>
-              <div>
-                <p className="font-medium text-slate-900 dark:text-white">When do I receive my annual tax statement?</p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                  Per-transaction receipts are delivered instantly. Comprehensive annual statements for IRS filing are available on-demand in the portal.
-                </p>
-              </div>
-            </div>
-          </div>
-
-        </div>
-
+        <StewardshipFaq />
       </div>
 
       {/* 3D Secure Simulation Modal */}

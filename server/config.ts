@@ -36,6 +36,11 @@ export const env = {
   awcVaultSetupUrl:
     process.env.AWC_VAULT_SETUP_URL?.trim()
     || 'https://anointedworshipcenter.com',
+  /** Staff Portal invite/access code — never send to the browser. Accepts STAFF_INVITE_CODE alias. */
+  staffAccessCode:
+    process.env.STAFF_ACCESS_CODE?.trim()
+    || process.env.STAFF_INVITE_CODE?.trim()
+    || '',
 };
 
 export function databaseStatus(): IntegrationStatus {
