@@ -278,7 +278,7 @@ export const DonorPortal: React.FC<{
       ) : (
         <>
       {/* Brand-led full-bleed hero — first viewport */}
-      <section className="relative left-1/2 right-1/2 -ml-[50vw] -mr-[50vw] w-screen min-h-[min(96vh,900px)] flex items-end overflow-hidden text-white">
+      <section className="relative w-full min-h-[min(96vh,900px)] flex items-end overflow-hidden text-white">
         <div className="absolute inset-0 give-hero-media">
           <img
             src="/assets/images/church_sanctuary_hero_1790791320226.jpg"
