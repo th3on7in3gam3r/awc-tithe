@@ -41,6 +41,19 @@ export const env = {
     process.env.STAFF_ACCESS_CODE?.trim()
     || process.env.STAFF_INVITE_CODE?.trim()
     || '',
+  /** Public church identity — optional; omit blank segments in UI when unset */
+  churchLegalName: process.env.CHURCH_LEGAL_NAME?.trim() || '',
+  churchAddress: process.env.CHURCH_ADDRESS?.trim() || '',
+  churchCityStateZip: process.env.CHURCH_CITY_STATE_ZIP?.trim() || '',
+  churchEin: process.env.CHURCH_EIN?.trim() || '',
+  churchPhone: process.env.CHURCH_PHONE?.trim() || '',
+  churchSupportEmail:
+    process.env.CHURCH_SUPPORT_EMAIL?.trim()
+    || 'stewardship@anointedworshipcenter.com',
+  churchWebsite:
+    process.env.CHURCH_WEBSITE?.trim()
+    || 'https://anointedworshipcenter.com',
+  churchName: process.env.CHURCH_NAME?.trim() || 'Anointed Worship Center',
 };
 
 export function databaseStatus(): IntegrationStatus {

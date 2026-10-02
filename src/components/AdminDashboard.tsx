@@ -9,7 +9,6 @@ import { AwcDcbIntegrationHub } from './AwcDcbIntegrationHub';
 import { DcuBankIntegration } from './DcuBankIntegration';
 import { RealTimeReconciliationPanel } from './RealTimeReconciliationPanel';
 import {
-  TrendingUp,
   DollarSign,
   Users,
   Repeat,
@@ -28,7 +27,6 @@ import {
   Shield,
   Wifi,
   ExternalLink,
-  Target,
 } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
@@ -200,17 +198,17 @@ export const AdminDashboard: React.FC = () => {
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       
       {/* Admin Title & Elevated Session Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-slate-200 dark:border-slate-800 gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between pb-6 border-b border-[#E8E2D9] dark:border-slate-800 gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-church-burgundy dark:text-church-gold">
+          <div className="flex items-center gap-2.5">
+            <span className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Financial Administration &amp; Governance
             </span>
-            <span className="px-2 py-0.5 text-[10px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 rounded uppercase">
-              Role: {currentRole}
+            <span className="text-[11px] font-normal text-slate-400 dark:text-slate-500 capitalize">
+              · {currentRole}
             </span>
           </div>
-          <h1 className="font-serif-display text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white mt-1">
+          <h1 className="font-serif-display text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-white mt-1.5 tracking-tight">
             Stewardship Financial Dashboard
           </h1>
         </div>
@@ -219,19 +217,19 @@ export const AdminDashboard: React.FC = () => {
           {currentRole === 'admin' && (
             <div className="flex items-center gap-2">
               {isMfaVerified ? (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 rounded-lg border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800">
-                  <ShieldCheck className="h-4 w-4" />
-                  <span>MFA Verified</span>
+                <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                  <ShieldCheck className="h-3.5 w-3.5 text-slate-400" />
+                  <span>MFA verified</span>
                   <button
                     onClick={resetMfa}
-                    className="ml-2 text-[10px] text-slate-400 hover:text-slate-600 underline"
+                    className="ml-1 text-[11px] text-slate-400 hover:text-slate-600 underline underline-offset-2"
                   >
                     Lock
                   </button>
                 </div>
               ) : (
-                <span className="px-3 py-1.5 text-xs font-medium text-church-burgundy bg-church-gold/10 rounded-lg border border-church-gold/30 dark:bg-church-burgundy/40 dark:text-church-gold-light">
-                  MFA Challenge Pending
+                <span className="text-xs font-medium text-church-burgundy dark:text-church-gold">
+                  MFA pending
                 </span>
               )}
             </div>
@@ -239,7 +237,7 @@ export const AdminDashboard: React.FC = () => {
 
           <button
             onClick={() => setIsExportModalOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-church-burgundy hover:bg-church-burgundy-light rounded-lg shadow-sm transition-all"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-church-burgundy hover:bg-church-burgundy-light rounded-xl shadow-sm transition-all"
           >
             <Filter className="h-3.5 w-3.5" />
             <span>Export Data</span>
@@ -247,7 +245,7 @@ export const AdminDashboard: React.FC = () => {
 
           <button
             onClick={exportTransactionsCSV}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 rounded-lg border border-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 shadow-sm transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-[#FFFCF8] hover:bg-white rounded-xl border border-[#E8E2D9] dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 shadow-sm transition-colors"
           >
             <Download className="h-3.5 w-3.5" />
             <span>Quick CSV</span>
@@ -302,30 +300,32 @@ export const AdminDashboard: React.FC = () => {
       )}
 
       {/* Sub-Tabs Navigation */}
-      <div className="mt-6 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
-        <nav className="flex space-x-6">
+      <div className="mt-8 border-b border-[#E8E2D9] dark:border-slate-800 overflow-x-auto">
+        <nav className="flex gap-5">
           {[
-            { id: 'analytics', label: 'Financial Analytics' },
-            { id: 'awc-dcb', label: 'AWC DCB & DCU Bank' },
-            { id: 'pledges', label: `Pledge Gap Analysis (${pledges.length})` },
-            { id: 'transactions', label: `Transactions (${donations.length})` },
-            { id: 'donors', label: `Donor CRM (${donors.length})` },
-            { id: 'rbac', label: 'RBAC & Security' },
-            { id: 'audit', label: `Audit Trails (${auditLogs.length})` },
-            { id: 'privacy', label: 'GDPR / CCPA' },
-            { id: 'offline', label: `Offline Sync (${offlineGifts.filter((g) => !g.synced).length})` },
+            { id: 'analytics', label: 'Financial Analytics', count: null as number | null },
+            { id: 'awc-dcb', label: 'AWC DCB & DCU Bank', count: null },
+            { id: 'pledges', label: 'Pledge Gap Analysis', count: pledges.length },
+            { id: 'transactions', label: 'Transactions', count: donations.length },
+            { id: 'donors', label: 'Donor CRM', count: donors.length },
+            { id: 'rbac', label: 'RBAC & Security', count: null },
+            { id: 'audit', label: 'Audit Trails', count: auditLogs.length },
+            { id: 'privacy', label: 'GDPR / CCPA', count: null },
+            { id: 'offline', label: 'Offline Sync', count: offlineGifts.filter((g) => !g.synced).length },
           ].map((tab) => (
-
             <button
               key={tab.id}
               onClick={() => setActiveAdminSubTab(tab.id as any)}
-              className={`py-3 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${
+              className={`py-3 text-xs whitespace-nowrap border-b-2 transition-colors ${
                 activeAdminSubTab === tab.id
-                  ? 'border-church-gold/50 text-church-burgundy dark:border-church-gold dark:text-church-gold-light font-semibold'
-                  : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                  ? 'border-church-burgundy text-church-burgundy dark:border-church-gold dark:text-church-gold-light font-semibold'
+                  : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 font-medium'
               }`}
             >
               {tab.label}
+              {tab.count !== null ? (
+                <span className="ml-1.5 font-normal text-slate-400 dark:text-slate-500">{tab.count}</span>
+              ) : null}
             </button>
           ))}
         </nav>
@@ -333,55 +333,54 @@ export const AdminDashboard: React.FC = () => {
 
       {/* SUB-TAB 1: Financial Analytics & Stakeholder KPIs */}
       {activeAdminSubTab === 'analytics' && (
-        <div className="mt-8 space-y-8">
+        <div className="mt-10 space-y-10">
           
           {/* Top KPI Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            <div className="h-full flex flex-col p-6 bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 shadow-sm">
+              <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">
                 Total Giving (YTD)
               </span>
-              <p className="font-mono text-2xl font-bold text-slate-900 dark:text-white tabular-nums mt-1">
+              <p className="font-mono text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-white tabular-nums mt-3 tracking-tight">
                 ${totalGivingYTD.toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </p>
-              <div className="mt-2 text-[11px] text-emerald-600 flex items-center gap-1">
-                <TrendingUp className="h-3 w-3" />
-                <span>+18.4% compared to prior tax year</span>
-              </div>
+              <p className="mt-auto pt-3 text-[11px] text-slate-500">
+                +18.4% compared to prior tax year
+              </p>
             </div>
 
-            <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+            <div className="h-full flex flex-col p-6 bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 shadow-sm">
+              <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">
                 Monthly Recurring Run-Rate
               </span>
-              <p className="font-mono text-2xl font-bold text-church-burgundy dark:text-church-gold tabular-nums mt-1">
+              <p className="font-mono text-2xl sm:text-3xl font-semibold text-church-burgundy dark:text-church-gold tabular-nums mt-3 tracking-tight">
                 ${recurringMonthlyRunRate.toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </p>
-              <p className="mt-2 text-[11px] text-slate-500">
+              <p className="mt-auto pt-3 text-[11px] text-slate-500">
                 From {recurringDonorsCount} active recurring givers
               </p>
             </div>
 
-            <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+            <div className="h-full flex flex-col p-6 bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 shadow-sm">
+              <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">
                 Average Gift Size
               </span>
-              <p className="font-mono text-2xl font-bold text-slate-900 dark:text-white tabular-nums mt-1">
+              <p className="font-mono text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-white tabular-nums mt-3 tracking-tight">
                 ${averageGiftSize.toFixed(2)}
               </p>
-              <p className="mt-2 text-[11px] text-slate-500">
+              <p className="mt-auto pt-3 text-[11px] text-slate-500">
                 Across {completedDonations.length} completed gifts
               </p>
             </div>
 
-            <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+            <div className="h-full flex flex-col p-6 bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 shadow-sm">
+              <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">
                 Donor-Covered Stripe Fees
               </span>
-              <p className="font-mono text-2xl font-bold text-emerald-700 dark:text-emerald-400 tabular-nums mt-1">
+              <p className="font-mono text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-white tabular-nums mt-3 tracking-tight">
                 ${totalFeesCovered.toFixed(2)}
               </p>
-              <p className="mt-2 text-[11px] text-slate-500">
+              <p className="mt-auto pt-3 text-[11px] text-slate-500">
                 Saved 100% of processing overhead
               </p>
             </div>
@@ -397,75 +396,72 @@ export const AdminDashboard: React.FC = () => {
           <DonorTenurePieChart />
 
           {/* Pledge Gap Overview Banner */}
-          <div className="bg-church-gold/10 dark:bg-church-burgundy/30 rounded-xl border border-church-gold/30 dark:border-church-gold/30 p-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+          <div className="bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 border-l-4 border-l-[#D4AF37] p-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
               <div>
-                <div className="flex items-center gap-2">
-                  <Target className="h-4 w-4 text-church-burgundy dark:text-church-gold" />
-                  <span className="text-xs font-semibold uppercase tracking-wider text-church-burgundy dark:text-church-gold-light">
-                    {selectedPledgeYear} Annual Faith Commitment Gap Analysis
-                  </span>
-                </div>
-                <h4 className="font-serif-display text-base font-bold text-slate-900 dark:text-white mt-1">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  {selectedPledgeYear} Annual Faith Commitment Gap Analysis
+                </span>
+                <h4 className="font-serif-display text-lg font-semibold text-slate-900 dark:text-white mt-1">
                   Pledged Commitments vs. Received Contributions
                 </h4>
               </div>
 
               <button
                 onClick={() => setActiveAdminSubTab('pledges')}
-                className="px-3 py-1.5 bg-church-burgundy hover:bg-church-burgundy-light text-white text-xs font-semibold rounded-lg shadow-sm self-start sm:self-auto flex items-center gap-1.5 transition-colors"
+                className="px-3 py-1.5 bg-church-burgundy hover:bg-church-burgundy-light text-white text-xs font-semibold rounded-xl shadow-sm self-start sm:self-auto flex items-center gap-1.5 transition-colors"
               >
                 <span>Full Gap Analysis &amp; Ledger</span>
                 <ExternalLink className="h-3.5 w-3.5" />
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 text-xs mb-4">
-              <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
-                <span className="text-slate-500 block text-[10px] uppercase">Total Pledged</span>
-                <span className="font-mono text-lg font-bold text-slate-900 dark:text-white tabular-nums mt-0.5 block">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-6 text-xs mb-5">
+              <div>
+                <span className="text-slate-500 block text-[11px] font-medium uppercase tracking-wider">Total Pledged</span>
+                <span className="font-mono text-xl font-semibold text-slate-900 dark:text-white tabular-nums mt-1.5 block">
                   ${pledgeGapSummary.totalPledged.toLocaleString()}
                 </span>
-                <span className="text-[10px] text-slate-400">From {pledgeGapSummary.totalPledgesCount} commitments</span>
+                <span className="text-[11px] text-slate-400 mt-1 block">From {pledgeGapSummary.totalPledgesCount} commitments</span>
               </div>
 
-              <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
-                <span className="text-slate-500 block text-[10px] uppercase">Received toward Pledges</span>
-                <span className="font-mono text-lg font-bold text-emerald-700 dark:text-emerald-400 tabular-nums mt-0.5 block">
+              <div>
+                <span className="text-slate-500 block text-[11px] font-medium uppercase tracking-wider">Received toward Pledges</span>
+                <span className="font-mono text-xl font-semibold text-slate-900 dark:text-white tabular-nums mt-1.5 block">
                   ${pledgeGapSummary.totalReceived.toLocaleString()}
                 </span>
-                <span className="text-[10px] text-slate-400">{pledgeGapSummary.fulfilledPledgesCount} covenants fully met</span>
+                <span className="text-[11px] text-slate-400 mt-1 block">{pledgeGapSummary.fulfilledPledgesCount} covenants fully met</span>
               </div>
 
-              <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
-                <span className="text-slate-500 block text-[10px] uppercase">Net Remaining Gap</span>
-                <span className="font-mono text-lg font-bold text-church-burgundy dark:text-church-gold-light tabular-nums mt-0.5 block">
+              <div>
+                <span className="text-slate-500 block text-[11px] font-medium uppercase tracking-wider">Net Remaining Gap</span>
+                <span className="font-mono text-xl font-semibold text-church-burgundy dark:text-church-gold-light tabular-nums mt-1.5 block">
                   ${pledgeGapSummary.netGap.toLocaleString()}
                 </span>
-                <span className="text-[10px] text-slate-400">Needed to meet covenants</span>
+                <span className="text-[11px] text-slate-400 mt-1 block">Needed to meet covenants</span>
               </div>
 
-              <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
-                <span className="text-slate-500 block text-[10px] uppercase">Fulfillment Rate</span>
-                <span className="font-mono text-lg font-bold text-slate-900 dark:text-white tabular-nums mt-0.5 block">
+              <div>
+                <span className="text-slate-500 block text-[11px] font-medium uppercase tracking-wider">Fulfillment Rate</span>
+                <span className="font-mono text-xl font-semibold text-slate-900 dark:text-white tabular-nums mt-1.5 block">
                   {pledgeGapSummary.percentFulfilled}%
                 </span>
-                <span className="text-[10px] text-emerald-600">Active stewardship pace</span>
+                <span className="text-[11px] text-slate-400 mt-1 block">Active stewardship pace</span>
               </div>
             </div>
 
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs">
-                <span className="text-slate-600 dark:text-slate-400">
+                <span className="text-slate-500 dark:text-slate-400">
                   Annual Commitment Fulfillment Progress
                 </span>
-                <span className="font-mono font-bold text-slate-900 dark:text-white">
+                <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">
                   ${pledgeGapSummary.totalReceived.toLocaleString()} / ${pledgeGapSummary.totalPledged.toLocaleString()} ({pledgeGapSummary.percentFulfilled}%)
                 </span>
               </div>
-              <div className="h-3 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden p-0.5">
+              <div className="h-2 w-full bg-[#E8E2D9]/80 dark:bg-slate-800 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-church-burgundy-light dark:bg-church-gold rounded-full transition-all duration-700"
+                  className="h-full bg-church-burgundy dark:bg-church-gold rounded-full transition-all duration-700"
                   style={{ width: `${Math.min(100, pledgeGapSummary.percentFulfilled)}%` }}
                 />
               </div>
@@ -473,28 +469,28 @@ export const AdminDashboard: React.FC = () => {
           </div>
 
           {/* Fund Allocation Distribution */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
-            <h3 className="font-serif-display text-base font-bold text-slate-900 dark:text-white mb-4">
+          <div className="bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 p-6 shadow-sm">
+            <h3 className="font-serif-display text-lg font-semibold text-slate-900 dark:text-white mb-5">
               Fund Stewardship Breakdown
             </h3>
-            <div className="space-y-4">
+            <div className="space-y-5">
               {funds.map((f) => {
                 const percent = Math.min(100, (f.currentAmount / f.goalAmount) * 100);
                 return (
-                  <div key={f.id} className="space-y-1.5 text-xs">
+                  <div key={f.id} className="space-y-2 text-xs">
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-2">
-                        <span className="font-semibold text-slate-900 dark:text-white">{f.name}</span>
-                        <span className="font-mono text-[10px] text-slate-400">({f.code})</span>
+                        <span className="font-medium text-slate-900 dark:text-white">{f.name}</span>
+                        <span className="font-mono text-[10px] text-slate-400">{f.code}</span>
                       </div>
                       <div className="font-mono tabular-nums text-right">
-                        <span className="font-bold text-slate-900 dark:text-white">${f.currentAmount.toLocaleString()}</span>
+                        <span className="font-semibold text-slate-900 dark:text-white">${f.currentAmount.toLocaleString()}</span>
                         <span className="text-slate-400"> / ${f.goalAmount.toLocaleString()}</span>
                       </div>
                     </div>
-                    <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                    <div className="h-1.5 w-full bg-[#E8E2D9]/70 dark:bg-slate-800 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-church-burgundy-light dark:bg-church-gold rounded-full"
+                        className="h-full bg-church-burgundy dark:bg-church-gold rounded-full"
                         style={{ width: `${percent}%` }}
                       />
                     </div>
@@ -506,49 +502,49 @@ export const AdminDashboard: React.FC = () => {
 
           {/* Giving Velocity Monthly Projection */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
-              <h3 className="font-serif-display text-base font-bold text-slate-900 dark:text-white mb-2">
+            <div className="bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 p-6 shadow-sm">
+              <h3 className="font-serif-display text-lg font-semibold text-slate-900 dark:text-white mb-1">
                 Payment Channel Distribution
               </h3>
-              <p className="text-xs text-slate-500 mb-4">Breakdown by processing method in Stripe</p>
+              <p className="text-xs text-slate-500 mb-5">Breakdown by processing method in Stripe</p>
               
-              <div className="space-y-3 text-xs">
-                <div className="flex justify-between items-center p-2 rounded bg-slate-50 dark:bg-slate-800/40">
-                  <span className="font-medium">Credit / Debit Cards (Visa, MC, Amex)</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">68.2%</span>
+              <div className="divide-y divide-[#E8E2D9] dark:divide-slate-800 text-xs">
+                <div className="flex justify-between items-center py-3">
+                  <span className="text-slate-600 dark:text-slate-300">Credit / Debit Cards (Visa, MC, Amex)</span>
+                  <span className="font-mono font-semibold text-slate-900 dark:text-white">68.2%</span>
                 </div>
-                <div className="flex justify-between items-center p-2 rounded bg-slate-50 dark:bg-slate-800/40">
-                  <span className="font-medium">Bank ACH Direct Debit (Tithing)</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">24.5%</span>
+                <div className="flex justify-between items-center py-3">
+                  <span className="text-slate-600 dark:text-slate-300">Bank ACH Direct Debit (Tithing)</span>
+                  <span className="font-mono font-semibold text-slate-900 dark:text-white">24.5%</span>
                 </div>
-                <div className="flex justify-between items-center p-2 rounded bg-slate-50 dark:bg-slate-800/40">
-                  <span className="font-medium">Digital Wallets (Apple Pay, Google Pay)</span>
-                  <span className="font-mono font-bold text-slate-900 dark:text-white">7.3%</span>
+                <div className="flex justify-between items-center py-3">
+                  <span className="text-slate-600 dark:text-slate-300">Digital Wallets (Apple Pay, Google Pay)</span>
+                  <span className="font-mono font-semibold text-slate-900 dark:text-white">7.3%</span>
                 </div>
               </div>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
-              <h3 className="font-serif-display text-base font-bold text-slate-900 dark:text-white mb-2">
+            <div className="bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 p-6 shadow-sm">
+              <h3 className="font-serif-display text-lg font-semibold text-slate-900 dark:text-white mb-1">
                 Stewardship Governance Status
               </h3>
-              <p className="text-xs text-slate-500 mb-4">Regulatory &amp; compliance health check</p>
+              <p className="text-xs text-slate-500 mb-5">Regulatory &amp; compliance health check</p>
               
-              <div className="space-y-2.5 text-xs">
-                <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
-                  <CheckCircle className="h-4 w-4 shrink-0" />
+              <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-church-burgundy dark:text-church-gold" />
                   <span>IRS 501(c)(3) tax exemption active and verified (EIN: 47-3829104)</span>
                 </div>
-                <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
-                  <CheckCircle className="h-4 w-4 shrink-0" />
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-slate-400" />
                   <span>Stripe TLS 1.3 tokenization active (zero plain card data stored)</span>
                 </div>
-                <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
-                  <CheckCircle className="h-4 w-4 shrink-0" />
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-slate-400" />
                   <span>GDPR / CCPA consent logging enabled with immutable event hash</span>
                 </div>
-                <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
-                  <CheckCircle className="h-4 w-4 shrink-0" />
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-slate-400" />
                   <span>Continuous backup &amp; cryptographically linked audit ledger</span>
                 </div>
               </div>
@@ -569,19 +565,16 @@ export const AdminDashboard: React.FC = () => {
 
       {/* SUB-TAB: Pledges & Gap Analysis */}
       {activeAdminSubTab === 'pledges' && (
-        <div className="mt-8 space-y-8">
+        <div className="mt-10 space-y-10">
           
           {/* Controls Bar */}
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 gap-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-[#FFFCF8] dark:bg-slate-900 p-5 rounded-xl border border-[#E8E2D9] dark:border-slate-800 gap-4 shadow-sm">
             <div>
-              <div className="flex items-center gap-2">
-                <Target className="h-4 w-4 text-church-burgundy dark:text-church-gold" />
-                <h3 className="font-serif-display text-sm font-bold text-slate-900 dark:text-white">
-                  Annual Faith Commitment &amp; Gap Reconciliation ({selectedPledgeYear})
-                </h3>
-              </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Calculate and reconcile the variance between pledged financial commitments and actual received contributions.
+              <h3 className="font-serif-display text-base font-semibold text-slate-900 dark:text-white">
+                Annual Faith Commitment &amp; Gap Reconciliation ({selectedPledgeYear})
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Variance between pledged financial commitments and actual received contributions.
               </p>
             </div>
 
@@ -589,7 +582,7 @@ export const AdminDashboard: React.FC = () => {
               <select
                 value={selectedPledgeYear}
                 onChange={(e) => setSelectedPledgeYear(Number(e.target.value))}
-                className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium"
+                className="text-xs px-3 py-1.5 rounded-xl border border-[#E8E2D9] dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium"
               >
                 <option value={2026}>Tax Year 2026</option>
                 <option value={2025}>Tax Year 2025</option>
@@ -597,7 +590,7 @@ export const AdminDashboard: React.FC = () => {
 
               <button
                 onClick={exportPledgesCSV}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 rounded-lg border border-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 shadow-sm transition-colors whitespace-nowrap"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 rounded-xl border border-[#E8E2D9] dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 shadow-sm transition-colors whitespace-nowrap"
               >
                 <Download className="h-3.5 w-3.5" />
                 <span>Export Pledge Reconciliation CSV</span>
@@ -606,65 +599,65 @@ export const AdminDashboard: React.FC = () => {
           </div>
 
           {/* 4 Summary Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            <div className="h-full flex flex-col p-6 bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 shadow-sm">
+              <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">
                 Total Pledged Commitment
               </span>
-              <p className="font-mono text-2xl font-bold text-slate-900 dark:text-white tabular-nums mt-1">
+              <p className="font-mono text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-white tabular-nums mt-3 tracking-tight">
                 ${pledgeGapSummary.totalPledged.toLocaleString()}
               </p>
-              <p className="mt-2 text-[11px] text-slate-500">
+              <p className="mt-auto pt-3 text-[11px] text-slate-500">
                 From {pledgeGapSummary.totalPledgesCount} committed member covenants
               </p>
             </div>
 
-            <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+            <div className="h-full flex flex-col p-6 bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 shadow-sm">
+              <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">
                 Received toward Pledges
               </span>
-              <p className="font-mono text-2xl font-bold text-emerald-700 dark:text-emerald-400 tabular-nums mt-1">
+              <p className="font-mono text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-white tabular-nums mt-3 tracking-tight">
                 ${pledgeGapSummary.totalReceived.toLocaleString()}
               </p>
-              <p className="mt-2 text-[11px] text-emerald-600">
+              <p className="mt-auto pt-3 text-[11px] text-slate-500">
                 {pledgeGapSummary.fulfilledPledgesCount} covenants fully fulfilled
               </p>
             </div>
 
-            <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+            <div className="h-full flex flex-col p-6 bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 shadow-sm">
+              <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">
                 Net Remaining Gap
               </span>
-              <p className="font-mono text-2xl font-bold text-church-burgundy dark:text-church-gold-light tabular-nums mt-1">
+              <p className="font-mono text-2xl sm:text-3xl font-semibold text-church-burgundy dark:text-church-gold-light tabular-nums mt-3 tracking-tight">
                 ${pledgeGapSummary.netGap.toLocaleString()}
               </p>
-              <p className="mt-2 text-[11px] text-slate-500">
+              <p className="mt-auto pt-3 text-[11px] text-slate-500">
                 Outstanding balance to meet annual budget
               </p>
             </div>
 
-            <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+            <div className="h-full flex flex-col p-6 bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 shadow-sm">
+              <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">
                 Fulfillment Pace
               </span>
-              <p className="font-mono text-2xl font-bold text-slate-900 dark:text-white tabular-nums mt-1">
+              <p className="font-mono text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-white tabular-nums mt-3 tracking-tight">
                 {pledgeGapSummary.percentFulfilled}%
               </p>
-              <p className="mt-2 text-[11px] text-slate-500">
+              <p className="mt-auto pt-3 text-[11px] text-slate-500">
                 {pledgeGapSummary.activePledgesCount} pledges actively in progress
               </p>
             </div>
           </div>
 
           {/* Fund-by-Fund Gap Analysis Table */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+          <div className="bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 shadow-sm overflow-hidden">
+            <div className="px-6 py-5 border-b border-[#E8E2D9] dark:border-slate-800 flex justify-between items-center">
               <div>
-                <h4 className="font-serif-display text-sm font-bold text-slate-900 dark:text-white">
+                <h4 className="font-serif-display text-base font-semibold text-slate-900 dark:text-white">
                   Ministry Fund Pledge Gap Breakdown
                 </h4>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Calculated variance between promised campaign pledges and recorded contributions per fund
+                  Variance between promised campaign pledges and recorded contributions per fund
                 </p>
               </div>
             </div>
@@ -690,7 +683,7 @@ export const AdminDashboard: React.FC = () => {
                       <td className="px-6 py-4 text-right font-mono font-bold text-slate-900 dark:text-white tabular-nums">
                         ${item.totalPledged.toLocaleString()}
                       </td>
-                      <td className="px-6 py-4 text-right font-mono font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                      <td className="px-6 py-4 text-right font-mono font-semibold text-slate-900 dark:text-white tabular-nums">
                         ${item.totalReceived.toLocaleString()}
                       </td>
                       <td className="px-6 py-4 text-right font-mono font-bold text-church-burgundy dark:text-church-gold-light tabular-nums">
@@ -720,14 +713,14 @@ export const AdminDashboard: React.FC = () => {
           </div>
 
           {/* Individual Donor Pledge Registry */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+          <div className="bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 shadow-sm overflow-hidden">
+            <div className="px-6 py-5 border-b border-[#E8E2D9] dark:border-slate-800 flex justify-between items-center">
               <div>
-                <h4 className="font-serif-display text-sm font-bold text-slate-900 dark:text-white">
+                <h4 className="font-serif-display text-base font-semibold text-slate-900 dark:text-white">
                   Congregational Pledge Covenant Registry ({selectedPledgeYear})
                 </h4>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Track individual pledge fulfillment progress and stewardship communication status
+                  Individual pledge fulfillment progress and stewardship communication status
                 </p>
               </div>
             </div>
@@ -751,20 +744,20 @@ export const AdminDashboard: React.FC = () => {
                     .map((p) => {
                       const gap = Math.max(0, p.committedAmount - p.fulfilledAmount);
                       let statusBadge = (
-                        <span className="px-2 py-0.5 text-[10px] font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 rounded">
+                        <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
                           In Progress
                         </span>
                       );
 
                       if (p.fulfilledAmount >= p.committedAmount) {
                         statusBadge = (
-                          <span className="px-2 py-0.5 text-[10px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 rounded">
+                          <span className="text-[11px] font-medium text-slate-700 dark:text-slate-300">
                             Fulfilled
                           </span>
                         );
                       } else if (p.status === 'ahead') {
                         statusBadge = (
-                          <span className="px-2 py-0.5 text-[10px] font-semibold bg-church-gold/10 text-church-burgundy dark:bg-church-burgundy/40 dark:text-church-gold-light rounded">
+                          <span className="text-[11px] font-medium text-church-burgundy dark:text-church-gold">
                             Ahead of Pace
                           </span>
                         );
@@ -782,7 +775,7 @@ export const AdminDashboard: React.FC = () => {
                           <td className="px-6 py-3.5 text-right font-mono font-bold text-slate-900 dark:text-white tabular-nums">
                             ${p.committedAmount.toLocaleString()}
                           </td>
-                          <td className="px-6 py-3.5 text-right font-mono font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                          <td className="px-6 py-3.5 text-right font-mono font-semibold text-slate-900 dark:text-white tabular-nums">
                             ${p.fulfilledAmount.toLocaleString()}
                           </td>
                           <td className="px-6 py-3.5 text-right font-mono font-bold text-church-burgundy dark:text-church-gold-light tabular-nums">

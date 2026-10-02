@@ -1,7 +1,7 @@
 import React from 'react';
 import { useChurch } from '../context/ChurchContext';
 import { AppPortalMode } from '../types';
-import { ShieldCheck, Lock, ArrowLeft, Users } from 'lucide-react';
+import { ShieldCheck, Lock, ArrowLeft, Users, Mail, Phone } from 'lucide-react';
 
 interface FooterProps {
   portalMode: AppPortalMode;
@@ -18,6 +18,9 @@ export const Footer: React.FC<FooterProps> = ({
   onEnterDonorPortal,
 }) => {
   const { config } = useChurch();
+
+  const locationParts = [config.address, config.cityStateZip].filter((p) => p?.trim());
+  const legalLine = [config.legalEntityName, locationParts.join(', ')].filter((p) => p?.trim()).join(' · ');
 
   return (
     <footer className="mt-20 text-white py-16 no-print" style={{ backgroundColor: '#4A0404' }}>
@@ -44,12 +47,36 @@ export const Footer: React.FC<FooterProps> = ({
                 </p>
               </div>
             </div>
-            <p className="text-[11px] text-white/50 max-w-md leading-relaxed">
-              {config.legalEntityName} · {config.address}, {config.cityStateZip}
-            </p>
-            <p className="text-[11px] text-white/40">
-              Federal Tax-Exempt Status 501(c)(3) Public Charity · EIN: {config.ein}
-            </p>
+            {legalLine ? (
+              <p className="text-[11px] text-white/50 max-w-md leading-relaxed">{legalLine}</p>
+            ) : null}
+            {config.ein?.trim() ? (
+              <p className="text-[11px] text-white/40">
+                Federal Tax-Exempt Status 501(c)(3) Public Charity · EIN: {config.ein}
+              </p>
+            ) : (
+              <p className="text-[11px] text-white/40">Federal Tax-Exempt Status 501(c)(3) Public Charity</p>
+            )}
+            <div className="flex flex-col gap-1.5 pt-1 text-[11px] text-white/55">
+              {config.email?.trim() ? (
+                <a
+                  href={`mailto:${config.email}`}
+                  className="inline-flex items-center gap-1.5 hover:text-[#D4AF37] transition-colors"
+                >
+                  <Mail className="h-3.5 w-3.5" style={{ color: '#D4AF37' }} />
+                  {config.email}
+                </a>
+              ) : null}
+              {config.phone?.trim() ? (
+                <a
+                  href={`tel:${config.phone.replace(/[^\d+]/g, '')}`}
+                  className="inline-flex items-center gap-1.5 hover:text-[#D4AF37] transition-colors"
+                >
+                  <Phone className="h-3.5 w-3.5" style={{ color: '#D4AF37' }} />
+                  {config.phone}
+                </a>
+              ) : null}
+            </div>
           </div>
 
           <div>

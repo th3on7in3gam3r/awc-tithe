@@ -58,6 +58,16 @@ app.get('/api/config', (_req, res) => {
     integrations: { stripe, plaid, dcb, database },
     dcbBookId: env.awcDcbBookId,
     giftStore: giftStoreMode(),
+    church: {
+      name: env.churchName,
+      legalEntityName: env.churchLegalName || undefined,
+      address: env.churchAddress || undefined,
+      cityStateZip: env.churchCityStateZip || undefined,
+      ein: env.churchEin || undefined,
+      phone: env.churchPhone || undefined,
+      email: env.churchSupportEmail,
+      website: env.churchWebsite,
+    },
   });
 });
 

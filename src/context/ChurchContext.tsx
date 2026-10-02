@@ -26,7 +26,7 @@ import {
   initialDcuDeposits,
   initialReconciliationDiscrepancies,
 } from '../data/initialData';
-import { recordGift, verifyStaffPortalAccess } from '../lib/api';
+import { recordGift, verifyStaffPortalAccess, fetchApiConfig } from '../lib/api';
 
 interface DonationInput {
   amount: number;
@@ -127,6 +127,13 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (!parsed.seniorPastor?.trim()) {
       parsed.seniorPastor = initialChurchConfig.seniorPastor;
     }
+    // Prefer .com church domain (legacy localStorage may still have .org)
+    if (parsed.email?.includes('anointedworshipcenter.org')) {
+      parsed.email = parsed.email.replace('anointedworshipcenter.org', 'anointedworshipcenter.com');
+    }
+    if (parsed.website?.includes('anointedworshipcenter.org')) {
+      parsed.website = parsed.website.replace('anointedworshipcenter.org', 'anointedworshipcenter.com');
+    }
     return { ...initialChurchConfig, ...parsed };
   });
 
@@ -182,6 +189,25 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   useEffect(() => {
     localStorage.setItem(`${STORAGE_KEY}_config`, JSON.stringify(config));
   }, [config]);
+
+  // Merge public church identity from server env (overrides empty local blanks)
+  useEffect(() => {
+    void fetchApiConfig().then((api) => {
+      if (!api?.church) return;
+      const c = api.church;
+      setConfig((prev) => ({
+        ...prev,
+        name: c.name?.trim() || prev.name,
+        legalEntityName: c.legalEntityName?.trim() || prev.legalEntityName,
+        address: c.address?.trim() || prev.address,
+        cityStateZip: c.cityStateZip?.trim() || prev.cityStateZip,
+        ein: c.ein?.trim() || prev.ein,
+        phone: c.phone?.trim() || prev.phone,
+        email: c.email?.trim() || prev.email,
+        website: c.website?.trim() || prev.website,
+      }));
+    });
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(`${STORAGE_KEY}_funds`, JSON.stringify(funds));

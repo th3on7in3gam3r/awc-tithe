@@ -11,13 +11,19 @@ export const MinistriesView: React.FC<MinistriesViewProps> = ({ onSelectFundToGi
   const { funds, donations } = useChurch();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
-  // Church-wide combined target and funding statistics
+  const completedDonations = donations.filter((d) => d.status === 'completed');
+  const giftRaisedByFund = completedDonations.reduce<Record<string, number>>((acc, d) => {
+    acc[d.fundId] = (acc[d.fundId] || 0) + d.amount;
+    return acc;
+  }, {});
+  // Prefer sum of completed gifts when present; else fund.currentAmount
   const totalGoalAllFunds = funds.reduce((sum, f) => sum + f.goalAmount, 0);
-  const totalRaisedAllFunds = funds.reduce((sum, f) => sum + f.currentAmount, 0);
+  const totalRaisedAllFunds = funds.reduce((sum, f) => {
+    const fromGifts = giftRaisedByFund[f.id];
+    return sum + (fromGifts !== undefined && fromGifts > 0 ? fromGifts : f.currentAmount);
+  }, 0);
   const totalPercent = totalGoalAllFunds > 0 ? (totalRaisedAllFunds / totalGoalAllFunds) * 100 : 0;
-  const totalContributorsCount = new Set(
-    donations.filter((d) => d.status === 'completed').map((d) => d.donorId)
-  ).size;
+  const totalContributorsCount = new Set(completedDonations.map((d) => d.donorId)).size;
 
   const categories = [
     { id: 'all', label: 'All Funds & Missions' },
@@ -124,9 +130,11 @@ export const MinistriesView: React.FC<MinistriesViewProps> = ({ onSelectFundToGi
               <div className="bg-slate-800/60 p-4 rounded-xl border border-slate-700/50">
                 <span className="text-[10px] uppercase text-slate-400 font-semibold block">Kingdom Givers</span>
                 <span className="font-mono text-2xl font-bold text-church-gold-light mt-1 block">
-                  {totalContributorsCount || '28'} Families
+                  {totalContributorsCount} donor{totalContributorsCount === 1 ? '' : 's'}
                 </span>
-                <span className="text-[11px] text-slate-400 mt-1 block">Active recurring &amp; one-time</span>
+                <span className="text-[11px] text-slate-400 mt-1 block">
+                  {totalContributorsCount === 0 ? 'No completed gifts yet' : 'Completed gifts on record'}
+                </span>
               </div>
             </div>
           </div>
@@ -152,12 +160,17 @@ export const MinistriesView: React.FC<MinistriesViewProps> = ({ onSelectFundToGi
       </div>
 
       {/* Funds Grid with Visual Goal Progress Bars */}
+      {filteredFunds.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 px-6 py-12 text-center">
+          <p className="text-sm text-slate-600 dark:text-slate-400">No ministry funds in this category yet.</p>
+        </div>
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {filteredFunds.map((fund) => {
           return (
             <div
               key={fund.id}
-              className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col justify-between hover:shadow-md transition-shadow group"
+              className="bg-[#FFFCF8] dark:bg-slate-900 rounded-2xl border border-[#E8E2D9] dark:border-slate-800 shadow-sm overflow-hidden flex flex-col justify-between hover:shadow-md transition-shadow group"
             >
               <div>
                 {/* Fund Image with Banner */}
@@ -169,35 +182,35 @@ export const MinistriesView: React.FC<MinistriesViewProps> = ({ onSelectFundToGi
                     className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-500"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/40 to-transparent" />
+                  <span className="absolute top-3 right-3 text-[10px] font-mono tracking-wide text-white/55">
+                    {fund.code}
+                  </span>
                   <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between">
                     <span className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold bg-white/95 text-slate-900 rounded-lg backdrop-blur-sm shadow-sm">
                       {getCategoryIcon(fund.category)}
                       <span>{fund.category}</span>
                     </span>
-                    <span className="text-xs font-mono font-medium text-slate-200 bg-black/60 px-2.5 py-1 rounded-md backdrop-blur-sm">
-                      Fund: {fund.code}
-                    </span>
                   </div>
                 </div>
 
                 {/* Fund Details & Progress */}
-                <div className="p-6">
+                <div className="p-7 sm:p-8">
                   <h3 className="font-serif-display text-xl font-bold text-slate-900 dark:text-white">
                     {fund.name}
                   </h3>
-                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-2 leading-relaxed">
+                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-3 leading-relaxed">
                     {fund.description}
                   </p>
 
                   {/* Visual Goal Progress Bar pulling reactive data from state */}
-                  <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-800">
+                  <div className="mt-7 pt-6 border-t border-slate-100 dark:border-slate-800">
                     <FundGoalProgressBar fund={fund} showMilestones={true} showStats={true} />
                   </div>
                 </div>
               </div>
 
               {/* Action Button */}
-              <div className="p-6 pt-0">
+              <div className="px-7 sm:px-8 pb-7 sm:pb-8 pt-0">
                 <button
                   onClick={() => onSelectFundToGive(fund.id)}
                   className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl dark:bg-church-burgundy dark:hover:bg-church-burgundy-light transition-colors shadow-sm"
@@ -210,6 +223,7 @@ export const MinistriesView: React.FC<MinistriesViewProps> = ({ onSelectFundToGi
           );
         })}
       </div>
+      )}
 
       {/* Stewardship Governance Guarantee Footer */}
       <div className="p-5 bg-slate-100/70 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center gap-4 text-xs text-slate-600 dark:text-slate-300">

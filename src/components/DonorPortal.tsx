@@ -4,82 +4,50 @@ import { DonationFrequency, PaymentMethod } from '../types';
 import {
   CreditCard,
   Building2,
-  Heart,
   Lock,
-  CheckCircle2,
   Sparkles,
-  Info,
   ShieldCheck,
   AlertCircle,
-  Utensils,
-  Droplets,
-  GraduationCap,
   Landmark,
-  Check,
-  Zap,
   ArrowRight,
 } from 'lucide-react';
 import { fetchApiConfig, type ApiConfig } from '../lib/api';
+import {
+  getDonorSessionEmail,
+  loadDonorProfileByEmail,
+  normalizeDonorEmail,
+  setDonorSessionEmail,
+} from '../lib/donorSession';
+import { getTangibleImpact } from '../lib/tangibleImpact';
 import { StripeCheckout } from './StripeCheckout';
 import { PlaidBankLink } from './PlaidBankLink';
 import { GivingOnboardingWizard } from './GivingOnboardingWizard';
 import { StewardshipFaq } from './StewardshipFaq';
 
-export const getTangibleImpact = (amount: number, fundId: string) => {
-  if (amount <= 0) return null;
-
-  if (fundId === 'fund-benevolence') {
-    const meals = Math.floor(amount / 5);
-    const groceryKits = Math.floor(amount / 25);
-    return {
-      category: 'Hunger Relief & Benevolence',
-      headline: `${meals} Warm Nutritious Meals`,
-      icon: Utensils,
-      description: `Your $${amount.toFixed(0)} donation provided ${meals} warm meals for local families and unhoused neighbors through our weekly food pantry.`,
-      secondary: groceryKits > 0 ? `Also funds ${groceryKits} emergency pantry grocery packs.` : undefined,
-    };
-  } else if (fundId === 'fund-missions') {
-    const filters = Math.floor(amount / 50);
-    const medicalPacks = Math.floor(amount / 20);
-    return {
-      category: 'Global Compassion & Health',
-      headline: filters > 0 ? `${filters} Gravity Clean Water Filters` : `${medicalPacks} Emergency Medical Kits`,
-      icon: Droplets,
-      description: filters > 0
-        ? `Your $${amount.toFixed(0)} gift provided ${filters} clean water filter units, supplying safe drinking water to families for 2 years.`
-        : `Your $${amount.toFixed(0)} gift provided ${medicalPacks} emergency first-aid and pediatric health kits to partner clinics.`,
-      secondary: 'Directly combating waterborne diseases in rural mission partner communities.',
-    };
-  } else if (fundId === 'fund-building') {
-    const sqft = (amount / 100).toFixed(1);
-    return {
-      category: 'Sanctuary & Community Expansion',
-      headline: `${sqft} Sq Ft of Youth Pavilion Construction`,
-      icon: Building2,
-      description: `Your $${amount.toFixed(0)} gift funded ${sqft} square feet of timber framing and classroom acoustics in our new youth community wing.`,
-      secondary: 'Building safe, welcoming fellowship spaces for the next generation.',
-    };
-  } else {
-    const mentoringHours = Math.floor(amount / 25);
-    return {
-      category: 'Pastoral Care & Youth Mentorship',
-      headline: `${mentoringHours} Hours of Pastoral Counseling`,
-      icon: GraduationCap,
-      description: `Your $${amount.toFixed(0)} donation provided ${mentoringHours} hours of pastoral grief counseling, youth discipleship, and Sunday livestreaming.`,
-      secondary: 'Sustaining biblical worship, community outreach, and chaplaincy across our city.',
-    };
-  }
-};
+export { getTangibleImpact } from '../lib/tangibleImpact';
 
 export const DonorPortal: React.FC<{
   onViewMyGiving?: (email: string) => void;
   initialMode?: 'classic' | 'guided';
-}> = ({ onViewMyGiving, initialMode = 'classic' }) => {
-  const { funds, makeDonation, addNotification } = useChurch();
+  initialFundId?: string;
+  onConsumedInitialFund?: () => void;
+}> = ({ onViewMyGiving, initialMode = 'classic', initialFundId, onConsumedInitialFund }) => {
+  const { funds, makeDonation, addNotification, donors, donations } = useChurch();
   const [giveMode, setGiveMode] = useState<'classic' | 'guided'>(initialMode);
 
   const [frequency, setFrequency] = useState<DonationFrequency>('monthly');
-  const [selectedFundId, setSelectedFundId] = useState<string>(funds[0]?.id || 'fund-tithes');
+  const [selectedFundId, setSelectedFundId] = useState<string>(
+    () => (initialFundId && funds.some((f) => f.id === initialFundId) ? initialFundId : funds[0]?.id) || 'fund-tithes'
+  );
+
+  useEffect(() => {
+    if (!initialFundId) return;
+    if (funds.some((f) => f.id === initialFundId)) {
+      setSelectedFundId(initialFundId);
+    }
+    onConsumedInitialFund?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFundId]);
   const [presetAmount, setPresetAmount] = useState<number | 'custom'>(100);
   const [customAmountStr, setCustomAmountStr] = useState<string>('');
   const [coverFees, setCoverFees] = useState<boolean>(true);
@@ -93,6 +61,15 @@ export const DonorPortal: React.FC<{
   const [donorAddress, setDonorAddress] = useState<string>('');
   const [dedication, setDedication] = useState<string>('');
   const [isAnonymous, setIsAnonymous] = useState<boolean>(false);
+  const [profileFound, setProfileFound] = useState(false);
+  const [profileLookingUp, setProfileLookingUp] = useState(false);
+  const [profileStatus, setProfileStatus] = useState<'idle' | 'found' | 'new'>('idle');
+  /** Name/address last applied by session/lookup — used so manual edits are not overwritten. */
+  const autoFilledRef = React.useRef({ name: '', address: '' });
+  const donorNameRef = React.useRef(donorName);
+  const donorAddressRef = React.useRef(donorAddress);
+  donorNameRef.current = donorName;
+  donorAddressRef.current = donorAddress;
 
   // Card details (simulator)
   const [cardNumber, setCardNumber] = useState<string>('');
@@ -117,6 +94,64 @@ export const DonorPortal: React.FC<{
 
   useEffect(() => {
     fetchApiConfig().then(setApiConfig);
+  }, []);
+
+  const applyProfilePrefill = useCallback(async (email: string, source: 'session' | 'lookup') => {
+    const normalized = normalizeDonorEmail(email);
+    if (!normalized.includes('@')) return;
+
+    setProfileLookingUp(true);
+    try {
+      const profile = await loadDonorProfileByEmail(normalized, source, {
+        donors,
+        donations,
+      });
+      setDonorEmail(profile.email);
+
+      const currentName = donorNameRef.current.trim();
+      const currentAddress = donorAddressRef.current.trim();
+      const nameIsAutoOrEmpty =
+        !currentName || currentName === autoFilledRef.current.name.trim();
+      const addressIsAutoOrEmpty =
+        !currentAddress || currentAddress === autoFilledRef.current.address.trim();
+
+      if (profile.found) {
+        if (nameIsAutoOrEmpty && profile.name) {
+          setDonorName(profile.name);
+          autoFilledRef.current.name = profile.name;
+        }
+        if (addressIsAutoOrEmpty && profile.address) {
+          setDonorAddress(profile.address);
+          autoFilledRef.current.address = profile.address;
+        }
+        setProfileFound(true);
+        setProfileStatus('found');
+      } else {
+        if (nameIsAutoOrEmpty) {
+          setDonorName('');
+          autoFilledRef.current.name = '';
+        }
+        if (addressIsAutoOrEmpty) {
+          setDonorAddress('');
+          autoFilledRef.current.address = '';
+        }
+        setProfileFound(false);
+        setProfileStatus('new');
+      }
+    } catch {
+      setProfileStatus('idle');
+    } finally {
+      setProfileLookingUp(false);
+    }
+  }, [donors, donations]);
+
+  // Prefill from My Giving session when present (once on load)
+  useEffect(() => {
+    const sessionEmail = getDonorSessionEmail();
+    if (sessionEmail) {
+      void applyProfilePrefill(sessionEmail, 'session');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const selectedFund = funds.find((f) => f.id === selectedFundId) || funds[0];
@@ -217,7 +252,9 @@ export const DonorPortal: React.FC<{
         awcSynced: overrides?.awcSynced,
       });
       if (donorEmail.trim()) {
-        setLastGiftEmail(donorEmail.trim().toLowerCase());
+        const normalized = normalizeDonorEmail(donorEmail);
+        setLastGiftEmail(normalized);
+        setDonorSessionEmail(normalized);
       }
     } catch {
       setErrorMessage('An unexpected payment error occurred. Please try again.');
@@ -227,8 +264,12 @@ export const DonorPortal: React.FC<{
     }
   };
 
+  const scrollToGiveForm = () => {
+    document.getElementById('give-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div>
       {giveMode === 'guided' ? (
         <GivingOnboardingWizard
           onExitToClassic={() => setGiveMode('classic')}
@@ -236,171 +277,154 @@ export const DonorPortal: React.FC<{
         />
       ) : (
         <>
-      {lastGiftEmail && onViewMyGiving && (
-        <div
-          className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border px-5 py-4 shadow-sm"
-          style={{
-            backgroundColor: 'rgba(74,4,4,0.06)',
-            borderColor: 'rgba(212,175,55,0.45)',
-          }}
-        >
-          <div>
-            <p className="text-sm font-semibold" style={{ color: '#4A0404' }}>
-              Gift received — thank you
-            </p>
-            <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-              View your private receipts and tax statements for {lastGiftEmail}.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => onViewMyGiving(lastGiftEmail)}
-            className="shrink-0 rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider text-white shadow-sm"
-            style={{ backgroundColor: '#4A0404' }}
-          >
-            View My Giving
-          </button>
-        </div>
-      )}
-
-      <div
-        className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border px-5 py-4"
-        style={{ borderColor: 'rgba(212,175,55,0.35)', backgroundColor: 'rgba(74,4,4,0.04)' }}
-      >
-        <div>
-          <p className="text-sm font-semibold text-slate-900 dark:text-white">Prefer a guided walkthrough?</p>
-          <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-            Warm welcome, scripture, and step-by-step giving — including an invitation to join AWC Vault if you are new.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setGiveMode('guided')}
-          className="shrink-0 inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider text-white"
-          style={{ backgroundColor: '#4A0404' }}
-        >
-          Start guided giving
-          <ArrowRight className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      {/* Vault-style burgundy hero */}
-      <div
-        className="relative mb-10 overflow-hidden rounded-2xl text-white shadow-xl"
-        style={{ background: 'linear-gradient(135deg, #2A0202 0%, #4A0404 45%, #7A1414 100%)' }}
-      >
-        <div className="absolute inset-0 z-0">
+      {/* Brand-led full-bleed hero — first viewport */}
+      <section className="relative left-1/2 right-1/2 -ml-[50vw] -mr-[50vw] w-screen min-h-[min(96vh,900px)] flex items-end overflow-hidden text-white">
+        <div className="absolute inset-0 give-hero-media">
           <img
             src="/assets/images/church_sanctuary_hero_1790791320226.jpg"
-            alt="Church sanctuary"
+            alt=""
             referrerPolicy="no-referrer"
-            className="h-full w-full object-cover object-center opacity-25"
+            className="h-full w-full object-cover object-center"
           />
           <div
             className="absolute inset-0"
             style={{
               background:
-                'linear-gradient(90deg, rgba(42,2,2,0.92) 0%, rgba(74,4,4,0.75) 55%, rgba(74,4,4,0.35) 100%)',
+                'linear-gradient(180deg, rgba(42,2,2,0.45) 0%, rgba(42,2,2,0.55) 40%, rgba(42,2,2,0.88) 100%)',
             }}
           />
         </div>
 
-        <div className="relative z-10 max-w-3xl px-6 py-12 sm:px-10 sm:py-16">
-          <div className="flex flex-wrap items-center gap-2 mb-3">
-            <span
-              className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-[0.16em]"
-              style={{ backgroundColor: 'rgba(212,175,55,0.2)', color: '#D4AF37', border: '1px solid rgba(212,175,55,0.45)' }}
-            >
-              Welcome Home
-            </span>
-            <span
-              className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-[0.16em] text-white/90"
-              style={{ backgroundColor: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)' }}
-            >
-              Faithful Stewardship
-            </span>
+        <div className="relative z-10 mx-auto w-full max-w-3xl px-6 pb-20 pt-32 sm:px-8 sm:pb-24 sm:pt-36">
+          <div className="give-hero-rise flex items-center gap-3">
+            <img
+              src="/images/awc-crest.png"
+              alt=""
+              className="h-14 w-14 sm:h-16 sm:w-16 object-contain drop-shadow-md"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src = '/images/awc-logo.png';
+              }}
+            />
+            <div>
+              <p className="font-serif-display text-2xl sm:text-3xl font-semibold tracking-tight text-white leading-none">
+                Anointed Worship Center
+              </p>
+              <p
+                className="mt-1.5 text-[11px] sm:text-xs font-semibold uppercase tracking-[0.22em]"
+                style={{ color: '#D4AF37' }}
+              >
+                AWC Tithe
+              </p>
+            </div>
           </div>
-          <h1 className="font-serif-display mt-1 text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white leading-tight">
+
+          <h1 className="give-hero-rise-delay font-serif-display mt-10 text-3xl sm:text-4xl lg:text-5xl font-semibold tracking-tight leading-[1.15] max-w-2xl text-balance">
             Giving Worship to God, Blessing Our City
           </h1>
-          <p className="mt-2 text-sm font-semibold uppercase tracking-[0.18em]" style={{ color: '#D4AF37' }}>
+          <p className="give-hero-rise-delay mt-4 text-base sm:text-lg text-white/80 max-w-md leading-relaxed">
             Where Everybody Is Somebody
           </p>
-          <blockquote className="mt-4 border-l-2 pl-4 text-sm sm:text-base italic text-white/85 font-serif" style={{ borderColor: '#D4AF37' }}>
-            "Each of you should give what you have decided in your heart to give, not reluctantly or under compulsion, for God loves a cheerful giver."
-            <footer className="mt-1 text-xs not-italic font-sans font-medium" style={{ color: '#F4CF67' }}>
-              — 2 Corinthians 9:7
-            </footer>
-          </blockquote>
-          <div className="mt-6 flex flex-wrap items-center gap-4 text-xs text-white/80">
-            <span className="flex items-center gap-1.5">
-              <ShieldCheck className="h-4 w-4" style={{ color: '#D4AF37' }} />
-              Official 501(c)(3) Tax Deductible
+
+          <p className="give-hero-rise-delay mt-6 max-w-xl text-sm sm:text-[15px] italic text-white/75 font-serif-display leading-relaxed">
+            “God loves a cheerful giver.”{' '}
+            <span className="not-italic font-sans text-xs text-white/55">— 2 Corinthians 9:7</span>
+          </p>
+
+          <div className="give-hero-rise-delay mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-white/55">
+            <span className="inline-flex items-center gap-1.5">
+              <ShieldCheck className="h-3.5 w-3.5" style={{ color: '#D4AF37' }} />
+              Stripe PCI-DSS
             </span>
-            <span aria-hidden="true">·</span>
-            <span className="flex items-center gap-1.5">
-              <Lock className="h-4 w-4" style={{ color: '#D4AF37' }} />
-              Stripe 256-Bit Encrypted
-            </span>
-            <span aria-hidden="true">·</span>
-            <span>Instant Automated Tax Receipt</span>
+            <span className="text-white/30">·</span>
+            <span>501(c)(3) receipts</span>
+            <span className="text-white/30">·</span>
+            <span>Settled to DCU</span>
+          </div>
+
+          <div className="give-hero-rise-delay mt-10 flex flex-col sm:flex-row sm:items-center gap-4">
+            <button
+              type="button"
+              onClick={scrollToGiveForm}
+              className="give-cta inline-flex items-center justify-center gap-2 rounded-xl px-7 py-3.5 text-sm font-semibold text-[#2A0202]"
+              style={{ backgroundColor: '#D4AF37' }}
+            >
+              Give now
+              <ArrowRight className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setGiveMode('guided')}
+              className="text-sm text-white/75 hover:text-white underline-offset-4 hover:underline transition-colors text-left"
+            >
+              Prefer a guided walkthrough?
+            </button>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Giving form — full width under hero; fund progress & contribution totals live in My Giving */}
-      <div className="mx-auto max-w-3xl">
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 sm:p-8">
-          
-          <form onSubmit={handleSubmit} className="space-y-6">
-            
-            {/* Step 1: Frequency Selector */}
+            {/* Quiet give form */}
+      <div className="mx-auto max-w-xl px-4 sm:px-6 py-14 sm:py-16 give-form-enter">
+        {lastGiftEmail && onViewMyGiving && (
+          <div
+            className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border px-4 py-3"
+            style={{
+              backgroundColor: 'rgba(74,4,4,0.04)',
+              borderColor: 'rgba(212,175,55,0.4)',
+            }}
+          >
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                Giving Schedule
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
-                {(['one-time', 'weekly', 'bi-weekly', 'monthly', 'annually'] as DonationFrequency[]).map((freq) => (
-                  <button
-                    key={freq}
-                    type="button"
-                    onClick={() => setFrequency(freq)}
-                    className={`py-2 px-2 text-xs font-medium rounded-md transition-all capitalize whitespace-nowrap text-center ${
-                      frequency === freq
-                        ? 'bg-white text-slate-900 shadow-sm font-semibold dark:bg-slate-900 dark:text-white'
-                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
-                    }`}
-                  >
-                    {freq === 'bi-weekly' ? 'Bi-Weekly' : freq}
-                  </button>
-                ))}
-              </div>
-              {frequency !== 'one-time' && (
-                <p className="text-xs text-church-burgundy dark:text-church-gold mt-2 flex items-center gap-1">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  <span>Recurring gifts sustain our pastors and local outreach year-round. Cancel anytime.</span>
-                </p>
-              )}
+              <p className="text-sm font-semibold" style={{ color: '#4A0404' }}>
+                Gift received — thank you
+              </p>
+              <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                View receipts and tax statements for {lastGiftEmail}.
+              </p>
             </div>
+            <button
+              type="button"
+              onClick={() => onViewMyGiving(lastGiftEmail)}
+              className="shrink-0 rounded-xl px-4 py-2 text-xs font-semibold text-white"
+              style={{ backgroundColor: '#4A0404' }}
+            >
+              View My Giving
+            </button>
+          </div>
+        )}
 
-            {/* Step 2: Amount Selector */}
+        <blockquote className="mb-10 border-l-2 pl-4 text-sm sm:text-[15px] italic text-slate-600 dark:text-slate-300 font-serif-display leading-relaxed" style={{ borderColor: '#D4AF37' }}>
+          “Each of you should give what you have decided in your heart to give, not reluctantly or under compulsion, for God loves a cheerful giver.”
+          <footer className="mt-2 text-xs not-italic font-sans font-medium text-slate-500">
+            — 2 Corinthians 9:7
+          </footer>
+        </blockquote>
+
+        <div
+          id="give-form"
+          className="scroll-mt-24 rounded-2xl border border-[#E8E2D9] bg-[#FFFCF8] p-6 sm:p-8 dark:border-slate-800 dark:bg-slate-900"
+          style={{ boxShadow: '0 10px 40px -12px rgba(74, 4, 4, 0.12), 0 2px 8px rgba(42, 2, 2, 0.04)' }}
+        >
+          <h2 className="font-serif-display text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-white mb-8">
+            Your gift
+          </h2>
+
+          <form onSubmit={handleSubmit} className="space-y-10">
+            {/* Amount */}
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Contribution Amount
-                </label>
-                <span className="text-xs text-slate-500 font-mono">USD ($)</span>
-              </div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
+                Amount
+              </label>
               <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                 {[50, 100, 250, 500].map((amt) => (
                   <button
                     key={amt}
                     type="button"
+                    aria-label={`Give $${amt}`}
+                    aria-pressed={presetAmount === amt}
                     onClick={() => {
                       setPresetAmount(amt);
                       setCustomAmountStr('');
                     }}
-                    className={`py-3 text-sm font-semibold rounded-lg border transition-all ${
+                    className={`py-3 text-sm font-semibold rounded-xl border transition-all ${
                       presetAmount === amt
                         ? ''
                         : 'border-slate-200 bg-white hover:border-slate-300 text-slate-800 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200'
@@ -416,8 +440,10 @@ export const DonorPortal: React.FC<{
                 ))}
                 <button
                   type="button"
+                  aria-label="Enter a custom gift amount"
+                  aria-pressed={presetAmount === 'custom'}
                   onClick={() => setPresetAmount('custom')}
-                  className={`py-3 text-sm font-semibold rounded-lg border transition-all ${
+                  className={`py-3 text-sm font-semibold rounded-xl border transition-all ${
                     presetAmount === 'custom'
                       ? ''
                       : 'border-slate-200 bg-white hover:border-slate-300 text-slate-800 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200'
@@ -442,143 +468,191 @@ export const DonorPortal: React.FC<{
                     placeholder="Enter custom gift amount"
                     value={customAmountStr}
                     onChange={(e) => setCustomAmountStr(e.target.value)}
-                    className="w-full pl-8 pr-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 text-sm focus:border-church-gold focus:ring-1 focus:ring-church-gold dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-900 text-sm focus:border-church-gold focus:ring-1 focus:ring-church-gold dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     required
                   />
                 </div>
               )}
 
-              {/* Dynamic Impact Metrics Display */}
               {tangibleImpact && (
-                <div className="mt-3 p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/80 dark:bg-emerald-950/30 dark:border-emerald-800/60 flex items-start gap-3 transition-all">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white dark:bg-emerald-500 shadow-sm mt-0.5">
-                    <tangibleImpact.icon className="h-4 w-4" />
-                  </div>
-                  <div className="text-xs">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-800 dark:text-emerald-400">
-                        Tangible Ministry Impact
-                      </span>
-                      <span className="text-slate-400">·</span>
-                      <span className="font-semibold text-emerald-900 dark:text-emerald-200">
-                        {tangibleImpact.headline}
-                      </span>
-                    </div>
-                    <p className="text-slate-700 dark:text-slate-300 mt-1 leading-snug">
-                      "{tangibleImpact.description}"
-                    </p>
-                    {tangibleImpact.secondary && (
-                      <p className="text-emerald-700 dark:text-emerald-400 text-[11px] mt-1 italic font-serif">
-                        {tangibleImpact.secondary}
-                      </p>
-                    )}
-                  </div>
+                <div
+                  className="mt-4 rounded-xl border border-[#B7D4C2] px-4 py-3.5"
+                  style={{
+                    backgroundColor: '#ECF5EF',
+                    borderLeftWidth: '3px',
+                    borderLeftColor: '#3D7A5A',
+                  }}
+                >
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#3D7A5A] mb-1">
+                    Tangible ministry impact
+                  </p>
+                  <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-200">
+                    <span className="font-semibold text-slate-900 dark:text-white">{tangibleImpact.headline}</span>
+                    {' — '}
+                    <span className="text-slate-600 dark:text-slate-300">{tangibleImpact.description}</span>
+                  </p>
                 </div>
               )}
             </div>
 
-            {/* Step 3: Fund Designation */}
+            {/* Schedule */}
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                Designated Ministry Fund
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
+                How often?
               </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+                {(['one-time', 'weekly', 'bi-weekly', 'monthly', 'annually'] as DonationFrequency[]).map((freq) => (
+                  <button
+                    key={freq}
+                    type="button"
+                    onClick={() => setFrequency(freq)}
+                    className={`py-2 px-2 text-xs font-medium rounded-lg transition-all capitalize whitespace-nowrap text-center ${
+                      frequency === freq
+                        ? 'bg-white text-slate-900 shadow-sm font-semibold dark:bg-slate-900 dark:text-white'
+                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    {freq === 'bi-weekly' ? 'Bi-Weekly' : freq}
+                  </button>
+                ))}
+              </div>
+              {frequency !== 'one-time' && (
+                <p className="text-xs text-church-burgundy dark:text-church-gold mt-2 flex items-center gap-1">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  <span>Recurring gifts sustain our pastors and local outreach year-round. Cancel anytime.</span>
+                </p>
+              )}
+            </div>
+
+            {/* Fund */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
+                Designate to
+              </label>
+              <div className="space-y-2">
                 {funds.map((f) => (
                   <button
                     key={f.id}
                     type="button"
+                    aria-label={`Designate gift to ${f.name}`}
+                    aria-pressed={selectedFundId === f.id}
                     onClick={() => setSelectedFundId(f.id)}
-                    className={`p-3 text-left rounded-lg border transition-all flex flex-col justify-between ${
+                    className={`w-full p-4 text-left rounded-xl border transition-all ${
                       selectedFundId === f.id
-                        ? 'border-church-gold bg-church-gold/10 dark:border-church-gold dark:bg-church-burgundy/30'
-                        : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900'
+                        ? 'border-[#D4AF37] bg-[rgba(212,175,55,0.08)]'
+                        : 'border-slate-200 bg-transparent hover:border-slate-300 dark:border-slate-700'
                     }`}
                   >
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-slate-900 dark:text-white">{f.name}</span>
-                        <span className="text-[10px] font-mono text-slate-600 dark:text-slate-300">{f.code}</span>
-                      </div>
-                      <p className="text-[11px] text-slate-600 dark:text-slate-300 line-clamp-2 mt-1 leading-snug">
-                        {f.description}
-                      </p>
-                    </div>
-                    <div className="mt-3">
-                      <div className="flex justify-between text-[10px] text-slate-600 dark:text-slate-300 mb-1">
-                        <span>
-                          Funded:{' '}
-                          {f.currentAmount >= 1000
-                            ? `$${(f.currentAmount / 1000).toFixed(0)}k`
-                            : `$${f.currentAmount.toLocaleString()}`}
-                        </span>
-                        <span>
-                          Goal:{' '}
-                          {f.goalAmount >= 1000
-                            ? `$${(f.goalAmount / 1000).toFixed(0)}k`
-                            : `$${f.goalAmount.toLocaleString()}`}
-                        </span>
-                      </div>
-                      <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-church-burgundy-light dark:bg-church-gold rounded-full"
-                          style={{
-                            width: `${f.goalAmount > 0 ? Math.min(100, (f.currentAmount / f.goalAmount) * 100) : 0}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
+                    <span className="text-sm font-semibold text-slate-900 dark:text-white">{f.name}</span>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2 leading-snug">
+                      {f.description}
+                    </p>
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Step 4: Donor Details */}
-            <div className="border-t border-slate-200 pt-5 dark:border-slate-800">
-              <span className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-                Donor Information (for 501c3 Tax Statement)
+            {/* Identity — email first for returning donors */}
+            <div className="pt-2">
+              <span className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
+                Your information
               </span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <p className="text-xs text-slate-500 mb-4 -mt-1">
+                Used only for your tax receipt and My Giving — never shown publicly.
+              </p>
+
+              <div className="space-y-3">
                 <div>
-                  <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Full Legal Name</label>
-                  <input
-                    type="text"
-                    value={donorName}
-                    onChange={(e) => setDonorName(e.target.value)}
-                    required
-                    placeholder="Your full legal name"
-                    className="w-full px-3 py-2 text-xs rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Email (for Instant Receipt)</label>
+                  <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
+                    Email on your gift receipt
+                  </label>
                   <input
                     type="email"
                     value={donorEmail}
-                    onChange={(e) => setDonorEmail(e.target.value)}
+                    onChange={(e) => {
+                      setDonorEmail(e.target.value);
+                      setProfileStatus('idle');
+                    }}
+                    onBlur={() => {
+                      const normalized = normalizeDonorEmail(donorEmail);
+                      if (normalized.includes('@')) {
+                        void applyProfilePrefill(normalized, 'lookup');
+                      }
+                    }}
                     required
                     placeholder="you@example.com"
-                    className="w-full px-3 py-2 text-xs rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-white"
+                    autoComplete="email"
+                    className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:text-white focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37]/40 outline-none"
                   />
+                  {profileLookingUp && (
+                    <p className="mt-1.5 text-[11px] text-slate-500">Looking up your giving profile…</p>
+                  )}
+                  {!profileLookingUp && (
+                    <button
+                      type="button"
+                      disabled={!normalizeDonorEmail(donorEmail).includes('@')}
+                      onClick={() => void applyProfilePrefill(donorEmail, 'lookup')}
+                      className="mt-2 text-[11px] font-semibold underline-offset-2 hover:underline disabled:opacity-40"
+                      style={{ color: '#4A0404' }}
+                    >
+                      Find my profile from prior gifts
+                    </button>
+                  )}
+                  {!profileLookingUp && profileStatus === 'found' && profileFound && (
+                    <p className="mt-1.5 text-[11px] font-medium" style={{ color: '#4A0404' }}>
+                      Welcome back{donorName ? `, ${donorName.split(' ')[0]}` : ''} — we filled your details
+                      from prior gifts. Confirm or edit below.
+                    </p>
+                  )}
+                  {!profileLookingUp && profileStatus === 'new' && (
+                    <p className="mt-1.5 text-[11px] text-slate-500">
+                      No prior gifts for this email — enter your details for this receipt.
+                    </p>
+                  )}
                 </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Mailing Address (for IRS Statement)</label>
-                  <input
-                    type="text"
-                    value={donorAddress}
-                    onChange={(e) => setDonorAddress(e.target.value)}
-                    placeholder="Street, City, State, ZIP"
-                    className="w-full px-3 py-2 text-xs rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-white"
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Dedication / Memorial Note (Optional)</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. In loving memory of grandma Ruth, or in honor of youth camp"
-                    value={dedication}
-                    onChange={(e) => setDedication(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-white"
-                  />
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="sm:col-span-2 sm:max-w-none">
+                    <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Full legal name</label>
+                    <input
+                      type="text"
+                      value={donorName}
+                      onChange={(e) => {
+                        setDonorName(e.target.value);
+                      }}
+                      required
+                      placeholder="Your full legal name"
+                      autoComplete="name"
+                      className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:text-white focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37]/40 outline-none"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
+                      Mailing address (for IRS statement)
+                    </label>
+                    <input
+                      type="text"
+                      value={donorAddress}
+                      onChange={(e) => {
+                        setDonorAddress(e.target.value);
+                      }}
+                      placeholder="Street, City, State, ZIP"
+                      autoComplete="street-address"
+                      className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:text-white focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37]/40 outline-none"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
+                      Dedication / memorial note (optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. In loving memory of grandma Ruth"
+                      value={dedication}
+                      onChange={(e) => setDedication(e.target.value)}
+                      className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:text-white focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37]/40 outline-none"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -596,16 +670,11 @@ export const DonorPortal: React.FC<{
               </div>
             </div>
 
-            {/* Step 5: Payment Processing */}
-            <div className="border-t border-slate-200 pt-5 dark:border-slate-800">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Payment Method
-                </span>
-                <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                  Card (Stripe) or Bank (Plaid) — your choice
-                </span>
-              </div>
+            {/* Payment */}
+            <div className="pt-2">
+              <span className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
+                Payment
+              </span>
 
               {/* Method Tabs */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
@@ -849,7 +918,7 @@ export const DonorPortal: React.FC<{
             </div>
 
             {/* Fee Coverage Checkbox */}
-            <div className="bg-church-gold/10 dark:bg-church-burgundy/20 p-4 rounded-lg border border-church-gold/30 dark:border-church-gold/30">
+            <div className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/50">
               <label className="flex items-start gap-2.5 cursor-pointer">
                 <input
                   type="checkbox"
@@ -881,14 +950,8 @@ export const DonorPortal: React.FC<{
             <button
               type="submit"
               disabled={isProcessing || principalAmount <= 0}
-              className="w-full py-3.5 px-4 text-white font-semibold text-sm rounded-lg shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="give-cta w-full py-3.5 px-4 text-white font-semibold text-sm rounded-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               style={{ backgroundColor: '#4A0404' }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#7A1414';
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#4A0404';
-              }}
             >
               {isProcessing ? (
                 <>
@@ -913,11 +976,11 @@ export const DonorPortal: React.FC<{
             </div>
 
           </form>
-
         </div>
 
         <StewardshipFaq />
       </div>
+
 
       {/* 3D Secure Simulation Modal */}
       {show3DSModal && (

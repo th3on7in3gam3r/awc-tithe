@@ -16,6 +16,16 @@ export interface ApiConfig {
   };
   dcbBookId: string;
   giftStore?: 'neon' | 'memory';
+  church?: {
+    name?: string;
+    legalEntityName?: string;
+    address?: string;
+    cityStateZip?: string;
+    ein?: string;
+    phone?: string;
+    email?: string;
+    website?: string;
+  };
 }
 
 export interface ServerDonor {

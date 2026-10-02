@@ -17,9 +17,11 @@ function MainApp() {
   const [activeTab, setActiveTab] = useState<string>('give');
   const [isMfaModalOpen, setIsMfaModalOpen] = useState(false);
   const [donorPortalEmail, setDonorPortalEmail] = useState<string | undefined>(undefined);
+  const [preselectedFundId, setPreselectedFundId] = useState<string | undefined>(undefined);
   const { selectedReceipt, setSelectedReceipt, isMfaVerified, resetMfa } = useChurch();
 
-  const handleSelectFundToGive = (_fundId: string) => {
+  const handleSelectFundToGive = (fundId: string) => {
+    setPreselectedFundId(fundId);
     setPortalMode('public');
     setActiveTab('give');
   };
@@ -70,7 +72,7 @@ function MainApp() {
   const staffUnlocked = portalMode === 'admin' && isMfaVerified;
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
+    <div className="min-h-screen flex flex-col bg-[#F7F4EF] dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
       <Navbar
         portalMode={portalMode}
         setPortalMode={setPortalMode}
@@ -83,7 +85,13 @@ function MainApp() {
       <main className="flex-1">
         {!staffUnlocked && (
           <>
-            {activeTab === 'give' && <DonorPortal onViewMyGiving={handleViewMyGiving} />}
+            {activeTab === 'give' && (
+              <DonorPortal
+                onViewMyGiving={handleViewMyGiving}
+                initialFundId={preselectedFundId}
+                onConsumedInitialFund={() => setPreselectedFundId(undefined)}
+              />
+            )}
             {activeTab === 'funds' && <MinistriesView onSelectFundToGive={handleSelectFundToGive} />}
             {activeTab === 'my-giving' && (
               <DonorSelfService

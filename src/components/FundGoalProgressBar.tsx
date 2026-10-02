@@ -22,10 +22,15 @@ export const FundGoalProgressBar: React.FC<FundGoalProgressBarProps> = ({
   const fundDonations = donations.filter((d) => d.fundId === fund.id && d.status === 'completed');
   const uniqueDonorsCount = new Set(fundDonations.map((d) => d.donorId)).size;
   const giftsCount = fundDonations.length;
-  const averageGift = giftsCount > 0 ? fund.currentAmount / giftsCount : 0;
+  const giftSum = fundDonations.reduce((sum, d) => sum + d.amount, 0);
+  const averageGift = giftsCount > 0 ? giftSum / giftsCount : 0;
+  const fundedAmount = giftSum > 0 ? giftSum : fund.currentAmount;
 
-  const percent = Math.min(100, Math.max(0, (fund.currentAmount / fund.goalAmount) * 100));
-  const remaining = Math.max(0, fund.goalAmount - fund.currentAmount);
+  const percent =
+    fund.goalAmount > 0
+      ? Math.min(100, Math.max(0, (fundedAmount / fund.goalAmount) * 100))
+      : 0;
+  const remaining = Math.max(0, fund.goalAmount - fundedAmount);
 
   // Status classification
   let statusBadge = {
@@ -59,30 +64,39 @@ export const FundGoalProgressBar: React.FC<FundGoalProgressBarProps> = ({
   return (
     <div className={`space-y-3 ${className}`}>
       {/* Target & Current Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-        <div className="flex items-center gap-1.5">
-          <Target className="h-4 w-4 text-church-gold-dark dark:text-church-gold" />
-          <span className="font-mono text-sm font-bold text-slate-900 dark:text-white tabular-nums">
-            ${fund.currentAmount.toLocaleString()}
-          </span>
-          <span className="text-slate-500 dark:text-slate-400 text-xs">
-            funded of <strong className="font-mono font-semibold text-slate-700 dark:text-slate-300">${fund.goalAmount.toLocaleString()}</strong> goal
-          </span>
+      <div className="flex flex-wrap items-end justify-between gap-3 text-xs">
+        <div className="space-y-0.5 min-w-0">
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <Target className="h-4 w-4 shrink-0 text-church-gold-dark dark:text-church-gold relative top-0.5" />
+            <span className="font-mono text-lg sm:text-xl font-bold text-slate-900 dark:text-white tabular-nums leading-none">
+              ${fundedAmount.toLocaleString()}
+            </span>
+            <span className="text-[11px] uppercase tracking-wider font-semibold text-slate-500 dark:text-slate-400">
+              Funded
+            </span>
+          </div>
+          <p className="text-slate-500 dark:text-slate-400 text-xs pl-6">
+            of{' '}
+            <strong className="font-mono font-semibold text-slate-600 dark:text-slate-300">
+              ${fund.goalAmount.toLocaleString()}
+            </strong>{' '}
+            goal
+          </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold inline-flex items-center gap-1 ${statusBadge.color}`}>
             <StatusIcon className="h-3 w-3" />
             <span>{statusBadge.label}</span>
           </span>
-          <span className="font-mono font-bold text-sm text-slate-900 dark:text-white">
+          <span className="font-mono font-bold text-sm text-slate-700 dark:text-slate-200">
             {percent.toFixed(1)}%
           </span>
         </div>
       </div>
 
       {/* Progress Track & Gradient Visual Bar */}
-      <div className="relative">
+      <div className="relative pt-1">
         <div className="h-3.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-200/80 dark:border-slate-700">
           <div
             className={`h-full rounded-full transition-all duration-700 shadow-sm ${
@@ -115,7 +129,7 @@ export const FundGoalProgressBar: React.FC<FundGoalProgressBarProps> = ({
               {remaining > 0 ? 'Remaining Gap' : 'Surplus Raised'}
             </span>
             <span className="font-mono font-bold text-slate-900 dark:text-white tabular-nums">
-              ${remaining > 0 ? remaining.toLocaleString() : (fund.currentAmount - fund.goalAmount).toLocaleString()}
+              ${remaining > 0 ? remaining.toLocaleString() : (fundedAmount - fund.goalAmount).toLocaleString()}
             </span>
           </div>
 
@@ -125,7 +139,7 @@ export const FundGoalProgressBar: React.FC<FundGoalProgressBarProps> = ({
               <span>Givers</span>
             </span>
             <span className="font-mono font-bold text-slate-900 dark:text-white tabular-nums">
-              {uniqueDonorsCount || '14'} donors
+              {uniqueDonorsCount} donor{uniqueDonorsCount === 1 ? '' : 's'}
             </span>
           </div>
 
@@ -135,7 +149,7 @@ export const FundGoalProgressBar: React.FC<FundGoalProgressBarProps> = ({
               <span>Avg Gift</span>
             </span>
             <span className="font-mono font-bold text-slate-900 dark:text-white tabular-nums">
-              ${averageGift > 0 ? Math.round(averageGift).toLocaleString() : '125'}
+              {averageGift > 0 ? `$${Math.round(averageGift).toLocaleString()}` : '—'}
             </span>
           </div>
         </div>

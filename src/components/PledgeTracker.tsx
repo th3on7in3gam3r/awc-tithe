@@ -105,18 +105,15 @@ export const PledgeTracker: React.FC<PledgeTrackerProps> = ({ onNavigateToGive, 
     <div className="space-y-6">
       
       {/* Pledge Tracker Main Card */}
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
+      <div className="bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 p-6 shadow-sm">
         
         {/* Header with Year Selector & Status */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-5 border-b border-slate-100 dark:border-slate-800 gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between pb-5 border-b border-[#E8E2D9] dark:border-slate-800 gap-4">
           <div>
-            <div className="flex items-center gap-2">
-              <Target className="h-4 w-4 text-church-gold-dark dark:text-church-gold" />
-              <span className="text-xs font-semibold uppercase tracking-wider text-church-burgundy dark:text-church-gold">
-                Annual Faith Commitment
-              </span>
-            </div>
-            <h2 className="font-serif-display text-xl font-bold text-slate-900 dark:text-white mt-1">
+            <span className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Annual Faith Commitment
+            </span>
+            <h2 className="font-serif-display text-xl font-semibold text-slate-900 dark:text-white mt-1">
               Annual Pledge Tracker ({selectedYear})
             </h2>
           </div>
@@ -341,17 +338,18 @@ export const PledgeTracker: React.FC<PledgeTrackerProps> = ({ onNavigateToGive, 
 
           </div>
         ) : (
-          <div className="mt-6 text-center py-8 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
-            <Heart className="h-8 w-8 text-church-gold-dark/60 mx-auto mb-2" />
-            <h3 className="font-serif-display font-semibold text-sm text-slate-900 dark:text-white">
-              No Faith Pledge Registered for {selectedYear}
+          <div className="mt-6 text-center py-10 px-5 rounded-xl border border-dashed border-[#E8E2D9] dark:border-slate-700 bg-white/60 dark:bg-slate-800/30">
+            <Heart className="h-7 w-7 text-church-burgundy/50 mx-auto mb-3" />
+            <h3 className="font-serif-display font-semibold text-base text-slate-900 dark:text-white">
+              Begin your {selectedYear} faith pledge
             </h3>
-            <p className="text-xs text-slate-500 max-w-md mx-auto mt-1 mb-4">
-              Commit your prayerful giving goal for this year to help Anointed Worship Center plan annual ministry missions.
+            <p className="text-sm text-slate-500 max-w-md mx-auto mt-2 mb-5 leading-relaxed">
+              A prayerful annual commitment helps Anointed Worship Center plan worship, outreach, and
+              mission with confidence—and you can adjust it anytime.
             </p>
             <button
               onClick={() => setIsEditingPledge(true)}
-              className="px-4 py-2 bg-church-burgundy hover:bg-church-burgundy-light text-white text-xs font-semibold rounded-lg shadow-sm"
+              className="px-5 py-2.5 bg-church-burgundy hover:bg-church-burgundy-light text-white text-xs font-semibold rounded-xl shadow-sm"
             >
               Set My {selectedYear} Commitment
             </button>

@@ -2,8 +2,15 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useChurch } from '../context/ChurchContext';
 import { Donation, DonationFrequency, PaymentMethod } from '../types';
 import { fetchApiConfig, submitVaultInterest, type ApiConfig } from '../lib/api';
+import {
+  getDonorSessionEmail,
+  loadDonorProfileByEmail,
+  normalizeDonorEmail,
+  setDonorSessionEmail,
+} from '../lib/donorSession';
 import { StripeCheckout } from './StripeCheckout';
 import { PlaidBankLink } from './PlaidBankLink';
+import { getTangibleImpact } from '../lib/tangibleImpact';
 import {
   ArrowLeft,
   ArrowRight,
@@ -51,7 +58,7 @@ export const GivingOnboardingWizard: React.FC<GivingOnboardingWizardProps> = ({
   onExitToClassic,
   onViewMyGiving,
 }) => {
-  const { funds, makeDonation, addNotification, setSelectedReceipt } = useChurch();
+  const { funds, makeDonation, addNotification, setSelectedReceipt, donors, donations } = useChurch();
   const [step, setStep] = useState<WizardStep>('welcome');
   const [audience, setAudience] = useState<Audience | null>(null);
   const [vaultOptIn, setVaultOptIn] = useState<boolean | null>(null);
@@ -62,6 +69,7 @@ export const GivingOnboardingWizard: React.FC<GivingOnboardingWizardProps> = ({
   const [donorEmail, setDonorEmail] = useState('');
   const [donorPhone, setDonorPhone] = useState('');
   const [donorAddress, setDonorAddress] = useState('');
+  const [dedication, setDedication] = useState('');
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'plaid'>('card');
   const [selectedFundId, setSelectedFundId] = useState(funds[0]?.id || 'fund-tithes');
@@ -74,6 +82,15 @@ export const GivingOnboardingWizard: React.FC<GivingOnboardingWizardProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [receiptNumber, setReceiptNumber] = useState<string | null>(null);
   const [completedDonation, setCompletedDonation] = useState<Donation | null>(null);
+  const [profileLookingUp, setProfileLookingUp] = useState(false);
+  const [profileStatus, setProfileStatus] = useState<'idle' | 'found' | 'new'>('idle');
+  const autoFilledRef = React.useRef({ name: '', address: '', phone: '' });
+  const donorNameRef = React.useRef(donorName);
+  const donorAddressRef = React.useRef(donorAddress);
+  const donorPhoneRef = React.useRef(donorPhone);
+  donorNameRef.current = donorName;
+  donorAddressRef.current = donorAddress;
+  donorPhoneRef.current = donorPhone;
 
   // Simulator card fields
   const [cardNumber, setCardNumber] = useState('');
@@ -86,6 +103,68 @@ export const GivingOnboardingWizard: React.FC<GivingOnboardingWizardProps> = ({
     fetchApiConfig().then(setApiConfig);
   }, []);
 
+  const applyProfilePrefill = async (email: string, source: 'session' | 'lookup') => {
+    const normalized = normalizeDonorEmail(email);
+    if (!normalized.includes('@')) return;
+
+    setProfileLookingUp(true);
+    try {
+      const profile = await loadDonorProfileByEmail(normalized, source, {
+        donors,
+        donations,
+      });
+      setDonorEmail(profile.email);
+
+      const nameIsAutoOrEmpty =
+        !donorNameRef.current.trim() ||
+        donorNameRef.current.trim() === autoFilledRef.current.name.trim();
+      const addressIsAutoOrEmpty =
+        !donorAddressRef.current.trim() ||
+        donorAddressRef.current.trim() === autoFilledRef.current.address.trim();
+      const phoneIsAutoOrEmpty =
+        !donorPhoneRef.current.trim() ||
+        donorPhoneRef.current.trim() === autoFilledRef.current.phone.trim();
+
+      if (profile.found) {
+        if (nameIsAutoOrEmpty && profile.name) {
+          setDonorName(profile.name);
+          autoFilledRef.current.name = profile.name;
+        }
+        if (addressIsAutoOrEmpty && profile.address) {
+          setDonorAddress(profile.address);
+          autoFilledRef.current.address = profile.address;
+        }
+        if (phoneIsAutoOrEmpty && profile.phone) {
+          setDonorPhone(profile.phone);
+          autoFilledRef.current.phone = profile.phone;
+        }
+        setProfileStatus('found');
+      } else {
+        if (nameIsAutoOrEmpty) {
+          setDonorName('');
+          autoFilledRef.current.name = '';
+        }
+        if (addressIsAutoOrEmpty) {
+          setDonorAddress('');
+          autoFilledRef.current.address = '';
+        }
+        setProfileStatus('new');
+      }
+    } catch {
+      setProfileStatus('idle');
+    } finally {
+      setProfileLookingUp(false);
+    }
+  };
+
+  useEffect(() => {
+    const sessionEmail = getDonorSessionEmail();
+    if (sessionEmail) {
+      void applyProfilePrefill(sessionEmail, 'session');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const selectedFund = funds.find((f) => f.id === selectedFundId) || funds[0];
   const principalAmount =
     presetAmount === 'custom' ? parseFloat(customAmountStr) || 0 : Number(presetAmount);
@@ -96,14 +175,21 @@ export const GivingOnboardingWizard: React.FC<GivingOnboardingWizardProps> = ({
         : Number((principalAmount * 0.029 + 0.3).toFixed(2))
       : 0;
   const totalCharged = Number((principalAmount + feeAmount).toFixed(2));
+  const tangibleImpact = getTangibleImpact(principalAmount, selectedFund?.id || selectedFundId);
 
   const stripeLive = Boolean(apiConfig?.integrations.stripe.configured && apiConfig.stripePublishableKey);
   const plaidLive = Boolean(apiConfig?.integrations.plaid.configured);
 
   const steps = useMemo((): WizardStep[] => {
     const base: WizardStep[] = ['welcome', 'audience'];
-    if (audience === 'new') base.push('vault');
-    base.push('frequency', 'identity', 'payMethod', 'amount', 'review', 'pay', 'success');
+    if (audience === 'new') {
+      base.push('vault', 'frequency', 'identity', 'payMethod', 'amount', 'review', 'pay', 'success');
+    } else if (audience === 'returning') {
+      // Identity early so returning donors enter email and get prefilled before the rest
+      base.push('identity', 'frequency', 'payMethod', 'amount', 'review', 'pay', 'success');
+    } else {
+      base.push('frequency', 'identity', 'payMethod', 'amount', 'review', 'pay', 'success');
+    }
     return base;
   }, [audience]);
 
@@ -157,6 +243,12 @@ export const GivingOnboardingWizard: React.FC<GivingOnboardingWizardProps> = ({
   };
 
   const handleContinue = async () => {
+    if (step === 'identity') {
+      const normalized = normalizeDonorEmail(donorEmail);
+      if (normalized.includes('@') && profileStatus === 'idle') {
+        await applyProfilePrefill(normalized, 'lookup');
+      }
+    }
     if (!validateBeforeContinue()) return;
 
     if (step === 'identity' && vaultOptIn && !vaultSubmitted) {
@@ -207,6 +299,7 @@ export const GivingOnboardingWizard: React.FC<GivingOnboardingWizardProps> = ({
         donorName: isAnonymous ? 'Anonymous' : donorName,
         donorEmail,
         donorAddress,
+        dedication: dedication.trim() || undefined,
         paymentMethod: overrides?.paymentMethod || paymentMethod,
         isAnonymous,
         stripePaymentIntentId: overrides?.stripePaymentIntentId,
@@ -220,6 +313,9 @@ export const GivingOnboardingWizard: React.FC<GivingOnboardingWizardProps> = ({
       });
       setReceiptNumber(donation.receiptNumber);
       setCompletedDonation(donation);
+      if (donorEmail.trim()) {
+        setDonorSessionEmail(donorEmail);
+      }
       // makeDonation already opens TaxReceiptModal via setSelectedReceipt;
       // keep a local copy so success can reopen the official letter.
       setStep('success');
@@ -256,7 +352,7 @@ export const GivingOnboardingWizard: React.FC<GivingOnboardingWizardProps> = ({
           onClick={onExitToClassic}
           className="text-xs font-medium text-slate-500 hover:text-[#4A0404] dark:hover:text-[#D4AF37]"
         >
-          Use classic form
+          Back to Give page
         </button>
         <span className="text-[10px] uppercase tracking-[0.16em] font-semibold" style={{ color: '#D4AF37' }}>
           Guided Giving
@@ -469,70 +565,149 @@ export const GivingOnboardingWizard: React.FC<GivingOnboardingWizardProps> = ({
   }
 
   if (step === 'identity') {
+    const isReturning = audience === 'returning';
+    const showDetails = !isReturning || profileStatus === 'found' || profileStatus === 'new';
+
     return shell(
       <div className="space-y-4">
         <h2 className="font-serif-display text-lg font-bold text-slate-900 dark:text-white">
-          Your contact for receipts
+          {profileStatus === 'found'
+            ? 'Welcome back — confirm your details'
+            : isReturning
+              ? 'Find your giving profile'
+              : 'Your contact for receipts'}
         </h2>
+        <p className="text-xs text-slate-500">
+          {isReturning && profileStatus !== 'found'
+            ? 'Enter the email from your last gift receipt. We will fill your name and address when we find a match.'
+            : 'Used only for your tax receipt and My Giving — never shown publicly.'}
+        </p>
+
         <div>
           <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-            Full name
-          </label>
-          <input
-            value={donorName}
-            onChange={(e) => setDonorName(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800"
-            placeholder="Your full legal name"
-            disabled={isAnonymous}
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-            Email
+            Email on your gift receipt
           </label>
           <input
             type="email"
             value={donorEmail}
-            onChange={(e) => setDonorEmail(e.target.value)}
+            onChange={(e) => {
+              setDonorEmail(e.target.value);
+              if (profileStatus !== 'idle') setProfileStatus('idle');
+            }}
+            onBlur={() => {
+              const normalized = normalizeDonorEmail(donorEmail);
+              if (normalized.includes('@')) {
+                void applyProfilePrefill(normalized, 'lookup');
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                const normalized = normalizeDonorEmail(donorEmail);
+                if (normalized.includes('@')) {
+                  void applyProfilePrefill(normalized, 'lookup');
+                }
+              }
+            }}
             className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800"
             placeholder="you@example.com"
             required
+            autoComplete="email"
+            autoFocus={isReturning}
           />
+          {isReturning && (
+            <button
+              type="button"
+              disabled={profileLookingUp || !normalizeDonorEmail(donorEmail).includes('@')}
+              onClick={() => void applyProfilePrefill(donorEmail, 'lookup')}
+              className="mt-2 w-full rounded-lg border border-slate-300 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              {profileLookingUp ? 'Looking up…' : 'Find my profile'}
+            </button>
+          )}
+          {profileLookingUp && !isReturning && (
+            <p className="mt-1.5 text-[11px] text-slate-500">Looking up your giving profile…</p>
+          )}
+          {!profileLookingUp && profileStatus === 'found' && (
+            <p className="mt-1.5 text-[11px] font-medium" style={{ color: '#4A0404' }}>
+              We found your giving profile
+              {donorName ? ` for ${donorName.split(' ')[0]}` : ''}. Confirm or edit below.
+            </p>
+          )}
+          {!profileLookingUp && profileStatus === 'new' && (
+            <p className="mt-1.5 text-[11px] text-slate-500">
+              No prior gifts for this email — enter your details for this receipt.
+            </p>
+          )}
         </div>
-        {vaultOptIn && (
-          <div>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-              Phone (for Vault follow-up)
+
+        {showDetails && (
+          <>
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                Full name
+              </label>
+              <input
+                value={donorName}
+                onChange={(e) => setDonorName(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800"
+                placeholder="Your full legal name"
+                disabled={isAnonymous}
+                autoComplete="name"
+              />
+            </div>
+
+            {vaultOptIn && (
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                  Phone (for Vault follow-up)
+                </label>
+                <input
+                  type="tel"
+                  value={donorPhone}
+                  onChange={(e) => setDonorPhone(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800"
+                  placeholder="(555) 555-5555"
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                Mailing address (optional)
+              </label>
+              <input
+                value={donorAddress}
+                onChange={(e) => setDonorAddress(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800"
+                placeholder="Street, City, State, ZIP"
+                autoComplete="street-address"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                Dedication (optional)
+              </label>
+              <input
+                value={dedication}
+                onChange={(e) => setDedication(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800"
+                placeholder="e.g. In loving memory of grandma Ruth"
+              />
+            </div>
+
+            <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+              <input
+                type="checkbox"
+                checked={isAnonymous}
+                onChange={(e) => setIsAnonymous(e.target.checked)}
+                className="rounded border-slate-300"
+              />
+              Keep my name anonymous in congregation listings (receipt still emailed to you)
             </label>
-            <input
-              type="tel"
-              value={donorPhone}
-              onChange={(e) => setDonorPhone(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800"
-              placeholder="(555) 555-5555"
-            />
-          </div>
+          </>
         )}
-        <div>
-          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-            Mailing address (optional)
-          </label>
-          <input
-            value={donorAddress}
-            onChange={(e) => setDonorAddress(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800"
-            placeholder="Street, City, State, ZIP"
-          />
-        </div>
-        <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
-          <input
-            type="checkbox"
-            checked={isAnonymous}
-            onChange={(e) => setIsAnonymous(e.target.checked)}
-            className="rounded border-slate-300"
-          />
-          Keep my name anonymous in congregation listings (receipt still emailed to you)
-        </label>
       </div>
     );
   }
@@ -644,6 +819,25 @@ export const GivingOnboardingWizard: React.FC<GivingOnboardingWizardProps> = ({
           />
           Cover processing fees (+${feeAmount.toFixed(2)}) so 100% of ${principalAmount.toFixed(2)} reaches ministry
         </label>
+        {tangibleImpact && (
+          <div
+            className="rounded-xl border border-[#B7D4C2] px-4 py-3.5"
+            style={{
+              backgroundColor: '#ECF5EF',
+              borderLeftWidth: '3px',
+              borderLeftColor: '#3D7A5A',
+            }}
+          >
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#3D7A5A]">
+              Tangible ministry impact
+            </p>
+            <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-200">
+              <span className="font-semibold text-slate-900 dark:text-white">{tangibleImpact.headline}</span>
+              {' — '}
+              <span className="text-slate-600 dark:text-slate-300">{tangibleImpact.description}</span>
+            </p>
+          </div>
+        )}
       </div>
     );
   }
@@ -663,6 +857,12 @@ export const GivingOnboardingWizard: React.FC<GivingOnboardingWizardProps> = ({
             <span className="text-slate-500">Fund</span>
             <span className="font-medium text-right max-w-[60%]">{selectedFund?.name}</span>
           </div>
+          {dedication.trim() ? (
+            <div className="flex justify-between gap-4">
+              <span className="text-slate-500 shrink-0">Dedication</span>
+              <span className="font-medium text-right italic">{dedication.trim()}</span>
+            </div>
+          ) : null}
           <div className="flex justify-between">
             <span className="text-slate-500">Method</span>
             <span className="font-medium">{paymentMethod === 'card' ? 'Card (Stripe)' : 'Bank (Plaid)'}</span>

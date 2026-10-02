@@ -53,3 +53,14 @@ On **Give Now**, choose **Start guided giving** for a step-by-step walkthrough (
 
 - `POST /api/gifts` — record a completed gift
 - `GET /api/gifts/by-email?email=` — private donor portal lookup
+
+### Free-tier cold start (Render sleep)
+
+Free Render web services sleep after ~15 minutes idle. The first request after sleep waits for the instance to wake; AWC Tithe shows a branded boot splash once HTML is served.
+
+To reduce sleep (does not make free tier “always on” by itself), ping health every **10–14 minutes** from an external monitor:
+
+- URL: `https://<your-service>.onrender.com/api/health`
+- Tools: [UptimeRobot](https://uptimerobot.com/), cron-job.org, GitHub Actions schedule, or a Render Cron Job that `curl`s the health endpoint
+
+Set church legal/support fields in Render env (`CHURCH_EIN`, `CHURCH_ADDRESS`, `CHURCH_CITY_STATE_ZIP`, `CHURCH_PHONE`, `CHURCH_SUPPORT_EMAIL`, etc.) — see `.env.example`. Blank values are omitted from the footer and receipts (no fake EIN).
