@@ -281,16 +281,16 @@ export const DonorPortal: React.FC<{
       <section className="relative w-full min-h-[min(96vh,900px)] flex items-end overflow-hidden text-white">
         <div className="absolute inset-0 give-hero-media">
           <img
-            src="/assets/images/church_sanctuary_hero_1790791320226.jpg"
-            alt=""
+            src="/assets/images/awc_giving_hero.jpg"
+            alt="Hands exchanging a giving envelope beside an open Bible at Anointed Worship Center"
             referrerPolicy="no-referrer"
-            className="h-full w-full object-cover object-center"
+            className="h-full w-full object-cover object-[68%_center]"
           />
           <div
             className="absolute inset-0"
             style={{
               background:
-                'linear-gradient(180deg, rgba(42,2,2,0.45) 0%, rgba(42,2,2,0.55) 40%, rgba(42,2,2,0.88) 100%)',
+                'linear-gradient(105deg, rgba(42,2,2,0.78) 0%, rgba(42,2,2,0.52) 42%, rgba(42,2,2,0.35) 70%, rgba(42,2,2,0.55) 100%), linear-gradient(180deg, rgba(42,2,2,0.25) 0%, rgba(42,2,2,0.72) 100%)',
             }}
           />
         </div>
