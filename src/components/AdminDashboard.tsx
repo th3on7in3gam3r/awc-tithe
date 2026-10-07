@@ -8,6 +8,7 @@ import { ExportDataModal } from './ExportDataModal';
 import { AwcDcbIntegrationHub } from './AwcDcbIntegrationHub';
 import { DcuBankIntegration } from './DcuBankIntegration';
 import { RealTimeReconciliationPanel } from './RealTimeReconciliationPanel';
+import { IntegrationsSettingsPanel } from './IntegrationsSettingsPanel';
 import {
   DollarSign,
   Users,
@@ -31,6 +32,7 @@ import {
 
 export const AdminDashboard: React.FC = () => {
   const {
+    config,
     donations,
     donors,
     funds,
@@ -52,7 +54,16 @@ export const AdminDashboard: React.FC = () => {
   } = useChurch();
 
   const [activeAdminSubTab, setActiveAdminSubTab] = useState<
-    'analytics' | 'transactions' | 'donors' | 'pledges' | 'awc-dcb' | 'rbac' | 'audit' | 'privacy' | 'offline'
+    | 'analytics'
+    | 'transactions'
+    | 'donors'
+    | 'pledges'
+    | 'awc-dcb'
+    | 'rbac'
+    | 'audit'
+    | 'privacy'
+    | 'offline'
+    | 'integrations'
   >('analytics');
 
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -312,6 +323,7 @@ export const AdminDashboard: React.FC = () => {
             { id: 'audit', label: 'Audit Trails', count: auditLogs.length },
             { id: 'privacy', label: 'GDPR / CCPA', count: null },
             { id: 'offline', label: 'Offline Sync', count: offlineGifts.filter((g) => !g.synced).length },
+            { id: 'integrations', label: 'Integrations & Settings', count: null },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -533,7 +545,11 @@ export const AdminDashboard: React.FC = () => {
               <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
                 <div className="flex items-start gap-2">
                   <CheckCircle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-church-burgundy dark:text-church-gold" />
-                  <span>IRS 501(c)(3) tax exemption active and verified (EIN: 47-3829104)</span>
+                  <span>
+                    {config.ein?.trim()
+                      ? `IRS 501(c)(3) tax exemption active and verified (EIN: ${config.ein.trim()})`
+                      : 'IRS 501(c)(3) tax exemption active and verified'}
+                  </span>
                 </div>
                 <div className="flex items-start gap-2">
                   <CheckCircle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-slate-400" />
@@ -1344,6 +1360,12 @@ export const AdminDashboard: React.FC = () => {
             </div>
           </div>
 
+        </div>
+      )}
+
+      {activeAdminSubTab === 'integrations' && (
+        <div className="mt-6">
+          <IntegrationsSettingsPanel />
         </div>
       )}
 

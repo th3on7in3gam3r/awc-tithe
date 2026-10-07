@@ -19,8 +19,11 @@ export const Footer: React.FC<FooterProps> = ({
 }) => {
   const { config } = useChurch();
 
-  const locationParts = [config.address, config.cityStateZip].filter((p) => p?.trim());
-  const legalLine = [config.legalEntityName, locationParts.join(', ')].filter((p) => p?.trim()).join(' · ');
+  const legalName = config.legalEntityName?.trim() || '';
+  const street = config.address?.trim() || '';
+  const cityStateZip = config.cityStateZip?.trim() || '';
+  const locationLine = [street, cityStateZip].filter(Boolean).join(', ');
+  const ein = config.ein?.trim() || '';
 
   return (
     <footer className="mt-20 text-white py-16 no-print" style={{ backgroundColor: '#4A0404' }}>
@@ -47,16 +50,18 @@ export const Footer: React.FC<FooterProps> = ({
                 </p>
               </div>
             </div>
-            {legalLine ? (
-              <p className="text-[11px] text-white/50 max-w-md leading-relaxed">{legalLine}</p>
-            ) : null}
-            {config.ein?.trim() ? (
-              <p className="text-[11px] text-white/40">
-                Federal Tax-Exempt Status 501(c)(3) Public Charity · EIN: {config.ein}
+            <div className="space-y-1 max-w-md">
+              {legalName ? (
+                <p className="text-[11px] text-white/55 leading-relaxed">{legalName}</p>
+              ) : null}
+              {locationLine ? (
+                <p className="text-[11px] text-white/45 leading-relaxed">{locationLine}</p>
+              ) : null}
+              <p className="text-[11px] text-white/40 leading-relaxed">
+                Federal Tax-Exempt Status 501(c)(3) Public Charity
+                {ein ? ` · EIN: ${ein}` : ''}
               </p>
-            ) : (
-              <p className="text-[11px] text-white/40">Federal Tax-Exempt Status 501(c)(3) Public Charity</p>
-            )}
+            </div>
             <div className="flex flex-col gap-1.5 pt-1 text-[11px] text-white/55">
               {config.email?.trim() ? (
                 <a

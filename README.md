@@ -63,4 +63,4 @@ To reduce sleep (does not make free tier “always on” by itself), ping health
 - URL: `https://<your-service>.onrender.com/api/health`
 - Tools: [UptimeRobot](https://uptimerobot.com/), cron-job.org, GitHub Actions schedule, or a Render Cron Job that `curl`s the health endpoint
 
-Set church legal/support fields in Render env (`CHURCH_EIN`, `CHURCH_ADDRESS`, `CHURCH_CITY_STATE_ZIP`, `CHURCH_PHONE`, `CHURCH_SUPPORT_EMAIL`, etc.) — see `.env.example`. Blank values are omitted from the footer and receipts (no fake EIN).
+Set church legal/support fields in Render env (`CHURCH_LEGAL_NAME`, `CHURCH_ADDRESS`, `CHURCH_CITY_STATE_ZIP`, `CHURCH_EIN`, `CHURCH_PHONE`, `CHURCH_SUPPORT_EMAIL`, etc.) — see `.env.example`. Address for AWC: `4 School St` / `Acton, MA 01720`. Leave `CHURCH_EIN` blank until the Pastor provides it; blank values are omitted from the footer and receipts (no fake EIN).

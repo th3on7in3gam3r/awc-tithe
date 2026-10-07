@@ -195,6 +195,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     void fetchApiConfig().then((api) => {
       if (!api?.church) return;
       const c = api.church;
+      // Prefer non-empty server env over stale localStorage so Render updates stick
       setConfig((prev) => ({
         ...prev,
         name: c.name?.trim() || prev.name,

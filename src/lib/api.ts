@@ -93,13 +93,21 @@ async function parseJson<T>(res: Response): Promise<T> {
 }
 
 export async function fetchApiConfig(): Promise<ApiConfig | null> {
-  try {
-    const res = await fetch('/api/config');
-    if (!res.ok) return null;
-    return (await res.json()) as ApiConfig;
-  } catch {
-    return null;
+  const attempts = 3;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetch('/api/config');
+      if (res.ok) {
+        return (await res.json()) as ApiConfig;
+      }
+    } catch {
+      // retry below
+    }
+    if (i < attempts - 1) {
+      await new Promise((r) => setTimeout(r, 400 * Math.pow(2, i)));
+    }
   }
+  return null;
 }
 
 export async function createStripePaymentIntent(body: {

@@ -66,6 +66,24 @@
         background: linear-gradient(90deg, transparent, #D4AF37, transparent);
         animation: awc-boot-pulse 1.2s ease-in-out infinite;
       }
+      #awc-boot .awc-boot-msg {
+        margin-top: 0.35rem;
+        font-size: 0.8125rem;
+        color: rgba(255, 255, 255, 0.7);
+        letter-spacing: 0.01em;
+      }
+      #awc-boot .awc-boot-hint {
+        display: none;
+        max-width: 18rem;
+        margin-top: 0.25rem;
+        font-size: 0.75rem;
+        line-height: 1.45;
+        text-align: center;
+        color: rgba(255, 255, 255, 0.5);
+      }
+      #awc-boot.awc-boot--slow .awc-boot-hint {
+        display: block;
+      }
       @keyframes awc-boot-pulse {
         0%, 100% { opacity: 0.35; transform: scaleX(0.7); }
         50% { opacity: 1; transform: scaleX(1); }
@@ -78,6 +96,10 @@
       <div class="awc-boot-brand">AWC Tithe</div>
       <div class="awc-boot-sub">Anointed Worship Center</div>
       <div class="awc-boot-pulse" aria-hidden="true"></div>
+      <p class="awc-boot-msg">Preparing secure giving…</p>
+      <p class="awc-boot-hint">
+        First visit after a quiet stretch may take a moment while the server wakes.
+      </p>
     </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
@@ -92,6 +114,12 @@
             if (el && el.parentNode) el.parentNode.removeChild(el);
           }, 400);
         };
+        setTimeout(function () {
+          var el = document.getElementById('awc-boot');
+          if (el && !el.classList.contains('awc-boot--hide')) {
+            el.classList.add('awc-boot--slow');
+          }
+        }, 2500);
         window.addEventListener('load', function () {
           setTimeout(hide, 180);
         });

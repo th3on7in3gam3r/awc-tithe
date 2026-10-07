@@ -53,6 +53,7 @@ export const DonorPortal: React.FC<{
   const [coverFees, setCoverFees] = useState<boolean>(true);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
   const [apiConfig, setApiConfig] = useState<ApiConfig | null>(null);
+  const [apiConfigLoading, setApiConfigLoading] = useState(true);
   const [lastGiftEmail, setLastGiftEmail] = useState<string | null>(null);
 
   // Donor credentials
@@ -93,7 +94,16 @@ export const DonorPortal: React.FC<{
   const plaidLive = Boolean(apiConfig?.integrations.plaid.configured);
 
   useEffect(() => {
-    fetchApiConfig().then(setApiConfig);
+    let cancelled = false;
+    setApiConfigLoading(true);
+    void fetchApiConfig().then((cfg) => {
+      if (cancelled) return;
+      setApiConfig(cfg);
+      setApiConfigLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const applyProfilePrefill = useCallback(async (email: string, source: 'session' | 'lookup') => {
@@ -295,7 +305,7 @@ export const DonorPortal: React.FC<{
           />
         </div>
 
-        <div className="relative z-10 mx-auto w-full max-w-3xl px-6 pb-20 pt-32 sm:px-8 sm:pb-24 sm:pt-36">
+        <div className="relative z-10 mx-auto w-full max-w-3xl px-6 pb-20 pt-32 sm:px-8 sm:pb-24 sm:pt-36 lg:pb-28">
           <div className="give-hero-rise flex items-center gap-3">
             <img
               src="/images/awc-crest.png"
@@ -330,7 +340,7 @@ export const DonorPortal: React.FC<{
             <span className="not-italic font-sans text-xs text-white/55">— 2 Corinthians 9:7</span>
           </p>
 
-          <div className="give-hero-rise-delay mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-white/55">
+          <div className="give-hero-rise-delay mt-5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-white/55">
             <span className="inline-flex items-center gap-1.5">
               <ShieldCheck className="h-3.5 w-3.5" style={{ color: '#D4AF37' }} />
               Stripe PCI-DSS
@@ -424,7 +434,7 @@ export const DonorPortal: React.FC<{
                       setPresetAmount(amt);
                       setCustomAmountStr('');
                     }}
-                    className={`py-3 text-sm font-semibold rounded-xl border transition-all ${
+                    className={`min-h-11 py-3.5 text-sm font-semibold rounded-xl border transition-all ${
                       presetAmount === amt
                         ? ''
                         : 'border-slate-200 bg-white hover:border-slate-300 text-slate-800 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200'
@@ -443,7 +453,7 @@ export const DonorPortal: React.FC<{
                   aria-label="Enter a custom gift amount"
                   aria-pressed={presetAmount === 'custom'}
                   onClick={() => setPresetAmount('custom')}
-                  className={`py-3 text-sm font-semibold rounded-xl border transition-all ${
+                  className={`min-h-11 py-3.5 text-sm font-semibold rounded-xl border transition-all ${
                     presetAmount === 'custom'
                       ? ''
                       : 'border-slate-200 bg-white hover:border-slate-300 text-slate-800 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200'
@@ -500,25 +510,35 @@ export const DonorPortal: React.FC<{
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
                 How often?
               </label>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
-                {(['one-time', 'weekly', 'bi-weekly', 'monthly', 'annually'] as DonationFrequency[]).map((freq) => (
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 p-1.5 bg-slate-100 dark:bg-slate-800 rounded-xl">
+                {(['one-time', 'weekly', 'bi-weekly', 'monthly', 'annually'] as DonationFrequency[]).map((freq) => {
+                  const label =
+                    freq === 'one-time'
+                      ? 'One-time'
+                      : freq === 'bi-weekly'
+                        ? 'Bi-weekly'
+                        : freq === 'annually'
+                          ? 'Annually'
+                          : freq.charAt(0).toUpperCase() + freq.slice(1);
+                  return (
                   <button
                     key={freq}
                     type="button"
                     onClick={() => setFrequency(freq)}
-                    className={`py-2 px-2 text-xs font-medium rounded-lg transition-all capitalize whitespace-nowrap text-center ${
+                    className={`min-h-10 py-2.5 px-2 text-[11px] sm:text-xs font-medium rounded-lg transition-all text-center leading-tight ${
                       frequency === freq
                         ? 'bg-white text-slate-900 shadow-sm font-semibold dark:bg-slate-900 dark:text-white'
                         : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
                     }`}
                   >
-                    {freq === 'bi-weekly' ? 'Bi-Weekly' : freq}
+                    {label}
                   </button>
-                ))}
+                  );
+                })}
               </div>
               {frequency !== 'one-time' && (
-                <p className="text-xs text-church-burgundy dark:text-church-gold mt-2 flex items-center gap-1">
-                  <Sparkles className="h-3.5 w-3.5" />
+                <p className="text-xs text-church-burgundy dark:text-church-gold mt-2 flex items-start gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                   <span>Recurring gifts sustain our pastors and local outreach year-round. Cancel anytime.</span>
                 </p>
               )}
@@ -529,7 +549,7 @@ export const DonorPortal: React.FC<{
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
                 Designate to
               </label>
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {funds.map((f) => (
                   <button
                     key={f.id}
@@ -537,7 +557,7 @@ export const DonorPortal: React.FC<{
                     aria-label={`Designate gift to ${f.name}`}
                     aria-pressed={selectedFundId === f.id}
                     onClick={() => setSelectedFundId(f.id)}
-                    className={`w-full p-4 text-left rounded-xl border transition-all ${
+                    className={`w-full min-h-[3.25rem] p-4 text-left rounded-xl border transition-all ${
                       selectedFundId === f.id
                         ? 'border-[#D4AF37] bg-[rgba(212,175,55,0.08)]'
                         : 'border-slate-200 bg-transparent hover:border-slate-300 dark:border-slate-700'
@@ -656,15 +676,15 @@ export const DonorPortal: React.FC<{
                 </div>
               </div>
 
-              <div className="mt-3 flex items-center gap-2">
+              <div className="mt-3 flex items-start gap-2">
                 <input
                   type="checkbox"
                   id="anonymous-toggle"
                   checked={isAnonymous}
                   onChange={(e) => setIsAnonymous(e.target.checked)}
-                  className="rounded border-slate-300 text-church-gold-dark focus:ring-church-gold dark:border-slate-700"
+                  className="mt-0.5 rounded border-slate-300 text-church-gold-dark focus:ring-church-gold dark:border-slate-700"
                 />
-                <label htmlFor="anonymous-toggle" className="text-xs text-slate-600 dark:text-slate-400">
+                <label htmlFor="anonymous-toggle" className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed min-w-0 flex-1">
                   Keep gift anonymous from congregation bulletins (official tax receipt will still be emailed to you)
                 </label>
               </div>
@@ -681,55 +701,61 @@ export const DonorPortal: React.FC<{
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('card')}
-                  className={`flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-medium rounded-lg border transition-all ${
+                  className={`flex items-center justify-center gap-1.5 min-h-11 py-2.5 px-3 text-xs font-medium rounded-lg border transition-all ${
                     paymentMethod === 'card'
                       ? 'border-church-gold bg-church-gold/10 text-church-burgundy font-semibold dark:border-church-gold dark:bg-church-burgundy/30 dark:text-church-gold-light'
                       : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900'
                   }`}
                 >
-                  <CreditCard className="h-3.5 w-3.5" />
+                  <CreditCard className="h-3.5 w-3.5 shrink-0" />
                   <span>Card</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('plaid')}
-                  className={`flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-medium rounded-lg border transition-all ${
+                  className={`flex items-center justify-center gap-1.5 min-h-11 py-2.5 px-3 text-xs font-medium rounded-lg border transition-all ${
                     paymentMethod === 'plaid'
                       ? 'border-church-gold bg-church-gold/10 text-church-burgundy font-semibold dark:border-church-gold dark:bg-church-burgundy/30 dark:text-church-gold-light'
                       : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900'
                   }`}
                 >
-                  <Landmark className="h-3.5 w-3.5" />
+                  <Landmark className="h-3.5 w-3.5 shrink-0" />
                   <span>Plaid Bank</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('ach')}
-                  className={`flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-medium rounded-lg border transition-all ${
+                  className={`flex items-center justify-center gap-1.5 min-h-11 py-2.5 px-3 text-xs font-medium rounded-lg border transition-all ${
                     paymentMethod === 'ach'
                       ? 'border-church-gold bg-church-gold/10 text-church-burgundy font-semibold dark:border-church-gold dark:bg-church-burgundy/30 dark:text-church-gold-light'
                       : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900'
                   }`}
                 >
-                  <Building2 className="h-3.5 w-3.5" />
+                  <Building2 className="h-3.5 w-3.5 shrink-0" />
                   <span>Manual ACH</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('apple_pay')}
-                  className={`flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-medium rounded-lg border transition-all ${
+                  className={`flex items-center justify-center gap-1.5 min-h-11 py-2.5 px-3 text-xs font-medium rounded-lg border transition-all ${
                     paymentMethod === 'apple_pay'
                       ? 'border-church-gold bg-church-gold/10 text-church-burgundy font-semibold dark:border-church-gold dark:bg-church-burgundy/30 dark:text-church-gold-light'
                       : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900'
                   }`}
                 >
-                  <Sparkles className="h-3.5 w-3.5" />
+                  <Sparkles className="h-3.5 w-3.5 shrink-0" />
                   <span>Wallet</span>
                 </button>
               </div>
 
+              {apiConfigLoading && (paymentMethod === 'card' || paymentMethod === 'plaid') && (
+                <div className="mb-4 rounded-xl border border-[#E8E2D9] bg-[#F7F4EF] px-4 py-3.5 text-sm text-slate-600">
+                  Checking payment options…
+                </div>
+              )}
+
               {/* Card Inputs — live Stripe Elements or simulator */}
-              {paymentMethod === 'card' && stripeLive && apiConfig?.stripePublishableKey && (
+              {!apiConfigLoading && paymentMethod === 'card' && stripeLive && apiConfig?.stripePublishableKey && (
                 <StripeCheckout
                   amount={principalAmount}
                   feeAmount={feeAmount}
@@ -755,7 +781,7 @@ export const DonorPortal: React.FC<{
                 />
               )}
 
-              {paymentMethod === 'card' && !stripeLive && (
+              {!apiConfigLoading && paymentMethod === 'card' && !stripeLive && (
                 <div className="space-y-3 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
                   <div>
                     <label className="block text-[11px] text-slate-500 uppercase tracking-wider mb-1">Card Number</label>
@@ -810,7 +836,7 @@ export const DonorPortal: React.FC<{
               )}
 
               {/* Plaid bank link — live or simulator */}
-              {paymentMethod === 'plaid' && plaidLive && (
+              {!apiConfigLoading && paymentMethod === 'plaid' && plaidLive && (
                 <PlaidBankLink
                   amount={principalAmount}
                   feeAmount={feeAmount}
@@ -839,7 +865,7 @@ export const DonorPortal: React.FC<{
                 />
               )}
 
-              {paymentMethod === 'plaid' && !plaidLive && (
+              {!apiConfigLoading && paymentMethod === 'plaid' && !plaidLive && (
                 <div className="space-y-3 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
                   <p className="text-slate-600 dark:text-slate-300">
                     Enter your bank details to continue. Live Plaid linking activates once bank credentials are configured.
@@ -946,11 +972,13 @@ export const DonorPortal: React.FC<{
             )}
 
             {/* Primary Submit Button — hidden when live Stripe/Plaid UI owns confirmation */}
-            {!(stripeLive && paymentMethod === 'card') && !(plaidLive && paymentMethod === 'plaid') && (
+            {!(stripeLive && paymentMethod === 'card') &&
+              !(plaidLive && paymentMethod === 'plaid') &&
+              !(apiConfigLoading && (paymentMethod === 'card' || paymentMethod === 'plaid')) && (
             <button
               type="submit"
               disabled={isProcessing || principalAmount <= 0}
-              className="give-cta w-full py-3.5 px-4 text-white font-semibold text-sm rounded-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="give-cta w-full min-h-12 py-4 px-4 text-white font-semibold text-sm rounded-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               style={{ backgroundColor: '#4A0404' }}
             >
               {isProcessing ? (
@@ -970,8 +998,8 @@ export const DonorPortal: React.FC<{
             </button>
             )}
 
-            <div className="text-center text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-center gap-2">
-              <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+            <div className="text-center text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-1">
+              <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
               <span>TLS 1.3 · Stripe PCI-DSS Level 1 · IRS 501(c)(3) Receipt Issued Immediately</span>
             </div>
 
