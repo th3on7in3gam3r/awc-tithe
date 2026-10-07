@@ -281,23 +281,89 @@ export async function verifyStaffPortalAccess(body: {
   inviteCode: string;
   authenticatorCode: string;
 }): Promise<{ ok: boolean; error?: string; message?: string }> {
-  const res = await fetch('/api/staff/verify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const data = (await res.json().catch(() => ({}))) as {
-    ok?: boolean;
-    error?: string;
-    message?: string;
-  };
-  if (!res.ok || !data.ok) {
+  try {
+    const res = await fetch('/api/staff/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(body),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      message?: string;
+    };
+    if (!res.ok || !data.ok) {
+      return {
+        ok: false,
+        error: data.error || 'Staff Portal access denied.',
+      };
+    }
+    return { ok: true, message: data.message };
+  } catch {
     return {
       ok: false,
-      error: data.error || 'Staff Portal access denied.',
+      error:
+        'Cannot reach the staff API. Locally run npm run dev:all (API on port 3001). On Render, confirm the service is awake.',
     };
   }
-  return { ok: true, message: data.message };
+}
+
+export async function fetchStaffLedger(limit = 500): Promise<{
+  donations: ServerDonation[];
+  donors: ServerDonor[];
+  mode: 'neon' | 'memory';
+}> {
+  const res = await fetch(`/api/gifts?limit=${limit}`, { credentials: 'include' });
+  if (res.status === 401) {
+    throw new Error('Staff session required. Unlock Staff Portal again.');
+  }
+  const data = await parseJson<{
+    ok: boolean;
+    mode: 'neon' | 'memory';
+    donations: ServerDonation[];
+    donors: ServerDonor[];
+  }>(res);
+  return { donations: data.donations || [], donors: data.donors || [], mode: data.mode };
+}
+
+export async function recordOfflineGift(body: {
+  amount: number;
+  donorName: string;
+  donorEmail: string;
+  fundId: string;
+  fundName: string;
+  fundCode?: string;
+  paymentMethod: string;
+  frequency?: string;
+  cardBrand?: string;
+  dedication?: string;
+  isAnonymous?: boolean;
+  transactionId?: string;
+  contributedAt?: string;
+}): Promise<{
+  donor: ServerDonor;
+  donation: ServerDonation;
+  mode: 'neon' | 'memory';
+  dcb: { ok: boolean; voucherId?: string; mock?: boolean; error?: string };
+}> {
+  const res = await fetch('/api/gifts/offline', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+  if (res.status === 401) {
+    throw new Error('Staff session required. Unlock Staff Portal again.');
+  }
+  const data = await parseJson<{
+    ok: boolean;
+    mode: 'neon' | 'memory';
+    donor: ServerDonor;
+    donation: ServerDonation;
+    dcb: { ok: boolean; voucherId?: string; mock?: boolean; error?: string };
+  }>(res);
+  return { donor: data.donor, donation: data.donation, mode: data.mode, dcb: data.dcb };
 }
 
 export async function syncDonationsToDcb(
@@ -318,7 +384,11 @@ export async function syncDonationsToDcb(
   const res = await fetch('/api/dcb/sync', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify({ donations }),
   });
+  if (res.status === 401) {
+    throw new Error('Staff session required. Unlock Staff Portal again.');
+  }
   return parseJson(res);
 }

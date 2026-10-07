@@ -24,6 +24,19 @@
 .text-church-gold { color: #d4af37 !important; }
 .text-church-gold-light { color: #f4cf67 !important; }
 .text-church-gold-dark { color: #b4942e !important; }
+
+/* Dark mode: burgundy text is unreadable on dark surfaces — lift to gold */
+.dark .text-church-burgundy,
+.dark .text-church-burgundy-light,
+.dark .text-church-burgundy-dark {
+  color: #f4cf67 !important;
+}
+.dark .text-church-burgundy\/80 {
+  color: color-mix(in srgb, #f4cf67 85%, transparent) !important;
+}
+.dark .hover\:text-church-burgundy:hover {
+  color: #f4cf67 !important;
+}
 .border-church-burgundy { border-color: #4a0404 !important; }
 .border-church-gold { border-color: #d4af37 !important; }
 .from-church-burgundy { --tw-gradient-from: #4a0404 !important; --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, transparent); }

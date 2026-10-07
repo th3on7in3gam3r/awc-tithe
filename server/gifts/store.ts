@@ -455,3 +455,36 @@ export async function listGiftsByEmail(email: string): Promise<{
   const donations = memoryDonations.filter((d) => normalizeEmail(d.donorEmail) === normalized);
   return { donor, donations, mode: 'memory' };
 }
+
+/** Staff ledger — recent gifts across all donors (Neon or memory). */
+export async function listAllGifts(limit = 500): Promise<{
+  donations: StoredDonation[];
+  donors: StoredDonor[];
+  mode: 'neon' | 'memory';
+}> {
+  const safeLimit = Math.min(Math.max(Number(limit) || 500, 1), 2000);
+  const client = getSql();
+  if (client) {
+    const donationRows = await client`
+      SELECT * FROM donations
+      ORDER BY contributed_at DESC
+      LIMIT ${safeLimit}
+    `;
+    const donorRows = await client`
+      SELECT * FROM donors
+      ORDER BY last_gift_date DESC NULLS LAST
+      LIMIT ${safeLimit}
+    `;
+    return {
+      donations: donationRows.map((r) => mapDonationRow(r as Record<string, unknown>)),
+      donors: donorRows.map((r) => mapDonorRow(r as Record<string, unknown>)),
+      mode: 'neon',
+    };
+  }
+
+  const donations = [...memoryDonations]
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+    .slice(0, safeLimit);
+  const donors = [...memoryDonors.values()].slice(0, safeLimit);
+  return { donations, donors, mode: 'memory' };
+}

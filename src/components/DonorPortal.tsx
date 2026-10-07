@@ -436,14 +436,9 @@ export const DonorPortal: React.FC<{
                     }}
                     className={`min-h-11 py-3.5 text-sm font-semibold rounded-xl border transition-all ${
                       presetAmount === amt
-                        ? ''
-                        : 'border-slate-200 bg-white hover:border-slate-300 text-slate-800 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200'
+                        ? 'border-[#D4AF37] bg-[rgba(212,175,55,0.18)] text-[#4A0404] dark:text-[#F4CF67] dark:bg-[rgba(212,175,55,0.22)]'
+                        : 'border-slate-200 bg-white hover:border-slate-300 text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100'
                     }`}
-                    style={
-                      presetAmount === amt
-                        ? { borderColor: '#D4AF37', backgroundColor: 'rgba(212,175,55,0.12)', color: '#4A0404' }
-                        : undefined
-                    }
                   >
                     ${amt}
                   </button>
@@ -455,14 +450,9 @@ export const DonorPortal: React.FC<{
                   onClick={() => setPresetAmount('custom')}
                   className={`min-h-11 py-3.5 text-sm font-semibold rounded-xl border transition-all ${
                     presetAmount === 'custom'
-                      ? ''
-                      : 'border-slate-200 bg-white hover:border-slate-300 text-slate-800 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200'
+                      ? 'border-[#D4AF37] bg-[rgba(212,175,55,0.18)] text-[#4A0404] dark:text-[#F4CF67] dark:bg-[rgba(212,175,55,0.22)]'
+                      : 'border-slate-200 bg-white hover:border-slate-300 text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100'
                   }`}
-                  style={
-                    presetAmount === 'custom'
-                      ? { borderColor: '#D4AF37', backgroundColor: 'rgba(212,175,55,0.12)', color: '#4A0404' }
-                      : undefined
-                  }
                 >
                   Custom
                 </button>
@@ -486,20 +476,19 @@ export const DonorPortal: React.FC<{
 
               {tangibleImpact && (
                 <div
-                  className="mt-4 rounded-xl border border-[#B7D4C2] px-4 py-3.5"
+                  className="mt-4 rounded-xl border border-[#B7D4C2] dark:border-emerald-800 bg-[#ECF5EF] dark:bg-emerald-950/55 px-4 py-3.5"
                   style={{
-                    backgroundColor: '#ECF5EF',
                     borderLeftWidth: '3px',
                     borderLeftColor: '#3D7A5A',
                   }}
                 >
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#3D7A5A] mb-1">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#3D7A5A] dark:text-emerald-300 mb-1">
                     Tangible ministry impact
                   </p>
-                  <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-200">
-                    <span className="font-semibold text-slate-900 dark:text-white">{tangibleImpact.headline}</span>
+                  <p className="text-sm leading-relaxed text-slate-700 dark:text-emerald-50/90">
+                    <span className="font-semibold text-slate-900 dark:text-emerald-50">{tangibleImpact.headline}</span>
                     {' — '}
-                    <span className="text-slate-600 dark:text-slate-300">{tangibleImpact.description}</span>
+                    <span className="text-slate-600 dark:text-emerald-100/85">{tangibleImpact.description}</span>
                   </p>
                 </div>
               )}
@@ -527,8 +516,8 @@ export const DonorPortal: React.FC<{
                     onClick={() => setFrequency(freq)}
                     className={`min-h-10 py-2.5 px-2 text-[11px] sm:text-xs font-medium rounded-lg transition-all text-center leading-tight ${
                       frequency === freq
-                        ? 'bg-white text-slate-900 shadow-sm font-semibold dark:bg-slate-900 dark:text-white'
-                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                        ? 'bg-white text-slate-900 shadow-sm font-semibold dark:bg-slate-700 dark:text-white'
+                        : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
                     }`}
                   >
                     {label}
@@ -537,7 +526,7 @@ export const DonorPortal: React.FC<{
                 })}
               </div>
               {frequency !== 'one-time' && (
-                <p className="text-xs text-church-burgundy dark:text-church-gold mt-2 flex items-start gap-1.5">
+                <p className="text-xs text-[#4A0404] dark:text-[#F4CF67] mt-2 flex items-start gap-1.5">
                   <Sparkles className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                   <span>Recurring gifts sustain our pastors and local outreach year-round. Cancel anytime.</span>
                 </p>
@@ -559,12 +548,12 @@ export const DonorPortal: React.FC<{
                     onClick={() => setSelectedFundId(f.id)}
                     className={`w-full min-h-[3.25rem] p-4 text-left rounded-xl border transition-all ${
                       selectedFundId === f.id
-                        ? 'border-[#D4AF37] bg-[rgba(212,175,55,0.08)]'
-                        : 'border-slate-200 bg-transparent hover:border-slate-300 dark:border-slate-700'
+                        ? 'border-[#D4AF37] bg-[rgba(212,175,55,0.12)] dark:bg-[rgba(212,175,55,0.16)]'
+                        : 'border-slate-200 bg-white/60 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800/60 dark:hover:border-slate-500'
                     }`}
                   >
                     <span className="text-sm font-semibold text-slate-900 dark:text-white">{f.name}</span>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2 leading-snug">
+                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 line-clamp-2 leading-snug">
                       {f.description}
                     </p>
                   </button>
@@ -704,7 +693,7 @@ export const DonorPortal: React.FC<{
                   className={`flex items-center justify-center gap-1.5 min-h-11 py-2.5 px-3 text-xs font-medium rounded-lg border transition-all ${
                     paymentMethod === 'card'
                       ? 'border-church-gold bg-church-gold/10 text-church-burgundy font-semibold dark:border-church-gold dark:bg-church-burgundy/30 dark:text-church-gold-light'
-                      : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900'
+                      : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
                   }`}
                 >
                   <CreditCard className="h-3.5 w-3.5 shrink-0" />
@@ -716,7 +705,7 @@ export const DonorPortal: React.FC<{
                   className={`flex items-center justify-center gap-1.5 min-h-11 py-2.5 px-3 text-xs font-medium rounded-lg border transition-all ${
                     paymentMethod === 'plaid'
                       ? 'border-church-gold bg-church-gold/10 text-church-burgundy font-semibold dark:border-church-gold dark:bg-church-burgundy/30 dark:text-church-gold-light'
-                      : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900'
+                      : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
                   }`}
                 >
                   <Landmark className="h-3.5 w-3.5 shrink-0" />
@@ -728,7 +717,7 @@ export const DonorPortal: React.FC<{
                   className={`flex items-center justify-center gap-1.5 min-h-11 py-2.5 px-3 text-xs font-medium rounded-lg border transition-all ${
                     paymentMethod === 'ach'
                       ? 'border-church-gold bg-church-gold/10 text-church-burgundy font-semibold dark:border-church-gold dark:bg-church-burgundy/30 dark:text-church-gold-light'
-                      : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900'
+                      : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
                   }`}
                 >
                   <Building2 className="h-3.5 w-3.5 shrink-0" />
@@ -740,7 +729,7 @@ export const DonorPortal: React.FC<{
                   className={`flex items-center justify-center gap-1.5 min-h-11 py-2.5 px-3 text-xs font-medium rounded-lg border transition-all ${
                     paymentMethod === 'apple_pay'
                       ? 'border-church-gold bg-church-gold/10 text-church-burgundy font-semibold dark:border-church-gold dark:bg-church-burgundy/30 dark:text-church-gold-light'
-                      : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900'
+                      : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
                   }`}
                 >
                   <Sparkles className="h-3.5 w-3.5 shrink-0" />

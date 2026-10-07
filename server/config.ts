@@ -41,6 +41,8 @@ export const env = {
     process.env.STAFF_ACCESS_CODE?.trim()
     || process.env.STAFF_INVITE_CODE?.trim()
     || '',
+  /** Optional base32 TOTP secret. When empty, any 6-digit authenticator code is accepted (dev). */
+  staffTotpSecret: process.env.STAFF_TOTP_SECRET?.trim() || '',
   /** Public church identity — optional; omit blank segments in UI when unset */
   churchLegalName: process.env.CHURCH_LEGAL_NAME?.trim() || '',
   churchAddress: process.env.CHURCH_ADDRESS?.trim() || '',

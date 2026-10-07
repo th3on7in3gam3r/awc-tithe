@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useChurch } from '../context/ChurchContext';
+import { verifyStaffPortalAccess } from '../lib/api';
 import { ShieldCheck, Lock, X, KeyRound } from 'lucide-react';
 
 interface MfaModalProps {
@@ -30,19 +31,31 @@ export const MfaModal: React.FC<MfaModalProps> = ({ isOpen, onClose, onAccessGra
     setSubmitting(true);
     setError(null);
     try {
-      const ok = await verifyStaffAccess(inviteCode, authenticatorCode);
-      if (ok) {
-        setInviteCode('');
-        setAuthenticatorCode('');
-        onAccessGranted?.();
-        onClose();
+      const result = await verifyStaffPortalAccess({
+        inviteCode: inviteCode.trim(),
+        authenticatorCode: authenticatorCode.trim(),
+      });
+      if (result.ok) {
+        // Keep ChurchContext MFA session in sync
+        const ok = await verifyStaffAccess(inviteCode.trim(), authenticatorCode.trim());
+        if (ok) {
+          setInviteCode('');
+          setAuthenticatorCode('');
+          onAccessGranted?.();
+          onClose();
+        } else {
+          setError('Access verified on server, but the session could not start. Try again.');
+        }
       } else {
         setError(
-          'Access denied. Staff Portal requires a valid invite/access code from church leadership plus your authenticator code.'
+          result.error ||
+            'Access denied. Check the invite code (must match STAFF_ACCESS_CODE) and enter any 6-digit authenticator code.'
         );
       }
     } catch {
-      setError('Could not reach the staff verification service. Try again shortly.');
+      setError(
+        'Could not reach the API on port 3001. Locally run npm run dev:all so both web and API are up.'
+      );
     } finally {
       setSubmitting(false);
     }
@@ -78,7 +91,9 @@ export const MfaModal: React.FC<MfaModalProps> = ({ isOpen, onClose, onAccessGra
 
         <p className="text-xs text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">
           Staff Portal is for authorized church stewards only. Enter the invite or access code issued by
-          leadership, then your 6-digit authenticator code. Without both, the portal stays locked.
+          leadership, then your 6-digit authenticator code. When production TOTP is configured
+          (<span className="font-mono">STAFF_TOTP_SECRET</span>), the authenticator app code is required;
+          otherwise any 6 digits work for local development.
         </p>
 
         <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">

@@ -47,6 +47,7 @@ export const AdminDashboard: React.FC = () => {
     refundDonation,
     queueOfflineGift,
     syncOfflineGifts,
+    hydrateStaffLedger,
     exportTransactionsCSV,
     exportAuditLogsCSV,
     setSelectedReceipt,
@@ -231,6 +232,15 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          {isMfaVerified && (
+            <button
+              type="button"
+              onClick={() => void hydrateStaffLedger()}
+              className="px-3 py-1.5 text-xs font-medium rounded-lg border border-[#E8E2D9] bg-white text-slate-700 hover:border-church-burgundy/40 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-200"
+            >
+              Refresh ledger
+            </button>
+          )}
           {currentRole === 'admin' && (
             <div className="flex items-center gap-2">
               {isMfaVerified ? (
@@ -1350,7 +1360,7 @@ export const AdminDashboard: React.FC = () => {
                   </p>
                 </div>
                 <button
-                  onClick={syncOfflineGifts}
+                  onClick={() => void syncOfflineGifts()}
                   disabled={offlineGifts.filter((g) => !g.synced).length === 0}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg shadow-sm disabled:opacity-50 transition-colors"
                 >

@@ -31,10 +31,14 @@ Set these on the **awc-tithe** Web Service:
 | `PLAID_SECRET` | Plaid secret |
 | `PLAID_ENV` | `sandbox` / `development` / `production` |
 | `AWC_DCB_API_URL` | DCB base URL (e.g. `https://your-dcb.onrender.com`) |
-| `AWC_DCB_SERVICE_SECRET` | Shared HMAC secret with DCB |
+| `AWC_DCB_SERVICE_SECRET` | Shared HMAC secret with DCB (`AWC_DCB_API_KEY` is an alias) |
 | `AWC_DCB_BOOK_ID` | Contribution book id |
+| `STAFF_ACCESS_CODE` | Staff Portal invite code |
+| `STAFF_TOTP_SECRET` | Optional base32 authenticator secret (production MFA) |
 
 Without Stripe/Plaid keys the Give form uses the built-in simulator (Card and Plaid Bank tabs still both shown). Without `DATABASE_URL`, gifts persist in API memory until restart.
+
+**Neon:** create a project at [neon.tech](https://neon.tech), copy the **pooled** connection string into `DATABASE_URL` (local `.env.local` and Render). Confirm Integrations & Settings → Database shows Live.
 
 ### Guided giving
 
@@ -49,18 +53,22 @@ On **Give Now**, choose **Start guided giving** for a step-by-step walkthrough (
 4. Payload always includes `amount` and `donorName` (`Anonymous` when the donor opts in).
 5. Match Tithe `fundCode` / `fundName` to active funds in DCB (or gifts land in Online Giving → Review).
 
-### Gift ledger APIs
-
-- `POST /api/gifts` — record a completed gift
-- `GET /api/gifts/by-email?email=` — private donor portal lookup
-
 ### Free-tier cold start (Render sleep)
 
 Free Render web services sleep after ~15 minutes idle. The first request after sleep waits for the instance to wake; AWC Tithe shows a branded boot splash once HTML is served.
 
 To reduce sleep (does not make free tier “always on” by itself), ping health every **10–14 minutes** from an external monitor:
 
-- URL: `https://<your-service>.onrender.com/api/health`
-- Tools: [UptimeRobot](https://uptimerobot.com/), cron-job.org, GitHub Actions schedule, or a Render Cron Job that `curl`s the health endpoint
+- URL: `https://awc-tithe.onrender.com/api/health` (or your service URL)
+- Tools: [UptimeRobot](https://uptimerobot.com/), cron-job.org, Render Cron, or the repo workflow [`.github/workflows/keep-alive.yml`](.github/workflows/keep-alive.yml)
+- For GitHub Actions: add secret `RENDER_HEALTH_URL` = that health URL
+
+### Gift ledger APIs (extended)
+
+- `POST /api/gifts` — record a completed gift (processor paths)
+- `POST /api/gifts/offline` — staff Contribution Log → Neon + DCB (requires staff session cookie)
+- `GET /api/gifts` — staff ledger list (requires staff session)
+- `GET /api/gifts/by-email?email=` — private donor portal lookup
+- `POST /api/staff/verify` — invite + MFA; sets `awc_staff_session` httpOnly cookie
 
 Set church legal/support fields in Render env (`CHURCH_LEGAL_NAME`, `CHURCH_ADDRESS`, `CHURCH_CITY_STATE_ZIP`, `CHURCH_EIN`, `CHURCH_PHONE`, `CHURCH_SUPPORT_EMAIL`, etc.) — see `.env.example`. Address for AWC: `4 School St` / `Acton, MA 01720`. Leave `CHURCH_EIN` blank until the Pastor provides it; blank values are omitted from the footer and receipts (no fake EIN).

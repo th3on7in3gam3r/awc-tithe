@@ -26,7 +26,15 @@ import {
   initialDcuDeposits,
   initialReconciliationDiscrepancies,
 } from '../data/initialData';
-import { recordGift, verifyStaffPortalAccess, fetchApiConfig } from '../lib/api';
+import {
+  recordGift,
+  recordOfflineGift,
+  verifyStaffPortalAccess,
+  fetchApiConfig,
+  fetchStaffLedger,
+  type ServerDonation,
+  type ServerDonor,
+} from '../lib/api';
 
 interface DonationInput {
   amount: number;
@@ -85,7 +93,8 @@ interface ChurchContextType {
   }) => AnnualPledge;
   calculatePledgeGap: (taxYear?: number) => PledgeGapSummary;
   queueOfflineGift: (gift: Omit<OfflineGift, 'id' | 'timestamp' | 'synced'>) => void;
-  syncOfflineGifts: () => void;
+  syncOfflineGifts: () => Promise<void>;
+  hydrateStaffLedger: () => Promise<void>;
   requestGdprErasure: (donorId: string) => void;
   requestGdprExport: (donorId: string) => void;
   exportTransactionsCSV: () => void;
@@ -195,15 +204,16 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     void fetchApiConfig().then((api) => {
       if (!api?.church) return;
       const c = api.church;
-      // Prefer non-empty server env over stale localStorage so Render updates stick
+      // Prefer server church identity; blank EIN/address from env clears stale localStorage
       setConfig((prev) => ({
         ...prev,
         name: c.name?.trim() || prev.name,
-        legalEntityName: c.legalEntityName?.trim() || prev.legalEntityName,
-        address: c.address?.trim() || prev.address,
-        cityStateZip: c.cityStateZip?.trim() || prev.cityStateZip,
-        ein: c.ein?.trim() || prev.ein,
-        phone: c.phone?.trim() || prev.phone,
+        legalEntityName:
+          c.legalEntityName != null ? String(c.legalEntityName).trim() : prev.legalEntityName,
+        address: c.address != null ? String(c.address).trim() : prev.address,
+        cityStateZip: c.cityStateZip != null ? String(c.cityStateZip).trim() : prev.cityStateZip,
+        ein: c.ein != null ? String(c.ein).trim() : prev.ein,
+        phone: c.phone != null ? String(c.phone).trim() : prev.phone,
         email: c.email?.trim() || prev.email,
         website: c.website?.trim() || prev.website,
       }));
@@ -298,6 +308,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       };
       setAuditLogs((prev) => [auditEntry, ...prev]);
       addNotification('success', 'Staff Portal Unlocked', 'Authorized staff session started.');
+      void hydrateStaffLedger();
       return true;
     } catch (err) {
       addNotification(
@@ -695,14 +706,96 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     addNotification('info', 'Offline Gift Recorded', `Saved to local offline queue. Will sync to church ledger when connected.`);
   };
 
-  const syncOfflineGifts = () => {
+  const mapServerDonation = (sd: ServerDonation): Donation =>
+    ({
+      id: sd.id,
+      transactionId: sd.transactionId,
+      receiptNumber: sd.receiptNumber,
+      donorId: sd.donorId,
+      donorName: sd.donorName,
+      donorEmail: sd.donorEmail,
+      donorAddress: sd.donorAddress,
+      amount: sd.amount,
+      feeCovered: sd.feeCovered,
+      feeAmount: sd.feeAmount,
+      totalCharged: sd.totalCharged,
+      frequency: sd.frequency as DonationFrequency,
+      fundId: sd.fundId,
+      fundName: sd.fundName,
+      paymentMethod: sd.paymentMethod as PaymentMethod,
+      cardBrand: sd.cardBrand,
+      cardLast4: sd.cardLast4,
+      status: sd.status as Donation['status'],
+      dedication: sd.dedication,
+      isAnonymous: sd.isAnonymous,
+      timestamp: sd.timestamp,
+      nextBillingDate: sd.nextBillingDate,
+      stripePaymentIntentId: sd.stripePaymentIntentId || '',
+      encryptedToken: sd.encryptedToken || '',
+      envelopeNumber: sd.envelopeNumber,
+      awcDcbVoucher: sd.awcDcbVoucher,
+      awcSynced: sd.awcSynced,
+      plaidInstitution: sd.plaidInstitution,
+      plaidAccountMask: sd.plaidAccountMask,
+      plaidTransferId: sd.plaidTransferId,
+    }) as Donation;
+
+  const mapServerDonor = (sd: ServerDonor): Donor => ({
+    id: sd.id,
+    name: sd.name,
+    email: sd.email,
+    phone: sd.phone,
+    address: sd.address,
+    taxId: sd.taxId,
+    lifetimeGiving: sd.lifetimeGiving,
+    totalGiftsCount: sd.totalGiftsCount,
+    firstGiftDate: sd.firstGiftDate,
+    lastGiftDate: sd.lastGiftDate,
+    recurringActive: sd.recurringActive,
+    recurringAmount: sd.recurringAmount,
+    recurringFrequency: sd.recurringFrequency as DonationFrequency | undefined,
+    gdprConsent: sd.gdprConsent,
+    gdprConsentDate: sd.gdprConsentDate,
+    isAnonymized: sd.isAnonymized,
+  });
+
+  /** Pull Neon/memory ledger into staff dashboard (requires staff session cookie). */
+  const hydrateStaffLedger = async () => {
+    try {
+      const ledger = await fetchStaffLedger(500);
+      if (ledger.donations.length > 0) {
+        setDonations(ledger.donations.map(mapServerDonation));
+      }
+      if (ledger.donors.length > 0) {
+        setDonors(ledger.donors.map(mapServerDonor));
+      }
+      addNotification(
+        'info',
+        'Ledger refreshed',
+        `Loaded ${ledger.donations.length} gifts from ${ledger.mode === 'neon' ? 'Neon' : 'memory'} store.`
+      );
+    } catch (err) {
+      addNotification(
+        'warning',
+        'Ledger refresh skipped',
+        err instanceof Error ? err.message : 'Could not load staff ledger.'
+      );
+    }
+  };
+
+  const syncOfflineGifts = async () => {
     const unsynced = offlineGifts.filter((g) => !g.synced);
     if (unsynced.length === 0) {
       addNotification('info', 'Already Synced', 'No offline gifts pending sync.');
       return;
     }
 
-    unsynced.forEach((g) => {
+    let syncedCount = 0;
+    let failedCount = 0;
+    const syncedIds: string[] = [];
+
+    for (const g of unsynced) {
+      const fund = funds.find((f) => f.id === g.fundId) || funds[0];
       const ref = (g.channelReference || g.checkNumber || '').trim();
       const channelLabels: Record<string, string> = {
         cash: 'Cash Envelope',
@@ -720,37 +813,76 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         zelle: 'zelle',
         venmo: 'venmo',
       };
-      makeDonation({
-        amount: g.amount,
-        feeCovered: false,
-        frequency: g.frequency,
-        fundId: g.fundId,
-        donorName: g.donorName,
-        donorEmail: g.donorEmail,
-        paymentMethod: paymentMethodMap[g.method] || 'cash',
-        cardBrand: channelLabels[g.method] || g.method,
-        cardLast4: '0000',
-        dedication: g.note,
-      });
-    });
+      try {
+        const result = await recordOfflineGift({
+          amount: g.amount,
+          donorName: g.donorName,
+          donorEmail: g.donorEmail,
+          fundId: g.fundId,
+          fundName: fund?.name || 'General Tithes & Offerings',
+          fundCode: fund?.code || '1001-OPS',
+          paymentMethod: paymentMethodMap[g.method] || 'cash',
+          frequency: g.frequency,
+          cardBrand: channelLabels[g.method] || g.method,
+          dedication: g.note,
+          transactionId: g.id,
+          contributedAt: g.timestamp,
+        });
+        syncedIds.push(g.id);
+        syncedCount += 1;
+        setDonations((prev) => {
+          const mapped = mapServerDonation(result.donation);
+          if (prev.some((d) => d.id === mapped.id || d.transactionId === mapped.transactionId)) {
+            return prev;
+          }
+          return [mapped, ...prev];
+        });
+        if (result.donor) {
+          setDonors((prev) => {
+            const mapped = mapServerDonor(result.donor);
+            const without = prev.filter(
+              (d) => d.id !== mapped.id && d.email.toLowerCase() !== mapped.email.toLowerCase()
+            );
+            return [mapped, ...without];
+          });
+        }
+      } catch {
+        failedCount += 1;
+      }
+    }
 
-    setOfflineGifts((prev) => prev.map((g) => ({ ...g, synced: true })));
+    setOfflineGifts((prev) =>
+      prev.map((g) => (syncedIds.includes(g.id) ? { ...g, synced: true } : g))
+    );
 
     const auditRecord: AuditLog = {
       id: `audit-${Date.now()}`,
       timestamp: new Date().toISOString(),
-      actorId: 'kiosk-sync-agent',
-      actorName: 'Offline Kiosk Syncer',
+      actorId: 'contribution-log-sync',
+      actorName: 'Contribution Log Sync',
       actorRole: 'bookkeeper',
       action: 'OFFLINE_BATCH_SYNC',
-      resource: `${unsynced.length} gifts synchronized`,
-      details: `Batch synchronization of ${unsynced.length} physical service gifts reconciled into master general ledger.`,
+      resource: `${syncedCount} gifts synchronized`,
+      details: `Synced ${syncedCount} contribution-log gifts to ledger + DCB${failedCount ? ` (${failedCount} failed)` : ''}.`,
       ipAddress: '192.168.1.150',
       integrityHash: generateIntegrityHash(`sync_batch_${Date.now()}`),
     };
     setAuditLogs((prev) => [auditRecord, ...prev]);
 
-    addNotification('success', 'Sync Complete', `Synchronized ${unsynced.length} offline gifts to the master financial ledger.`);
+    if (syncedCount > 0) {
+      addNotification(
+        'success',
+        'Sync Complete',
+        `Synced ${syncedCount} gift${syncedCount === 1 ? '' : 's'} to the ledger and Digital Contribution Book.`
+      );
+    }
+    if (failedCount > 0) {
+      addNotification(
+        'error',
+        'Partial Sync',
+        `${failedCount} gift${failedCount === 1 ? '' : 's'} failed — unlock Staff Portal and try again.`
+      );
+    }
   };
 
   const requestGdprErasure = (donorId: string) => {
@@ -1223,6 +1355,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         calculatePledgeGap,
         queueOfflineGift,
         syncOfflineGifts,
+        hydrateStaffLedger,
         requestGdprErasure,
         requestGdprExport,
         exportTransactionsCSV,

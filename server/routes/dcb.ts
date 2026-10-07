@@ -7,6 +7,7 @@ import {
   type DcbContributionPayload,
 } from '../dcb/client';
 import { dcbDonorDisplayName } from '../dcb/displayName';
+import { requireStaffSession } from '../auth/session';
 
 const router = Router();
 
@@ -46,8 +47,8 @@ router.get('/mock/entries', (_req: Request, res: Response) => {
   return res.json({ bookId: env.awcDcbBookId, count: mockDcbEntries.length, entries: mockDcbEntries });
 });
 
-/** Manual / retry sync for admin console */
-router.post('/sync', async (req: Request, res: Response) => {
+/** Manual / retry sync for admin console — staff session required */
+router.post('/sync', requireStaffSession, async (req: Request, res: Response) => {
   const body = req.body as
     | (Partial<DcbContributionPayload> & { isAnonymous?: boolean })
     | { donations?: Array<Partial<DcbContributionPayload> & { isAnonymous?: boolean }> };

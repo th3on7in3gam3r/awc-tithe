@@ -16,7 +16,12 @@ const distPath = path.resolve(__dirname, '../dist');
 
 const app = express();
 
-app.use(cors({ origin: true }));
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+  })
+);
 
 // Stripe webhooks need raw body for signature verification
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }), (req, _res, next) => {
@@ -60,11 +65,12 @@ app.get('/api/config', (_req, res) => {
     giftStore: giftStoreMode(),
     church: {
       name: env.churchName,
-      legalEntityName: env.churchLegalName || undefined,
-      address: env.churchAddress || undefined,
-      cityStateZip: env.churchCityStateZip || undefined,
-      ein: env.churchEin || undefined,
-      phone: env.churchPhone || undefined,
+      legalEntityName: env.churchLegalName || '',
+      address: env.churchAddress || '',
+      cityStateZip: env.churchCityStateZip || '',
+      // Always send string so blank EIN clears stale localStorage values
+      ein: env.churchEin || '',
+      phone: env.churchPhone || '',
       email: env.churchSupportEmail,
       website: env.churchWebsite,
     },
