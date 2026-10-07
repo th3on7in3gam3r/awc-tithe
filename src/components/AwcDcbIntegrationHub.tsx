@@ -26,13 +26,18 @@ export const AwcDcbIntegrationHub: React.FC = () => {
 
   const { dcuBank, awcDcb } = config;
 
-  // All digital gifts that should appear in AWC DCB
+  // All gifts that should appear in AWC DCB (online processors + staff-logged channels)
   const cardDonations = donations.filter(
     (d) =>
       d.paymentMethod === 'card' ||
       d.paymentMethod === 'apple_pay' ||
       d.paymentMethod === 'plaid' ||
-      d.paymentMethod === 'ach'
+      d.paymentMethod === 'ach' ||
+      d.paymentMethod === 'cash' ||
+      d.paymentMethod === 'check' ||
+      d.paymentMethod === 'cash_app' ||
+      d.paymentMethod === 'zelle' ||
+      d.paymentMethod === 'venmo'
   );
 
   const totalCardVolume = cardDonations.reduce((sum, d) => sum + d.amount, 0);

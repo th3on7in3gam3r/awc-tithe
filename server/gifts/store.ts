@@ -1,7 +1,16 @@
 import { ensureSchema, getSql, hasDatabaseUrl } from '../db';
 
 export type GiftFrequency = 'one-time' | 'weekly' | 'bi-weekly' | 'monthly' | 'annually';
-export type GiftPaymentMethod = 'card' | 'ach' | 'apple_pay' | 'plaid';
+export type GiftPaymentMethod =
+  | 'card'
+  | 'ach'
+  | 'apple_pay'
+  | 'plaid'
+  | 'cash'
+  | 'check'
+  | 'cash_app'
+  | 'zelle'
+  | 'venmo';
 
 export interface StoredDonor {
   id: string;

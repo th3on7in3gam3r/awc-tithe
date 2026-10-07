@@ -182,7 +182,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                   className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
                 >
                   <ShieldCheck className="h-3.5 w-3.5" style={{ color: '#4A0404' }} />
-                  <span className="capitalize">{currentRole}</span>
+                  <span className="capitalize">
+                    {currentRole === 'first_lady' ? 'First Lady' : currentRole}
+                  </span>
                   <span
                     className="h-1.5 w-1.5 rounded-full"
                     style={{ backgroundColor: isMfaVerified ? '#10b981' : '#D4AF37' }}
@@ -197,20 +199,28 @@ export const Navbar: React.FC<NavbarProps> = ({
                     >
                       Staff Role
                     </div>
-                    {(['admin', 'pastor', 'bookkeeper', 'auditor'] as UserRole[]).map((r) => (
+                    {(
+                      [
+                        { id: 'admin' as UserRole, label: 'Admin' },
+                        { id: 'first_lady' as UserRole, label: 'First Lady' },
+                        { id: 'pastor' as UserRole, label: 'Pastor' },
+                        { id: 'bookkeeper' as UserRole, label: 'Bookkeeper' },
+                        { id: 'auditor' as UserRole, label: 'Auditor' },
+                      ]
+                    ).map((r) => (
                       <button
-                        key={r}
-                        onClick={() => handleRoleSelect(r)}
-                        className={`w-full flex items-center justify-between px-3 py-1.5 text-xs text-left capitalize ${
-                          currentRole === r ? 'font-semibold' : 'text-slate-600 hover:bg-slate-50'
+                        key={r.id}
+                        onClick={() => handleRoleSelect(r.id)}
+                        className={`w-full flex items-center justify-between px-3 py-1.5 text-xs text-left ${
+                          currentRole === r.id ? 'font-semibold' : 'text-slate-600 hover:bg-slate-50'
                         }`}
                         style={
-                          currentRole === r
+                          currentRole === r.id
                             ? { color: '#4A0404', backgroundColor: 'rgba(74,4,4,0.06)' }
                             : undefined
                         }
                       >
-                        {r}
+                        {r.label}
                       </button>
                     ))}
                   </div>

@@ -1,10 +1,28 @@
 export type DonationFrequency = 'one-time' | 'weekly' | 'bi-weekly' | 'monthly' | 'annually';
 
-export type PaymentMethod = 'card' | 'ach' | 'apple_pay' | 'plaid';
+export type PaymentMethod =
+  | 'card'
+  | 'ach'
+  | 'apple_pay'
+  | 'plaid'
+  | 'cash'
+  | 'check'
+  | 'cash_app'
+  | 'zelle'
+  | 'venmo';
 
 export type DonationStatus = 'completed' | 'pending' | 'refunded' | 'failed';
 
-export type UserRole = 'donor' | 'pastor' | 'admin' | 'bookkeeper' | 'auditor';
+export type UserRole = 'donor' | 'pastor' | 'admin' | 'bookkeeper' | 'auditor' | 'first_lady';
+
+/** Staff-logged contribution channels (Offline Sync / Contribution Log). */
+export type StaffContributionMethod =
+  | 'cash'
+  | 'check'
+  | 'card_kiosk'
+  | 'cash_app'
+  | 'zelle'
+  | 'venmo';
 
 export interface Fund {
   id: string;
@@ -189,8 +207,10 @@ export interface OfflineGift {
   amount: number;
   fundId: string;
   frequency: DonationFrequency;
-  method: 'cash' | 'check' | 'card_kiosk';
+  method: StaffContributionMethod;
+  /** Check number, Cash App cashtag, Zelle confirmation, Venmo name, etc. */
   checkNumber?: string;
+  channelReference?: string;
   note?: string;
   timestamp: string;
   synced: boolean;

@@ -271,7 +271,8 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (role === 'admin' && !isMfaVerified) {
       addNotification('info', 'MFA Required', 'Please enter your 6-digit TOTP code to unlock Admin privileges.');
     } else {
-      addNotification('info', 'Role Switched', `Active view updated to ${role.toUpperCase()}`);
+      const label = role === 'first_lady' ? 'FIRST LADY' : role.toUpperCase();
+      addNotification('info', 'Role Switched', `Active view updated to ${label}`);
     }
   };
 
@@ -702,6 +703,23 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     unsynced.forEach((g) => {
+      const ref = (g.channelReference || g.checkNumber || '').trim();
+      const channelLabels: Record<string, string> = {
+        cash: 'Cash Envelope',
+        check: ref ? `Check #${ref}` : 'Physical Check',
+        card_kiosk: 'Service Kiosk Card',
+        cash_app: ref ? `Cash App (${ref})` : 'Cash App',
+        zelle: ref ? `Zelle (${ref})` : 'Zelle',
+        venmo: ref ? `Venmo (${ref})` : 'Venmo',
+      };
+      const paymentMethodMap: Record<string, PaymentMethod> = {
+        cash: 'cash',
+        check: 'check',
+        card_kiosk: 'card',
+        cash_app: 'cash_app',
+        zelle: 'zelle',
+        venmo: 'venmo',
+      };
       makeDonation({
         amount: g.amount,
         feeCovered: false,
@@ -709,8 +727,8 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         fundId: g.fundId,
         donorName: g.donorName,
         donorEmail: g.donorEmail,
-        paymentMethod: 'ach',
-        cardBrand: g.method === 'check' ? `Check #${g.checkNumber || '101'}` : 'Cash Envelope',
+        paymentMethod: paymentMethodMap[g.method] || 'cash',
+        cardBrand: channelLabels[g.method] || g.method,
         cardLast4: '0000',
         dedication: g.note,
       });

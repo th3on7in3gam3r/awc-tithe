@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useChurch } from '../context/ChurchContext';
-import { UserRole, DonationStatus, DonationFrequency } from '../types';
+import { UserRole, DonationStatus, DonationFrequency, StaffContributionMethod } from '../types';
 import { RecurringTrendChart } from './RecurringTrendChart';
 import { DonorTenurePieChart } from './DonorTenurePieChart';
 import { DonorChurnAnalysis } from './DonorChurnAnalysis';
@@ -82,7 +82,7 @@ export const AdminDashboard: React.FC = () => {
   const [offlineDonorEmail, setOfflineDonorEmail] = useState('');
   const [offlineAmount, setOfflineAmount] = useState('');
   const [offlineFundId, setOfflineFundId] = useState(funds[0]?.id || 'fund-tithes');
-  const [offlineMethod, setOfflineMethod] = useState<'cash' | 'check' | 'card_kiosk'>('check');
+  const [offlineMethod, setOfflineMethod] = useState<StaffContributionMethod>('check');
   const [offlineCheckNum, setOfflineCheckNum] = useState('');
   const [offlineNote, setOfflineNote] = useState('');
 
@@ -139,6 +139,7 @@ export const AdminDashboard: React.FC = () => {
     const amt = parseFloat(offlineAmount);
     if (!amt || amt <= 0) return;
 
+    const reference = offlineCheckNum.trim();
     queueOfflineGift({
       donorName: offlineDonorName || 'Sunday Service Attendee',
       donorEmail: offlineDonorEmail || 'service.attendee@gracecommunity.local',
@@ -146,7 +147,8 @@ export const AdminDashboard: React.FC = () => {
       fundId: offlineFundId,
       frequency: 'one-time',
       method: offlineMethod,
-      checkNumber: offlineCheckNum,
+      checkNumber: offlineMethod === 'check' ? reference : undefined,
+      channelReference: reference || undefined,
       note: offlineNote,
     });
 
@@ -213,15 +215,19 @@ export const AdminDashboard: React.FC = () => {
         <div>
           <div className="flex items-center gap-2.5">
             <span className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Financial Administration &amp; Governance
+              Contribution Central
             </span>
             <span className="text-[11px] font-normal text-slate-400 dark:text-slate-500 capitalize">
-              · {currentRole}
+              · {currentRole === 'first_lady' ? 'First Lady' : currentRole}
             </span>
           </div>
           <h1 className="font-serif-display text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-white mt-1.5 tracking-tight">
             Stewardship Financial Dashboard
           </h1>
+          <p className="mt-2 max-w-2xl text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+            All church giving channels—Cash App, Zelle, Venmo, check, cash, card, and wallets—are recorded here,
+            synced to the AWC Digital Contribution Book, and monitored by stewardship staff (including First Lady).
+          </p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -322,7 +328,7 @@ export const AdminDashboard: React.FC = () => {
             { id: 'rbac', label: 'RBAC & Security', count: null },
             { id: 'audit', label: 'Audit Trails', count: auditLogs.length },
             { id: 'privacy', label: 'GDPR / CCPA', count: null },
-            { id: 'offline', label: 'Offline Sync', count: offlineGifts.filter((g) => !g.synced).length },
+            { id: 'offline', label: 'Contribution Log', count: offlineGifts.filter((g) => !g.synced).length },
             { id: 'integrations', label: 'Integrations & Settings', count: null },
           ].map((tab) => (
             <button
@@ -1024,37 +1030,47 @@ export const AdminDashboard: React.FC = () => {
               Role-Based Access Control (RBAC) Architecture
             </h3>
             <p className="text-xs text-slate-500 mb-6 leading-relaxed">
-              Granular permission boundaries enforce strict separation of duties between pastors, financial administrators, volunteer bookkeepers, and independent auditors.
+              Granular permission boundaries enforce separation of duties between pastors, First Lady stewardship access, financial administrators, bookkeepers, and independent auditors.
             </p>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
               {[
                 {
+                  id: 'admin' as UserRole,
                   role: 'Admin',
                   desc: 'Full financial authority, refund execution, gateway settings, fund creation, and user management.',
                   perms: ['Full Ledger Access', 'Issue Refunds', 'MFA Protected', 'Audit Configuration'],
                 },
                 {
+                  id: 'first_lady' as UserRole,
+                  role: 'First Lady',
+                  desc: 'Contribution-central access: view giving across all channels, log Cash App / Zelle / Venmo / check / cash, and monitor the ledger. No refunds or gateway secret changes.',
+                  perms: ['View Analytics', 'Contribution Log', 'CSV Exports', 'Read Integrations Status', 'No Refund Rights'],
+                },
+                {
+                  id: 'pastor' as UserRole,
                   role: 'Pastor',
                   desc: 'High-level pastoral overview of campaigns, giving trends, and donor pastoral care.',
                   perms: ['View Analytics', 'Fund Campaigns', 'Congregation Care', 'Read-Only Ledger'],
                 },
                 {
+                  id: 'bookkeeper' as UserRole,
                   role: 'Bookkeeper',
-                  desc: 'Reconciliation, batch CSV exports, and offline Sunday service envelope entry.',
-                  perms: ['Ledger Reconciliation', 'Offline Gift Entry', 'CSV Exports', 'No Refund Rights'],
+                  desc: 'Reconciliation, batch CSV exports, and contribution log entry for all channels.',
+                  perms: ['Ledger Reconciliation', 'Contribution Log', 'CSV Exports', 'No Refund Rights'],
                 },
                 {
+                  id: 'auditor' as UserRole,
                   role: 'Auditor',
                   desc: 'Independent compliance inspector auditing security logs, GDPR privacy requests, and IRS 501(c)(3) integrity.',
                   perms: ['View Audit Trails', 'Verify Hashes', 'GDPR Inspection', 'Zero Data Mutation'],
                 },
               ].map((item) => (
-                <div key={item.role} className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 flex flex-col justify-between">
+                <div key={item.id} className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 flex flex-col justify-between">
                   <div>
                     <div className="flex justify-between items-center mb-2">
                       <span className="font-bold text-sm text-slate-900 dark:text-white">{item.role}</span>
-                      {currentRole === item.role.toLowerCase() && (
+                      {currentRole === item.id && (
                         <span className="text-[10px] font-semibold text-church-burgundy dark:text-church-gold bg-church-gold/15 dark:bg-church-burgundy-dark/60 px-2 py-0.5 rounded">
                           Current
                         </span>
@@ -1187,20 +1203,21 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* SUB-TAB 7: Offline Service Sync Station */}
+      {/* SUB-TAB 7: Contribution Log (all external + physical channels) */}
       {activeAdminSubTab === 'offline' && (
         <div className="mt-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
           
-          {/* Offline Entry Form */}
-          <div className="lg:col-span-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
+          {/* Contribution entry form */}
+          <div className="lg:col-span-5 bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 p-6 shadow-sm">
             <div className="flex items-center gap-2 mb-4">
               <Wifi className="h-5 w-5 text-church-gold-dark" />
               <h3 className="font-serif-display text-sm font-bold text-slate-900 dark:text-white">
-                Log Physical Service Gift
+                Log a Contribution
               </h3>
             </div>
-            <p className="text-xs text-slate-500 mb-4">
-              Enter cash envelopes, physical checks, or in-person kiosk contributions collected during church services.
+            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+              Record gifts received through Cash App, Zelle, Venmo, check, cash, or service kiosk.
+              Sync pushes them into the master ledger and AWC Digital Contribution Book.
             </p>
 
             <form onSubmit={handleQueueOffline} className="space-y-4 text-xs">
@@ -1241,12 +1258,15 @@ export const AdminDashboard: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] text-slate-600 dark:text-slate-400 mb-1">Payment Type</label>
+                  <label className="block text-[11px] text-slate-600 dark:text-slate-400 mb-1">Channel</label>
                   <select
                     value={offlineMethod}
-                    onChange={(e) => setOfflineMethod(e.target.value as any)}
+                    onChange={(e) => setOfflineMethod(e.target.value as StaffContributionMethod)}
                     className="w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                   >
+                    <option value="cash_app">Cash App</option>
+                    <option value="zelle">Zelle</option>
+                    <option value="venmo">Venmo</option>
                     <option value="check">Physical Check</option>
                     <option value="cash">Cash Envelope</option>
                     <option value="card_kiosk">Service Kiosk</option>
@@ -1254,12 +1274,28 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
-              {offlineMethod === 'check' && (
+              {offlineMethod !== 'cash' && offlineMethod !== 'card_kiosk' && (
                 <div>
-                  <label className="block text-[11px] text-slate-600 dark:text-slate-400 mb-1">Check Number</label>
+                  <label className="block text-[11px] text-slate-600 dark:text-slate-400 mb-1">
+                    {offlineMethod === 'check'
+                      ? 'Check Number'
+                      : offlineMethod === 'cash_app'
+                        ? 'Cash App cashtag / note'
+                        : offlineMethod === 'zelle'
+                          ? 'Zelle confirmation / name'
+                          : 'Venmo username / note'}
+                  </label>
                   <input
                     type="text"
-                    placeholder="e.g. #2841"
+                    placeholder={
+                      offlineMethod === 'check'
+                        ? 'e.g. #2841'
+                        : offlineMethod === 'cash_app'
+                          ? 'e.g. $AWCGive'
+                          : offlineMethod === 'zelle'
+                            ? 'e.g. Confirmation or sender name'
+                            : 'e.g. @username'
+                    }
                     value={offlineCheckNum}
                     onChange={(e) => setOfflineCheckNum(e.target.value)}
                     className="w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
@@ -1280,26 +1316,37 @@ export const AdminDashboard: React.FC = () => {
                 </select>
               </div>
 
+              <div>
+                <label className="block text-[11px] text-slate-600 dark:text-slate-400 mb-1">Internal note (optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Sunday AM envelope / memorial gift"
+                  value={offlineNote}
+                  onChange={(e) => setOfflineNote(e.target.value)}
+                  className="w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                />
+              </div>
+
               <button
                 type="submit"
                 className="w-full py-2.5 px-4 bg-church-burgundy hover:bg-church-burgundy-light text-white font-semibold rounded-lg shadow-sm flex items-center justify-center gap-1.5"
               >
                 <PlusCircle className="h-4 w-4" />
-                <span>Save to Offline Queue</span>
+                <span>Save to Contribution Queue</span>
               </button>
             </form>
           </div>
 
           {/* Queue & Sync Button */}
           <div className="lg:col-span-7 space-y-4">
-            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
+            <div className="bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 p-6 shadow-sm">
               <div className="flex justify-between items-center pb-4 border-b border-slate-100 dark:border-slate-800">
                 <div>
                   <h3 className="font-serif-display text-sm font-bold text-slate-900 dark:text-white">
-                    Offline Gift Queue ({offlineGifts.length})
+                    Contribution Queue ({offlineGifts.length})
                   </h3>
                   <p className="text-xs text-slate-500">
-                    {offlineGifts.filter((g) => !g.synced).length} pending cloud ledger reconciliation
+                    {offlineGifts.filter((g) => !g.synced).length} pending ledger &amp; DCB sync
                   </p>
                 </div>
                 <button
@@ -1334,8 +1381,20 @@ export const AdminDashboard: React.FC = () => {
                             <span className="font-medium text-slate-900 dark:text-white">{gift.donorName}</span>
                             <span className="block text-[10px] text-slate-500">{gift.donorEmail}</span>
                           </td>
-                          <td className="px-4 py-2.5 capitalize text-slate-600 dark:text-slate-400">
-                            {gift.method} {gift.checkNumber ? `(#${gift.checkNumber})` : ''}
+                          <td className="px-4 py-2.5 text-slate-600 dark:text-slate-400">
+                            {(
+                              {
+                                cash: 'Cash',
+                                check: 'Check',
+                                card_kiosk: 'Kiosk',
+                                cash_app: 'Cash App',
+                                zelle: 'Zelle',
+                                venmo: 'Venmo',
+                              } as Record<string, string>
+                            )[gift.method] || gift.method}
+                            {(gift.channelReference || gift.checkNumber)
+                              ? ` (${gift.channelReference || gift.checkNumber})`
+                              : ''}
                           </td>
                           <td className="px-4 py-2.5 text-right font-mono font-bold text-slate-900 dark:text-white tabular-nums">
                             ${gift.amount.toFixed(2)}
