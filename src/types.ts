@@ -4,7 +4,6 @@ export type PaymentMethod =
   | 'card'
   | 'ach'
   | 'apple_pay'
-  | 'plaid'
   | 'cash'
   | 'check'
   | 'cash_app'
@@ -13,13 +12,15 @@ export type PaymentMethod =
 
 export type DonationStatus = 'completed' | 'pending' | 'refunded' | 'failed';
 
-export type UserRole = 'donor' | 'pastor' | 'admin' | 'bookkeeper' | 'auditor' | 'first_lady';
+export type UserRole = 'donor' | 'admin' | 'staff';
+
+/** Server-enforced Staff Portal roles (loaded from staff_accounts on each request). */
+export type StaffPortalRole = 'admin' | 'staff';
 
 /** Staff-logged contribution channels (Offline Sync / Contribution Log). */
 export type StaffContributionMethod =
   | 'cash'
   | 'check'
-  | 'card_kiosk'
   | 'cash_app'
   | 'zelle'
   | 'venmo';
@@ -27,13 +28,18 @@ export type StaffContributionMethod =
 export interface Fund {
   id: string;
   name: string;
+  /** @deprecated Prefer glCode; kept for localStorage compatibility. */
   code: string;
+  /** Optional admin-assigned general-ledger code; empty by default. */
+  glCode?: string;
   description: string;
+  /** Admin-only annual goals live on the server; kept optional for local compatibility. */
   goalAmount: number;
   currentAmount: number;
   category: 'General' | 'Capital' | 'Missions' | 'Outreach';
   image?: string;
   active: boolean;
+  sortOrder?: number;
 }
 
 export interface Donation {
@@ -105,24 +111,21 @@ export interface AuditLog {
 
 export interface DcuBankConfig {
   institutionName: string;
-  routingNumber: string;
-  accountNumberMask: string;
   accountType: 'checking' | 'savings';
   settlementSchedule: 'daily_auto_deposit' | 'weekly_batch';
   status: 'active' | 'pending_verification' | 'disabled';
   lastSettlementTimestamp?: string;
   totalSettledToDate: number;
-  stripeFinancialConnectionsAccountId?: string;
-  stripeFinancialConnectionsSessionId?: string;
   financialConnectionsStatus?: 'linked' | 'pending' | 'unlinked';
-  plaidIntegrationStatus?: 'active' | 'configuring' | 'disabled';
   autoReconcileEnabled?: boolean;
   liveAvailableBalance?: number;
   liveCurrentBalance?: number;
   lastFinancialConnectionsSync?: string;
 }
 
-export interface DcuBankDeposit {
+export interface BankSettlement {
+  // formerly DcuBankDeposit
+
   id: string;
   date: string;
   description: string;
@@ -193,7 +196,6 @@ export interface ChurchConfig {
   financialOfficer: string;
   taxExemptStatus: string;
   currency: string;
-  stripeMode: 'test_simulator' | 'live_key';
   stripePublishableKey: string;
   dcuBank: DcuBankConfig;
   awcDcb: AwcDcbConfig;
@@ -224,7 +226,9 @@ export interface ToastNotification {
   timestamp: string;
 }
 
-export interface AnnualPledge {
+export interface AnnualCommitment {
+  // formerly AnnualPledge
+
   id: string;
   donorId: string;
   donorName: string;
@@ -240,28 +244,34 @@ export interface AnnualPledge {
   notes?: string;
 }
 
-export interface FundPledgeGap {
+export interface FundCommitmentGap {
   fundId: string;
   fundName: string;
-  totalPledged: number;
+  totalCommitted: number;
   totalReceived: number;
   gapAmount: number;
   percentFulfilled: number;
-  pledgeCount: number;
+  commitmentCount: number;
 }
 
-export interface PledgeGapSummary {
+export interface CommitmentGapSummary {
   taxYear: number;
-  totalPledged: number;
+  totalCommitted: number;
   totalReceived: number;
   netGap: number;
   percentFulfilled: number;
-  totalPledgesCount: number;
-  fulfilledPledgesCount: number;
-  activePledgesCount: number;
-  fundBreakdown: FundPledgeGap[];
+  totalCommitmentsCount: number;
+  fulfilledCommitmentsCount: number;
+  activeCommitmentsCount: number;
+  fundBreakdown: FundCommitmentGap[];
 }
 
 export type AppPortalMode = 'public' | 'admin';
 
 
+
+/** @deprecated aliases */
+export type AnnualPledge = AnnualCommitment;
+export type DcuBankDeposit = BankSettlement;
+export type PledgeGapSummary = CommitmentGapSummary;
+export type FundPledgeGap = FundCommitmentGap;

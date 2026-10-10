@@ -19,12 +19,12 @@ interface ExportDataModalProps {
   onClose: () => void;
 }
 
-export type AccountingPreset = 'awc_dcb' | 'quickbooks' | 'shelby' | 'generic';
+export type AccountingPreset = 'ledger' | 'quickbooks' | 'shelby' | 'generic';
 
 export const ExportDataModal: React.FC<ExportDataModalProps> = ({ isOpen, onClose }) => {
   const { donations, funds, config, currentRole, addNotification } = useChurch();
 
-  const [preset, setPreset] = useState<AccountingPreset>('awc_dcb');
+  const [preset, setPreset] = useState<AccountingPreset>('ledger');
   const [dateRange, setDateRange] = useState<string>('2026_ytd');
   const [fundFilter, setFundFilter] = useState<string>('all');
   const [methodFilter, setMethodFilter] = useState<string>('all');
@@ -67,7 +67,7 @@ export const ExportDataModal: React.FC<ExportDataModalProps> = ({ isOpen, onClos
 
   const totalFilteredAmount = filteredDonations.reduce((sum, d) => sum + d.amount, 0);
   const totalFilteredFees = filteredDonations.reduce((sum, d) => sum + d.feeAmount, 0);
-  const netDepositAmount = totalFilteredAmount; // When fees covered or settled directly to DCU
+  const netDepositAmount = totalFilteredAmount;
 
   const handleDownloadCsv = () => {
     if (filteredDonations.length === 0) {
@@ -75,117 +75,48 @@ export const ExportDataModal: React.FC<ExportDataModalProps> = ({ isOpen, onClos
       return;
     }
 
-    let headers: string[] = [];
-    let rows: (string | number)[][] = [];
-    let filenameSuffix = preset;
-
-    if (preset === 'awc_dcb') {
-      // AWC Digital Contribution Book (AWC DCB) Format
-      headers = [
-        'AWC Voucher Number',
-        'Member Envelope #',
-        'Transaction Date',
-        'Donor Full Name',
-        'Donor Email Address',
-        'Fund Code',
-        'Fund Designation',
-        'Gross Contribution (USD)',
-        'Stripe Fee Covered',
-        'Processing Fee (USD)',
-        'Net Deposit to DCU Credit Union (USD)',
-        'DCU Batch Reference',
-        'Payment Instrument',
-        'Church Tax EIN',
-        'Status',
-      ];
-
-      rows = filteredDonations.map((d) => [
-        `"${d.awcDcbVoucher || `AWC-VOUCH-${d.receiptNumber.replace('REC-', '')}`}"`,
-        `"${d.envelopeNumber || 'ENV-1004'}"`,
-        `"${new Date(d.timestamp).toISOString().slice(0, 10)}"`,
-        `"${d.donorName.replace(/"/g, '""')}"`,
-        `"${d.donorEmail}"`,
-        `"${d.fundId === 'fund-tithes' ? '1001-OPS' : d.fundId === 'fund-building' ? '2001-CAP' : '3001-MIS'}"`,
-        `"${d.fundName.replace(/"/g, '""')}"`,
-        d.amount.toFixed(2),
-        d.feeCovered ? 'YES' : 'NO',
-        d.feeAmount.toFixed(2),
-        d.amount.toFixed(2),
-        `"${d.dcuSettlementRef || 'DCU-DEP-BATCH-8492'}"`,
-        `"${d.paymentMethod.toUpperCase()} (${d.cardBrand || 'Card'} ****${d.cardLast4 || '4242'})"`,
-        `"${config.ein}"`,
-        `"${d.status.toUpperCase()}"`,
-      ]);
-    } else if (preset === 'quickbooks') {
-      // Intuit QuickBooks General Ledger Format
-      headers = ['Type', 'Date', 'Num', 'Name', 'Memo', 'Account', 'Clr', 'Split', 'Amount'];
-      rows = filteredDonations.map((d) => [
-        'Deposit',
-        `"${new Date(d.timestamp).toLocaleDateString('en-US')}"`,
-        `"${d.receiptNumber}"`,
-        `"${d.donorName.replace(/"/g, '""')}"`,
-        `"${d.fundName} - ${d.dedication || 'Contribution'}"`,
-        `"DCU Credit Union Checking (...8492)"`,
-        'C',
-        `"4010 - ${d.fundName}"`,
-        d.amount.toFixed(2),
-      ]);
-    } else if (preset === 'shelby') {
-      // Shelby Systems / ACS Church Tech Format
-      headers = ['Donor ID', 'Envelope #', 'Date', 'Fund Name', 'SubFund', 'Pledge Flag', 'Amount', 'DCU Deposit Batch'];
-      rows = filteredDonations.map((d) => [
-        d.donorId,
-        `"${d.envelopeNumber || 'ENV-1004'}"`,
-        `"${new Date(d.timestamp).toISOString().slice(0, 10)}"`,
-        `"${d.fundName.replace(/"/g, '""')}"`,
-        'General',
-        d.frequency !== 'one-time' ? 'Y' : 'N',
-        d.amount.toFixed(2),
-        `"DCU-DEP-${new Date(d.timestamp).toISOString().slice(0, 10)}"`,
-      ]);
-    } else {
-      // Universal Standard CPA Ledger
-      headers = [
-        'Transaction ID',
-        'Receipt Number',
-        'Timestamp',
-        'Donor Name',
-        'Donor Email',
-        'Donor Address',
-        'Fund Name',
-        'Gross Amount',
-        'Fee Covered',
-        'Fee Amount',
-        'Total Charged',
-        'Frequency',
-        'Payment Method',
-        'Card Brand',
-        'Card Last 4',
-        'DCU Deposit Ref',
-        'AWC Voucher',
-        'Status',
-      ];
-      rows = filteredDonations.map((d) => [
+    const filenameSuffix = preset || 'ledger';
+    // Export by fund name; optional GL code only when the fund has one set (admin).
+    const anyGl = filteredDonations.some((d) => {
+      const fund = funds.find((f) => f.id === d.fundId) as { glCode?: string; code?: string } | undefined;
+      return Boolean((fund?.glCode || fund?.code || '').trim());
+    });
+    const headers = [
+      'Transaction ID',
+      'Receipt Number',
+      'Date',
+      'Donor Name',
+      'Donor Email',
+      'Fund Name',
+      ...(anyGl ? ['GL Code'] : []),
+      'Amount',
+      'Fee Covered',
+      'Fee Amount',
+      'Total Charged',
+      'Frequency',
+      'Payment Method',
+      'Status',
+    ];
+    const rows = filteredDonations.map((d) => {
+      const fund = funds.find((f) => f.id === d.fundId) as { glCode?: string; code?: string } | undefined;
+      const gl = (fund?.glCode || fund?.code || '').trim();
+      return [
         d.transactionId,
         d.receiptNumber,
-        d.timestamp,
+        new Date(d.timestamp).toISOString().slice(0, 10),
         `"${d.donorName.replace(/"/g, '""')}"`,
         d.donorEmail,
-        `"${(d.donorAddress || '').replace(/"/g, '""')}"`,
         `"${d.fundName.replace(/"/g, '""')}"`,
+        ...(anyGl ? [gl ? `"${gl.replace(/"/g, '""')}"` : ''] : []),
         d.amount.toFixed(2),
         d.feeCovered ? 'YES' : 'NO',
         d.feeAmount.toFixed(2),
         d.totalCharged.toFixed(2),
         d.frequency,
         d.paymentMethod,
-        d.cardBrand || '',
-        d.cardLast4 || '',
-        `"${d.dcuSettlementRef || 'DCU-DEP-8492'}"`,
-        `"${d.awcDcbVoucher || 'AWC-DCB-VOUCH'}"`,
         d.status,
-      ]);
-    }
+      ];
+    });
 
     const csvContent =
       'data:text/csv;charset=utf-8,' +
@@ -223,7 +154,7 @@ export const ExportDataModal: React.FC<ExportDataModalProps> = ({ isOpen, onClos
                 External Accounting Integration
               </span>
               <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                DCU &amp; AWC DCB Ready
+                CSV export ready
               </span>
             </div>
             <h2 className="font-serif-display text-xl sm:text-2xl font-bold text-slate-900 dark:text-white mt-1">
@@ -250,18 +181,18 @@ export const ExportDataModal: React.FC<ExportDataModalProps> = ({ isOpen, onClos
           </label>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
             <button
-              onClick={() => setPreset('awc_dcb')}
+              onClick={() => setPreset('ledger')}
               className={`p-3 rounded-xl border text-left transition-all ${
-                preset === 'awc_dcb'
+                preset === 'ledger'
                   ? 'border-church-gold/50 bg-church-gold/10 dark:bg-church-burgundy/40 dark:border-church-gold ring-2 ring-church-gold/20'
                   : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50'
               }`}
             >
               <span className="font-bold text-xs text-slate-900 dark:text-white block">
-                AWC DCB
+                Ledger
               </span>
               <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5">
-                Digital Contribution Book &amp; DCU Bank
+                Gift ledger export
               </span>
             </button>
 
@@ -411,7 +342,7 @@ export const ExportDataModal: React.FC<ExportDataModalProps> = ({ isOpen, onClos
               </span>
             </div>
             <div>
-              <span className="text-slate-500 block text-[10px]">DCU Credit Union Deposit</span>
+              <span className="text-slate-500 block text-[10px]">Gift total</span>
               <span className="font-mono text-base font-bold text-emerald-700 dark:text-emerald-400">
                 ${netDepositAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </span>

@@ -1,28 +1,34 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useChurch } from '../context/ChurchContext';
 import { Donor, Donation, DonationFrequency } from '../types';
-import { fetchGiftsByEmail } from '../lib/api';
 import {
-  DONOR_PORTAL_EMAIL_KEY,
+  fetchDonorBillingProfile,
+  fetchMyGifts,
+  openStripeCustomerPortal,
+  requestDonorCode,
+} from '../lib/api';
+import { signInWithEmailOtp, signOutDonor } from '../lib/authClient';
+import {
   clearDonorSessionEmail,
+  getDonorSessionEmail,
   normalizeDonorEmail,
-  setDonorSessionEmail,
 } from '../lib/donorSession';
-import { PledgeTracker } from './PledgeTracker';
+import { TurnstileWidget } from './TurnstileWidget';
 import { AnnualGivingSummaryCard } from './AnnualGivingSummaryCard';
 import {
   Download,
   FileText,
-  Shield,
-  Trash2,
   ExternalLink,
   Lock,
-  Target,
   LogOut,
   Mail,
+  RefreshCw,
 } from 'lucide-react';
 
 const normalizeEmail = (value: string) => normalizeDonorEmail(value);
+
+const CODE_SENT_MESSAGE =
+  'If we have gifts for this email, a sign-in code is on its way. Check your inbox (and spam).';
 
 interface DonorSelfServiceProps {
   /** Prefill from a just-completed gift (session handoff). */
@@ -37,104 +43,145 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
   const {
     config,
     funds,
-    cancelRecurringPledge,
-    requestGdprExport,
-    requestGdprErasure,
     setSelectedReceipt,
+    clearSensitiveCaches,
   } = useChurch();
 
   const [emailInput, setEmailInput] = useState('');
+  const [otpInput, setOtpInput] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [unlockedEmail, setUnlockedEmail] = useState<string | null>(null);
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [lookingUp, setLookingUp] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [currentDonor, setCurrentDonor] = useState<Donor | null>(null);
   const [donorGifts, setDonorGifts] = useState<Donation[]>([]);
   const [taxYear, setTaxYear] = useState<number>(2026);
   const [showAnnualStatement, setShowAnnualStatement] = useState(false);
-  const [activePortalTab, setActivePortalTab] = useState<'pledges' | 'statements'>('pledges');
+  const [hasStripeCustomer, setHasStripeCustomer] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
 
-  const tryUnlock = async (email: string): Promise<boolean> => {
+  const mapGiftsToDonations = (result: Awaited<ReturnType<typeof fetchMyGifts>>): Donation[] =>
+    result.donations.map((sd) => ({
+      id: sd.id,
+      transactionId: sd.transactionId,
+      receiptNumber: sd.receiptNumber,
+      donorId: sd.donorId,
+      donorName: sd.donorName,
+      donorEmail: sd.donorEmail,
+      donorAddress: sd.donorAddress,
+      amount: sd.amount,
+      feeCovered: sd.feeCovered,
+      feeAmount: sd.feeAmount,
+      totalCharged: sd.totalCharged,
+      frequency: sd.frequency as DonationFrequency,
+      fundId: sd.fundId,
+      fundName: sd.fundName,
+      paymentMethod: sd.paymentMethod as Donation['paymentMethod'],
+      cardBrand: sd.cardBrand,
+      cardLast4: sd.cardLast4,
+      status: sd.status as Donation['status'],
+      dedication: sd.dedication,
+      isAnonymous: sd.isAnonymous,
+      timestamp: sd.timestamp,
+      nextBillingDate: sd.nextBillingDate,
+      stripePaymentIntentId: sd.stripePaymentIntentId || '',
+      encryptedToken: '',
+      envelopeNumber: sd.envelopeNumber,
+      awcDcbVoucher: sd.awcDcbVoucher,
+      awcSynced: sd.awcSynced,
+      plaidInstitution: sd.plaidInstitution,
+      plaidAccountMask: sd.plaidAccountMask,
+      plaidTransferId: sd.plaidTransferId,
+    }));
+
+  const loadGiftsForSession = async (email: string): Promise<boolean> => {
     const normalized = normalizeEmail(email);
-    if (!normalized || !normalized.includes('@')) {
-      setLookupError('Enter a valid email address used on your gift receipt.');
-      return false;
-    }
-
-    setLookingUp(true);
-    setLookupError(null);
     try {
-      const result = await fetchGiftsByEmail(normalized);
-      if (!result.donor && result.donations.length === 0) {
-        setLookupError('No gifts found for this email. Check the address on your receipt, or give first.');
+      const result = await fetchMyGifts();
+      const gifts = mapGiftsToDonations(result);
+      if (!result.donor && gifts.length === 0) {
+        setLookupError('No gifts found for this email yet. Give first, then return to My Giving.');
         setUnlockedEmail(null);
         setCurrentDonor(null);
         setDonorGifts([]);
         clearDonorSessionEmail();
         return false;
       }
-
-      const gifts: Donation[] = result.donations.map((sd) => ({
-        id: sd.id,
-        transactionId: sd.transactionId,
-        receiptNumber: sd.receiptNumber,
-        donorId: sd.donorId,
-        donorName: sd.donorName,
-        donorEmail: sd.donorEmail,
-        donorAddress: sd.donorAddress,
-        amount: sd.amount,
-        feeCovered: sd.feeCovered,
-        feeAmount: sd.feeAmount,
-        totalCharged: sd.totalCharged,
-        frequency: sd.frequency as DonationFrequency,
-        fundId: sd.fundId,
-        fundName: sd.fundName,
-        paymentMethod: sd.paymentMethod as Donation['paymentMethod'],
-        cardBrand: sd.cardBrand,
-        cardLast4: sd.cardLast4,
-        status: sd.status as Donation['status'],
-        dedication: sd.dedication,
-        isAnonymous: sd.isAnonymous,
-        timestamp: sd.timestamp,
-        nextBillingDate: sd.nextBillingDate,
-        stripePaymentIntentId: sd.stripePaymentIntentId || '',
-        encryptedToken: sd.encryptedToken,
-        envelopeNumber: sd.envelopeNumber,
-        awcDcbVoucher: sd.awcDcbVoucher,
-        awcSynced: sd.awcSynced,
-        plaidInstitution: sd.plaidInstitution,
-        plaidAccountMask: sd.plaidAccountMask,
-        plaidTransferId: sd.plaidTransferId,
-      }));
-
-      const donor: Donor =
-        result.donor
-          ? {
-              ...result.donor,
-              recurringFrequency: result.donor.recurringFrequency as DonationFrequency | undefined,
-            }
-          : {
-              id: gifts[0]?.donorId || `donor-email-${normalized}`,
-              name: gifts[0]?.donorName || 'Donor',
-              email: normalized,
-              phone: '',
-              address: gifts[0]?.donorAddress || '',
-              lifetimeGiving: gifts.reduce((s, g) => s + g.amount, 0),
-              totalGiftsCount: gifts.length,
-              firstGiftDate: gifts[gifts.length - 1]?.timestamp || new Date().toISOString(),
-              lastGiftDate: gifts[0]?.timestamp || new Date().toISOString(),
-              recurringActive: false,
-              gdprConsent: true,
-              gdprConsentDate: gifts[0]?.timestamp || new Date().toISOString(),
-            };
-
+      const donor: Donor = result.donor
+        ? {
+            ...result.donor,
+            recurringFrequency: result.donor.recurringFrequency as DonationFrequency | undefined,
+            gdprConsent: false,
+            gdprConsentDate: '',
+          }
+        : {
+            id: gifts[0]?.donorId || `donor-email-${normalized}`,
+            name: gifts[0]?.donorName || 'Donor',
+            email: normalized,
+            phone: '',
+            address: gifts[0]?.donorAddress || '',
+            lifetimeGiving: gifts.reduce((s, g) => s + g.amount, 0),
+            totalGiftsCount: gifts.length,
+            firstGiftDate: gifts[gifts.length - 1]?.timestamp || new Date().toISOString(),
+            lastGiftDate: gifts[0]?.timestamp || new Date().toISOString(),
+            recurringActive: false,
+            gdprConsent: false,
+            gdprConsentDate: '',
+          };
       setCurrentDonor(donor);
       setDonorGifts(gifts);
       setUnlockedEmail(normalized);
-      setDonorSessionEmail(normalized);
       return true;
     } catch (err) {
-      setLookupError(err instanceof Error ? err.message : 'Could not look up giving history.');
+      setLookupError(err instanceof Error ? err.message : 'Could not load giving history.');
       return false;
+    }
+  };
+
+  const handleRequestCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const normalized = normalizeEmail(emailInput);
+    if (!normalized || !normalized.includes('@')) {
+      setLookupError('Enter a valid email address used on your gift receipt.');
+      return;
+    }
+    setLookingUp(true);
+    setLookupError(null);
+    setStatusMessage(null);
+    try {
+      await requestDonorCode(normalized, turnstileToken);
+      setCodeSent(true);
+      setStatusMessage(CODE_SENT_MESSAGE);
+      setOtpInput('');
+    } catch (err) {
+      setLookupError(err instanceof Error ? err.message : 'Could not request a code.');
+    } finally {
+      setLookingUp(false);
+    }
+  };
+
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const normalized = normalizeEmail(emailInput);
+    if (otpInput.trim().length !== 6) {
+      setLookupError('Enter the 6-digit code from your email.');
+      return;
+    }
+    setLookingUp(true);
+    setLookupError(null);
+    try {
+      const result = await signInWithEmailOtp(normalized, otpInput);
+      if (result.error) {
+        setLookupError(result.error.message || 'Invalid or expired code.');
+        return;
+      }
+      const ok = await loadGiftsForSession(normalized);
+      if (!ok) setCodeSent(true);
+    } catch (err) {
+      setLookupError(err instanceof Error ? err.message : 'Could not verify code.');
     } finally {
       setLookingUp(false);
     }
@@ -142,13 +189,11 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
 
   useEffect(() => {
     const fromPrefill = initialEmail?.trim();
-    const fromSession = sessionStorage.getItem(DONOR_PORTAL_EMAIL_KEY);
-    const candidate = fromPrefill || fromSession;
-    if (candidate) {
-      setEmailInput(candidate);
-      void tryUnlock(candidate);
-      if (fromPrefill) onConsumedInitialEmail?.();
-    }
+    const handoff = getDonorSessionEmail();
+    if (handoff) clearDonorSessionEmail();
+    const candidate = fromPrefill || handoff || '';
+    if (candidate) setEmailInput(candidate);
+    if (fromPrefill) onConsumedInitialEmail?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialEmail]);
 
@@ -216,20 +261,52 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
       .sort((a, b) => b.amount - a.amount);
   }, [completedGifts, funds]);
 
-  const handleAccessSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    void tryUnlock(emailInput);
-  };
-
   const handleSignOut = () => {
+    void signOutDonor();
+    clearSensitiveCaches();
     setUnlockedEmail(null);
     setEmailInput('');
+    setOtpInput('');
+    setCodeSent(false);
+    setStatusMessage(null);
     setLookupError(null);
     setCurrentDonor(null);
     setDonorGifts([]);
     setShowAnnualStatement(false);
     clearDonorSessionEmail();
   };
+
+  useEffect(() => {
+    if (!unlockedEmail) {
+      setHasStripeCustomer(false);
+      setPortalError(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchDonorBillingProfile()
+      .then((b) => {
+        if (!cancelled) setHasStripeCustomer(Boolean(b.hasStripeCustomer));
+      })
+      .catch(() => {
+        if (!cancelled) setHasStripeCustomer(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [unlockedEmail]);
+
+  const handleManageRecurring = async () => {
+    setPortalError(null);
+    setPortalLoading(true);
+    try {
+      const { url } = await openStripeCustomerPortal();
+      window.location.assign(url);
+    } catch (err) {
+      setPortalError(err instanceof Error ? err.message : 'Could not open billing portal');
+      setPortalLoading(false);
+    }
+  };
+
 
   const handlePrintAnnualStatement = () => {
     window.print();
@@ -250,11 +327,11 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
             Sign in to My Giving
           </h1>
           <p className="mt-2 text-center text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-            Use the email on your gift receipt to view your contributions, designated funds, receipts,
-            pledges, and tax statements. No password—your receipt email unlocks your private profile.
+            Enter the email on your gift receipt. We will send a one-time 6-digit code to verify it is
+            you—then you can view receipts and yearly giving summaries.
           </p>
 
-          <form onSubmit={handleAccessSubmit} className="mt-8 space-y-4">
+          <form onSubmit={codeSent ? handleVerifyCode : handleRequestCode} className="mt-8 space-y-4">
             <div>
               <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-slate-500">
                 Email on your gift receipt
@@ -276,6 +353,37 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
               </div>
             </div>
 
+            <TurnstileWidget onToken={setTurnstileToken} />
+
+            {codeSent && (
+              <div>
+                <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                  6-digit code
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  value={otpInput}
+                  onChange={(e) => {
+                    setOtpInput(e.target.value.replace(/\D/g, '').slice(0, 6));
+                    setLookupError(null);
+                  }}
+                  required
+                  autoComplete="one-time-code"
+                  placeholder="000000"
+                  className="w-full rounded-xl border border-[#E8E2D9] bg-white py-2.5 px-3 text-sm tracking-[0.3em] font-mono dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+            )}
+
+            {statusMessage && (
+              <p className="text-xs text-slate-600 dark:text-slate-300" role="status">
+                {statusMessage}
+              </p>
+            )}
+
             {lookupError && (
               <p className="text-xs text-red-600 dark:text-red-400" role="alert">
                 {lookupError}
@@ -288,7 +396,7 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
               className="w-full rounded-xl py-2.5 text-sm font-semibold text-white shadow-sm transition-colors disabled:opacity-60"
               style={{ backgroundColor: '#4A0404' }}
             >
-              {lookingUp ? 'Looking up…' : 'Access My Giving'}
+              {lookingUp ? 'Please wait…' : codeSent ? 'Verify code' : 'Email me a code'}
             </button>
           </form>
 
@@ -366,91 +474,32 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
           </div>
 
           <div className="bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-serif-display text-base font-semibold text-slate-900 dark:text-white">
-                Active Recurring Pledge
-              </h3>
-              {currentDonor.recurringActive ? (
-                <span className="text-[11px] font-medium text-church-burgundy dark:text-church-gold">Active</span>
-              ) : (
-                <span className="text-[11px] text-slate-400">None yet</span>
-              )}
-            </div>
-
-            {currentDonor.recurringActive ? (
-              <div className="space-y-3 text-xs">
-                <div className="p-4 rounded-xl border border-[#E8E2D9] dark:border-slate-700 bg-white/60 dark:bg-slate-800/40">
-                  <div className="flex justify-between items-baseline gap-2">
-                    <span className="font-mono text-2xl font-semibold text-church-burgundy dark:text-church-gold-light tabular-nums">
-                      ${currentDonor.recurringAmount?.toFixed(2)}
-                    </span>
-                    <span className="capitalize text-xs font-medium text-slate-500">
-                      {currentDonor.recurringFrequency}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-2">
-                    Next gift processes automatically through Stripe.
-                  </p>
-                </div>
-
-                <button
-                  onClick={() => cancelRecurringPledge(currentDonor.id)}
-                  className="w-full py-2 text-xs font-medium text-red-700 hover:text-red-800 bg-red-50/80 hover:bg-red-50 rounded-xl border border-red-200/80 dark:bg-red-950/30 dark:text-red-300 dark:border-red-900/50 transition-colors"
-                >
-                  Cancel recurring
-                </button>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Clears your recurring marker here. Pausing the live Stripe subscription still needs the
-                  stewardship team until Customer Portal is available.
-                </p>
-              </div>
-            ) : (
-              <div className="rounded-xl border border-dashed border-[#E8E2D9] dark:border-slate-700 bg-white/50 dark:bg-slate-800/30 px-4 py-5 text-center">
-                <p className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">
-                  A monthly tithe helps sustain worship and outreach year-round.
-                </p>
-                <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">
-                  Set one up anytime from Give Now—you can adjust later.
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 p-6 shadow-sm">
-            <h3 className="font-serif-display text-base font-semibold text-slate-900 dark:text-white flex items-center gap-1.5 mb-1.5">
-              <Shield className="h-4 w-4 text-slate-400" />
-              <span>Your Privacy</span>
+            <h3 className="font-serif-display text-base font-semibold text-slate-900 dark:text-white mb-2">
+              Recurring gifts
             </h3>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mb-4">
-              Your giving details stay private to this profile. Download a copy of your data, or ask us to
-              anonymize personal fields when needed.
+              Change or cancel your recurring gift, or update your payment method, through Stripe&apos;s secure portal.
             </p>
-
-            <div className="space-y-2">
-              <button
-                onClick={() => requestGdprExport(currentDonor.id)}
-                className="w-full flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 rounded-xl border border-[#E8E2D9] dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 transition-colors"
-              >
-                <Download className="h-3.5 w-3.5" />
-                <span>Download my data</span>
-              </button>
-              <button
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      'Are you sure you want to request data anonymization under GDPR Article 17 / CCPA? This will redact your name, email, and address from church records while maintaining financial totals required by IRS regulations.'
-                    )
-                  ) {
-                    requestGdprErasure(currentDonor.id);
-                    handleSignOut();
-                  }
-                }}
-                className="w-full flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-medium text-slate-500 hover:text-red-700 hover:bg-red-50/80 rounded-xl transition-colors"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                <span>Request anonymization</span>
-              </button>
-            </div>
+            {hasStripeCustomer ? (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => void handleManageRecurring()}
+                  disabled={portalLoading}
+                  className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 text-xs font-semibold text-white bg-church-burgundy hover:bg-church-burgundy-light rounded-xl shadow-sm disabled:opacity-60"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${portalLoading ? 'animate-spin' : ''}`} />
+                  <span>{portalLoading ? 'Opening…' : 'Manage recurring gift'}</span>
+                </button>
+                {portalError ? (
+                  <p className="text-[11px] text-red-600" role="alert">{portalError}</p>
+                ) : null}
+              </div>
+            ) : (
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                No Stripe customer is linked to this email yet. After you give by card or bank, you can manage recurring gifts here.
+              </p>
+            )}
           </div>
         </div>
 
@@ -610,46 +659,14 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
             }}
           />
 
-          <div className="flex items-center gap-2 border-b border-[#E8E2D9] dark:border-slate-800 pb-3">
-            <button
-              onClick={() => setActivePortalTab('pledges')}
-              className={`flex items-center gap-1.5 py-1.5 px-3 text-xs font-semibold rounded-xl transition-colors ${
-                activePortalTab === 'pledges'
-                  ? 'bg-church-burgundy text-white shadow-sm'
-                  : 'text-slate-500 hover:bg-white hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800'
-              }`}
-            >
-              <Target className="h-3.5 w-3.5" />
-              <span>Annual Faith Pledge Tracker</span>
-            </button>
-
-            <button
-              onClick={() => setActivePortalTab('statements')}
-              className={`flex items-center gap-1.5 py-1.5 px-3 text-xs font-semibold rounded-xl transition-colors ${
-                activePortalTab === 'statements'
-                  ? 'bg-church-burgundy text-white shadow-sm'
-                  : 'text-slate-500 hover:bg-white hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800'
-              }`}
-            >
-              <FileText className="h-3.5 w-3.5" />
-              <span>Annual Tax Statements &amp; Ledger</span>
-            </button>
-          </div>
-
-          {activePortalTab === 'pledges' && (
-            <PledgeTracker donorId={currentDonor.id} privateMode />
-          )}
-
-          {activePortalTab === 'statements' && (
-            <>
               <div className="bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 p-6 shadow-sm">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-5 border-b border-[#E8E2D9] dark:border-slate-800 gap-3">
                   <div>
                     <h3 className="font-serif-display text-lg font-semibold text-slate-900 dark:text-white">
-                      Annual Tax Giving Statement
+                      Yearly giving summary
                     </h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      Official summary for your tax records
+                      Printable yearly summary for your records
                     </p>
                   </div>
 
@@ -768,8 +785,6 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
                   </div>
                 )}
               </div>
-            </>
-          )}
         </div>
       </div>
 

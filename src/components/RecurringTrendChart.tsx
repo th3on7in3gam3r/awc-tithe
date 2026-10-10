@@ -15,7 +15,7 @@ interface MonthlyDataPoint {
   month: string;
   recurringAmount: number;
   recurringDonors: number;
-  averagePledge: number;
+  averageGift: number;
 }
 
 export const RecurringTrendChart: React.FC = () => {
@@ -52,7 +52,7 @@ export const RecurringTrendChart: React.FC = () => {
       month: m.label,
       recurringAmount: amount,
       recurringDonors: donorCount,
-      averagePledge: avg,
+      averageGift: avg,
     };
   });
 
@@ -75,8 +75,8 @@ export const RecurringTrendChart: React.FC = () => {
             <span className="font-mono text-white">{data.recurringDonors}</span>
           </div>
           <div className="flex justify-between gap-4 text-slate-400 text-[11px]">
-            <span>Avg pledge</span>
-            <span className="font-mono">${data.averagePledge}/mo</span>
+            <span>Avg gift</span>
+            <span className="font-mono">${data.averageGift}/mo</span>
           </div>
         </div>
       );

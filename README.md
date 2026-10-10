@@ -1,16 +1,15 @@
 # AWC Tithe
 
-Church giving front door for **AWC** — cards via Stripe, bank ACH via Plaid (equal donor choice), settlement to **DCU Credit Union**, contribution ledger bridge to the **AWC Digital Contribution Book (DCB)**.
-
-Card numbers and bank credentials never touch AWC Tithe servers — Stripe Elements and Plaid Link collect them. Tithe stores gift metadata (amount, fund, name or Anonymous, email, receipt IDs) and posts to DCB.
+Church giving front door for **AWC**. Every online gift is a Stripe Payment Element charge (card, Apple Pay, Google Pay, or US bank account). Recurring gifts are Stripe Subscriptions. Donation rows are written only by the verified Stripe webhook.
 
 ## Run locally
 
 **Prerequisites:** Node.js
 
 1. Install dependencies: `npm install` (or `npm install --legacy-peer-deps` if peer deps conflict)
-2. Copy env placeholders: `cp .env.example .env.local` (keys optional — simulator works without them)
-3. Run web + API together:
+2. Copy env placeholders: `cp .env.example .env.local` and set Stripe test keys plus `STRIPE_WEBHOOK_SECRET` from `stripe listen`. Without Stripe keys the Give page says online giving is unavailable; without the webhook signing secret, webhook events are rejected and no gifts are written.
+3. In the Stripe Dashboard, the webhook endpoint API version must be **`2025-08-27.basil`** (same as this app’s Stripe client). Using an older endpoint version will drop subscription fields Tithe needs.
+4. Run web + API together:
    `npm run dev:all`
    - Web: http://127.0.0.1:3000
    - API: http://127.0.0.1:3001 (`GET /api/health`, `GET /api/config`)
@@ -22,36 +21,31 @@ Set these on the **awc-tithe** Web Service:
 | Variable | Purpose |
 |----------|---------|
 | `DATABASE_URL` | Neon Postgres connection string (durable gifts / tax portal) |
-| `AWC_VAULT_INTEREST_URL` | Optional Vault CMS webhook for newcomer opt-in leads |
-| `AWC_VAULT_SETUP_URL` | Link shown after Vault opt-in (member setup / church site) |
 | `STRIPE_SECRET_KEY` | Stripe secret key |
 | `STRIPE_PUBLISHABLE_KEY` | Stripe publishable key (browser) |
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret |
-| `PLAID_CLIENT_ID` | Plaid client id |
-| `PLAID_SECRET` | Plaid secret |
-| `PLAID_ENV` | `sandbox` / `development` / `production` |
 | `AWC_DCB_API_URL` | DCB base URL (e.g. `https://your-dcb.onrender.com`) |
-| `AWC_DCB_SERVICE_SECRET` | Shared HMAC secret with DCB (`AWC_DCB_API_KEY` is an alias) |
-| `AWC_DCB_BOOK_ID` | Contribution book id |
-| `STAFF_ACCESS_CODE` | Staff Portal invite code |
-| `STAFF_TOTP_SECRET` | Optional base32 authenticator secret (production MFA) |
+| `AWC_DCB_KEY_TITHE` | Per-app HMAC key DCB issues for Tithe (`X-AWC-Key-Id: tithe`) |
+| `DCB_REQUIRED` | Set `true` in production to refuse boot if DCB vars are missing |
+| `BETTER_AUTH_SECRET` | Signs donor and staff sessions. Required in production. |
 
-Without Stripe/Plaid keys the Give form uses the built-in simulator (Card and Plaid Bank tabs still both shown). Without `DATABASE_URL`, gifts persist in API memory until restart.
+Without Stripe keys the Give page shows “Online giving is temporarily unavailable.” Without `DATABASE_URL`, gifts persist in API memory until restart. `npm run recompute-donor-totals` prints a dry-run diff of donor lifetime totals; add `--apply` to write them.
 
 **Neon:** create a project at [neon.tech](https://neon.tech), copy the **pooled** connection string into `DATABASE_URL` (local `.env.local` and Render). Confirm Integrations & Settings → Database shows Live.
 
-### Guided giving
+### Giving
 
-On **Give Now**, choose **Start guided giving** for a step-by-step walkthrough (welcome, returning/new, optional AWC Vault CMS opt-in, frequency, identity, Stripe or Plaid, confirm, send). The classic form remains available.
+The Give form uses one Stripe Payment Element for cards, Apple Pay, Google Pay, and US bank accounts through Stripe Financial Connections. Covering the fee updates the PaymentIntent on the server before confirmation. One-time gifts are PaymentIntents. Weekly, bi-weekly, monthly, and annual gifts are Stripe Subscriptions. The browser shows a processing confirmation and polls `GET /api/stripe/payment-status/:paymentIntentId`; only verified Stripe webhooks create donation rows. My Giving’s Customer Portal manages the real subscriptions.
 
 ### Bridge to DCB
 
-1. On **DCB (Render)**: set `AWC_DCB_SERVICE_SECRET` to a long random string.
-2. On **Tithe**: set the same secret as `AWC_DCB_SERVICE_SECRET` and `AWC_DCB_API_URL` to the DCB base URL.
-3. Tithe signs each POST with `X-AWC-Timestamp` + `X-AWC-Signature` (HMAC-SHA256) to  
-   `POST /api/public/giving/contributions`.
-4. Payload always includes `amount` and `donorName` (`Anonymous` when the donor opts in).
-5. Match Tithe `fundCode` / `fundName` to active funds in DCB (or gifts land in Online Giving → Review).
+Completed gifts are queued in `dcb_outbox` inside the same Stripe webhook transaction that writes the donation. A background worker delivers pending rows with backoff. DCB is never called from a webhook or request handler.
+
+1. On **Tithe**: set `AWC_DCB_API_URL` to the DCB base URL and `AWC_DCB_KEY_TITHE` to the per-app key DCB issued for Tithe.
+2. Tithe POSTs to `/api/public/giving/contributions` with `X-AWC-Key-Id: tithe`, `X-AWC-Timestamp`, `X-AWC-Signature` (HMAC-SHA256 of `timestamp.body` with `AWC_DCB_KEY_TITHE`), and `Idempotency-Key` set to the full Stripe PaymentIntent or invoice ID.
+3. The payload includes `source: "awc-tithe-bridge"`, `amount`, `donorName` (`Anonymous` when the donor opts in), and `voucherNumber` from the receipt number.
+4. If those env vars are missing, outbox rows stay pending and boot logs a warning. With `DCB_REQUIRED=true`, the process refuses to start.
+5. Refunds write a `needs_review` outbox row until DCB has a refund endpoint. See [`docs/dcb-refund-endpoint.md`](docs/dcb-refund-endpoint.md). Admins retry failed contribution rows from Staff Portal → DCB Sync. Schema: [`server/sql/dcb_outbox.sql`](server/sql/dcb_outbox.sql).
 
 ### Free-tier cold start (Render sleep)
 
@@ -65,10 +59,24 @@ To reduce sleep (does not make free tier “always on” by itself), ping health
 
 ### Gift ledger APIs (extended)
 
-- `POST /api/gifts` — record a completed gift (processor paths)
-- `POST /api/gifts/offline` — staff Contribution Log → Neon + DCB (requires staff session cookie)
+- `POST /api/gifts` — removed. The Stripe webhook is the only donation writer.
+- `POST /api/gifts/offline` — staff cash/check log into `offline_gifts` (does not create a donation row)
 - `GET /api/gifts` — staff ledger list (requires staff session)
-- `GET /api/gifts/by-email?email=` — private donor portal lookup
-- `POST /api/staff/verify` — invite + MFA; sets `awc_staff_session` httpOnly cookie
+- `POST /api/stripe/create-payment-intent` — one-time PaymentIntent or incomplete Subscription; sets a short-lived signed cookie
+- `POST /api/stripe/update-payment-intent` — server recomputes the fee and updates the PaymentIntent amount
+- `GET /api/stripe/payment-status/:paymentIntentId` — `{ status, receiptNumber? }` for a PaymentIntent in that cookie
+- `POST /api/stripe/webhook` — signature verify, then a transaction that inserts the event id before processing
+- `POST /api/donor/request-code` — anti-enumeration OTP request (uniform response)
+- `GET /api/donor/me/gifts` — session-bound donor gifts (Better Auth cookie)
+- `GET /api/donor/me/profile` — session-bound prefill for Give form
+- `POST /api/donor/logout` — end donor session
+- `GET /api/dcb/outbox` — admin: failed and needs_review DCB rows
+- `POST /api/dcb/outbox/:id/retry` — admin: re-queue a row (payload rebuilt from the database)
+- `/api/auth/*` — Better Auth (email OTP)
+- Staff Portal sign-in is individual Better Auth email OTP at `/api/staff-auth`, separate from donor My Giving. Staff must have an active `staff_accounts` row linked to their Better Auth user. Admins must enroll and verify an authenticator before using staff features; staff may enroll optionally. Staff sessions have a 12-hour absolute lifetime and a 30-minute idle timeout; donor sessions retain their 30-day lifetime.
+- Admin invitations are emailed, single-use, and expire after 72 hours. The staff schema migration is [`server/sql/staff_accounts_phase.sql`](server/sql/staff_accounts_phase.sql); the server also ensures the Better Auth/TOTP tables at startup. To bootstrap the first administrator, run `npm run create-admin -- email@example.com`. It refuses when an active admin already exists and prints the one-time invite link.
+
+Public `GET /api/gifts/by-email` was removed (donor privacy). See `docs/privacy-phase1-test-plan.md`.
+Stripe fee/webhook checks: [`docs/stripe-webhook-test-plan.md`](docs/stripe-webhook-test-plan.md).
 
 Set church legal/support fields in Render env (`CHURCH_LEGAL_NAME`, `CHURCH_ADDRESS`, `CHURCH_CITY_STATE_ZIP`, `CHURCH_EIN`, `CHURCH_PHONE`, `CHURCH_SUPPORT_EMAIL`, etc.) — see `.env.example`. Address for AWC: `4 School St` / `Acton, MA 01720`. Leave `CHURCH_EIN` blank until the Pastor provides it; blank values are omitted from the footer and receipts (no fake EIN).

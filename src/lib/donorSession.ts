@@ -1,9 +1,8 @@
-import { fetchGiftsByEmail } from './api';
+/** Helpers for verified donor session — no public email enumeration. */
 
-/** My Giving soft-session — shared so Give can prefill returning donors. */
 export const DONOR_PORTAL_EMAIL_KEY = 'awc_donor_portal_email';
 
-export type DonorProfileSource = 'session' | 'lookup' | 'manual' | null;
+export type DonorProfileSource = 'session' | 'manual' | null;
 
 export interface DonorProfilePrefill {
   email: string;
@@ -11,21 +10,7 @@ export interface DonorProfilePrefill {
   address: string;
   phone: string;
   found: boolean;
-  source: Exclude<DonorProfileSource, 'manual' | null>;
-}
-
-export interface LocalDonorHint {
-  email: string;
-  name: string;
-  address?: string;
-  phone?: string;
-}
-
-export interface LocalGiftHint {
-  donorEmail: string;
-  donorName: string;
-  donorAddress?: string;
-  isAnonymous?: boolean;
+  source: 'session';
 }
 
 export function normalizeDonorEmail(value: string): string {
@@ -65,84 +50,35 @@ function sanitizeName(name: string): string {
   return trimmed;
 }
 
-function profileFromLocal(
-  normalized: string,
-  source: 'session' | 'lookup',
-  local?: { donors?: LocalDonorHint[]; donations?: LocalGiftHint[] }
-): DonorProfilePrefill | null {
-  if (!local) return null;
-  const donor = local.donors?.find((d) => normalizeDonorEmail(d.email) === normalized);
-  const gifts = (local.donations || []).filter(
-    (g) => normalizeDonorEmail(g.donorEmail) === normalized
-  );
-  if (!donor && gifts.length === 0) return null;
-
-  const latest = gifts[0];
-  const name =
-    sanitizeName(donor?.name || '') ||
-    (latest && !latest.isAnonymous ? sanitizeName(latest.donorName) : '');
-  const address = (donor?.address || latest?.donorAddress || '').trim();
-  const phone = (donor?.phone || '').trim();
-
-  return {
-    email: normalized,
-    name,
-    address,
-    phone,
-    found: true,
-    source,
-  };
-}
-
 /**
- * Load name/address for an email from the gift ledger (API),
- * falling back to in-browser donors/donations when the server has no match.
+ * Prefill Give form from a verified Better Auth session only
+ * (GET /api/donor/me/profile — 401 if not signed in).
  */
-export async function loadDonorProfileByEmail(
-  email: string,
-  source: 'session' | 'lookup' = 'lookup',
-  local?: { donors?: LocalDonorHint[]; donations?: LocalGiftHint[] }
-): Promise<DonorProfilePrefill> {
-  const normalized = normalizeDonorEmail(email);
-  if (!normalized.includes('@')) {
-    return { email: normalized, name: '', address: '', phone: '', found: false, source };
-  }
-
+export async function loadVerifiedDonorProfile(): Promise<DonorProfilePrefill | null> {
   try {
-    const result = await fetchGiftsByEmail(normalized);
-    const latest = result.donations[0];
-    const name =
-      sanitizeName(result.donor?.name || '') ||
-      (latest && !latest.isAnonymous ? sanitizeName(latest.donorName || '') : '');
-    const address =
-      (result.donor?.address || '').trim() ||
-      (latest?.donorAddress || '').trim();
-    const phone = (result.donor?.phone || '').trim();
-    const found = Boolean(result.donor || result.donations.length > 0);
-
-    if (found) {
-      return {
-        email: normalized,
-        name,
-        address,
-        phone,
-        found: true,
-        source,
+    const res = await fetch('/api/donor/me/profile', { credentials: 'include' });
+    if (res.status === 401) return null;
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      ok?: boolean;
+      profile?: {
+        email: string;
+        name: string;
+        address: string;
+        phone: string;
+        found: boolean;
       };
-    }
+    };
+    if (!data.profile?.email) return null;
+    return {
+      email: normalizeDonorEmail(data.profile.email),
+      name: sanitizeName(data.profile.name || ''),
+      address: (data.profile.address || '').trim(),
+      phone: (data.profile.phone || '').trim(),
+      found: Boolean(data.profile.found),
+      source: 'session',
+    };
   } catch {
-    // fall through to local
+    return null;
   }
-
-  const localProfile = profileFromLocal(normalized, source, local);
-  if (localProfile) return localProfile;
-
-  return {
-    email: normalized,
-    name: '',
-    address: '',
-    phone: '',
-    found: false,
-    source,
-  };
 }

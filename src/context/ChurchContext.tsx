@@ -8,12 +8,13 @@ import {
   AuditLog,
   OfflineGift,
   UserRole,
+  StaffPortalRole,
   ToastNotification,
   DonationFrequency,
   PaymentMethod,
-  AnnualPledge,
-  PledgeGapSummary,
-  DcuBankDeposit,
+  AnnualPledge as AnnualCommitment,
+  CommitmentGapSummary,
+  BankSettlement,
   ReconciliationDiscrepancy,
 } from '../types';
 import {
@@ -21,43 +22,20 @@ import {
   initialFunds,
   initialDonors,
   initialDonations,
-  initialAuditLogs,
-  initialPledges,
-  initialDcuDeposits,
+  initialAnnualCommitments,
+  initialBankSettlements,
   initialReconciliationDiscrepancies,
 } from '../data/initialData';
 import {
-  recordGift,
   recordOfflineGift,
-  verifyStaffPortalAccess,
-  fetchApiConfig,
+  fetchPublicFunds,
   fetchStaffLedger,
   type ServerDonation,
   type ServerDonor,
 } from '../lib/api';
-
-interface DonationInput {
-  amount: number;
-  feeCovered: boolean;
-  frequency: DonationFrequency;
-  fundId: string;
-  donorName: string;
-  donorEmail: string;
-  donorAddress?: string;
-  paymentMethod: PaymentMethod;
-  cardBrand?: string;
-  cardLast4?: string;
-  dedication?: string;
-  isAnonymous?: boolean;
-  plaidInstitution?: string;
-  plaidAccountMask?: string;
-  envelopeNumber?: string;
-  /** Overrides when using live Stripe / Plaid / DCB APIs */
-  stripePaymentIntentId?: string;
-  plaidTransferId?: string;
-  awcDcbVoucher?: string;
-  awcSynced?: boolean;
-}
+import { computeProcessingFee } from '../../shared/fees';
+import { purgeLegacyStewardshipStorage } from '../lib/legacyStorage';
+import { fetchChurchSettings, fetchStaffSession, logoutStaff } from '../lib/api';
 
 interface ChurchContextType {
   config: ChurchConfig;
@@ -66,23 +44,23 @@ interface ChurchContextType {
   donations: Donation[];
   auditLogs: AuditLog[];
   offlineGifts: OfflineGift[];
-  pledges: AnnualPledge[];
-  dcuDeposits: DcuBankDeposit[];
+  annualCommitments: AnnualCommitment[];
+  bankSettlements: BankSettlement[];
   discrepancies: ReconciliationDiscrepancy[];
   currentRole: UserRole;
+  /** Server Staff Portal role from session cookie (admin | staff). Null when locked. */
+  staffPortalRole: StaffPortalRole | null;
   isMfaVerified: boolean;
   darkMode: boolean;
   notifications: ToastNotification[];
   selectedReceipt: Donation | null;
   setSelectedReceipt: (d: Donation | null) => void;
   toggleDarkMode: () => void;
-  switchRole: (role: UserRole) => void;
-  verifyStaffAccess: (inviteCode: string, authenticatorCode: string) => Promise<boolean>;
+  refreshStaffSession: () => Promise<boolean>;
   resetMfa: () => void;
-  makeDonation: (input: DonationInput) => Promise<Donation>;
   refundDonation: (transactionId: string, reason: string) => void;
-  cancelRecurringPledge: (donorId: string) => void;
-  createOrUpdatePledge: (input: {
+  cancelRecurringGift: (donorId: string) => void;
+  createOrUpdateCommitment: (input: {
     donorId: string;
     donorName: string;
     donorEmail: string;
@@ -90,22 +68,28 @@ interface ChurchContextType {
     fundId: string;
     committedAmount: number;
     notes?: string;
-  }) => AnnualPledge;
-  calculatePledgeGap: (taxYear?: number) => PledgeGapSummary;
+  }) => AnnualCommitment;
+  calculateCommitmentGap: (taxYear?: number) => CommitmentGapSummary;
   queueOfflineGift: (gift: Omit<OfflineGift, 'id' | 'timestamp' | 'synced'>) => void;
   syncOfflineGifts: () => Promise<void>;
   hydrateStaffLedger: () => Promise<void>;
-  requestGdprErasure: (donorId: string) => void;
-  requestGdprExport: (donorId: string) => void;
+  requestPrivacyExport: (donorId: string) => void;
   exportTransactionsCSV: () => void;
   exportAuditLogsCSV: () => void;
   resolveDiscrepancy: (id: string, note: string, actionType: 'adjust_fee' | 'create_voucher' | 'mark_cleared') => void;
   runAutoReconciliation: () => { matchedCount: number; remainingCount: number };
   relinkDcuFinancialConnections: (updatedInfo?: Partial<ChurchConfig['dcuBank']>) => void;
   toggleAutoReconcile: (enabled: boolean) => void;
-  simulateIncomingDcuDeposit: (amount: number, description: string, type: DcuBankDeposit['type'], envelopeRef?: string) => DcuBankDeposit;
+  simulateIncomingDcuDeposit: (amount: number, description: string, type: BankSettlement['type'], envelopeRef?: string) => BankSettlement;
   dismissNotification: (id: string) => void;
   addNotification: (type: ToastNotification['type'], title: string, message: string) => void;
+  configStatus: 'loading' | 'ready' | 'error';
+  configError: string | null;
+  fundsStatus: 'loading' | 'ready' | 'error';
+  ledgerStatus: 'idle' | 'loading' | 'ready' | 'error';
+  ledgerError: string | null;
+  clearSensitiveCaches: () => void;
+  refreshChurchSettings: () => Promise<void>;
 }
 
 const STORAGE_KEY = 'awc_tithe_stewardship_v2';
@@ -128,65 +112,29 @@ function generateIntegrityHash(payload: string): string {
 }
 
 export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [config, setConfig] = useState<ChurchConfig>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_config`);
-    if (!saved) return initialChurchConfig;
-    const parsed = JSON.parse(saved) as ChurchConfig;
-    // Backfill senior pastor for installs that stored an empty value
-    if (!parsed.seniorPastor?.trim()) {
-      parsed.seniorPastor = initialChurchConfig.seniorPastor;
-    }
-    // Prefer .com church domain (legacy localStorage may still have .org)
-    if (parsed.email?.includes('anointedworshipcenter.org')) {
-      parsed.email = parsed.email.replace('anointedworshipcenter.org', 'anointedworshipcenter.com');
-    }
-    if (parsed.website?.includes('anointedworshipcenter.org')) {
-      parsed.website = parsed.website.replace('anointedworshipcenter.org', 'anointedworshipcenter.com');
-    }
-    return { ...initialChurchConfig, ...parsed };
-  });
+  const [config, setConfig] = useState<ChurchConfig>(initialChurchConfig);
+  const [configStatus, setConfigStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [configError, setConfigError] = useState<string | null>(null);
 
-  const [funds, setFunds] = useState<Fund[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_funds`);
-    return saved ? JSON.parse(saved) : initialFunds;
-  });
+  const [funds, setFunds] = useState<Fund[]>(initialFunds);
+  const [fundsStatus, setFundsStatus] = useState<'loading' | 'ready' | 'error'>('loading');
 
-  const [donors, setDonors] = useState<Donor[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_donors`);
-    return saved ? JSON.parse(saved) : initialDonors;
-  });
+  const [donors, setDonors] = useState<Donor[]>(initialDonors);
+  const [donations, setDonations] = useState<Donation[]>(initialDonations);
+  const [ledgerStatus, setLedgerStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [ledgerError, setLedgerError] = useState<string | null>(null);
 
-  const [donations, setDonations] = useState<Donation[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_donations`);
-    return saved ? JSON.parse(saved) : initialDonations;
-  });
+  /** Server audit is fetched by the Staff Portal. The client does not keep a log. */
+  const auditLogs: AuditLog[] = [];
+  const setAuditLogs: React.Dispatch<React.SetStateAction<AuditLog[]>> = () => {};
 
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_audit`);
-    return saved ? JSON.parse(saved) : initialAuditLogs;
-  });
-
-  const [offlineGifts, setOfflineGifts] = useState<OfflineGift[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_offline`);
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [pledges, setPledges] = useState<AnnualPledge[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_pledges`);
-    return saved ? JSON.parse(saved) : initialPledges;
-  });
-
-  const [dcuDeposits, setDcuDeposits] = useState<DcuBankDeposit[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_dcu_deposits`);
-    return saved ? JSON.parse(saved) : initialDcuDeposits;
-  });
-
-  const [discrepancies, setDiscrepancies] = useState<ReconciliationDiscrepancy[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_discrepancies`);
-    return saved ? JSON.parse(saved) : initialReconciliationDiscrepancies;
-  });
+  const [offlineGifts, setOfflineGifts] = useState<OfflineGift[]>([]);
+  const [annualCommitments, setAnnualCommitments] = useState<AnnualCommitment[]>(initialAnnualCommitments);
+  const [bankSettlements, setBankSettlements] = useState<BankSettlement[]>(initialBankSettlements);
+  const [discrepancies, setDiscrepancies] = useState<ReconciliationDiscrepancy[]>(initialReconciliationDiscrepancies);
 
   const [currentRole, setCurrentRole] = useState<UserRole>('donor');
+  const [staffPortalRole, setStaffPortalRole] = useState<StaffPortalRole | null>(null);
   const [isMfaVerified, setIsMfaVerified] = useState<boolean>(false);
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     return localStorage.getItem(`${STORAGE_KEY}_dark`) === 'true';
@@ -194,63 +142,96 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [notifications, setNotifications] = useState<ToastNotification[]>([]);
   const [selectedReceipt, setSelectedReceipt] = useState<Donation | null>(null);
 
-  // Sync to localStorage
-  useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_config`, JSON.stringify(config));
-  }, [config]);
+  const refreshChurchSettings = async () => {
+    const c = await fetchChurchSettings();
+    setConfig((prev) => ({
+      ...prev,
+      name: c.name || prev.name,
+      legalEntityName: c.legalEntityName,
+      address: c.address,
+      cityStateZip: c.cityStateZip,
+      ein: c.ein,
+      phone: c.phone,
+      email: c.email || prev.email,
+      website: c.website,
+      seniorPastor: c.seniorPastor || prev.seniorPastor,
+      financialOfficer: c.financialOfficer,
+      taxExemptStatus: c.taxExemptStatus || prev.taxExemptStatus,
+    }));
+    setConfigStatus('ready');
+  };
 
-  // Merge public church identity from server env (overrides empty local blanks)
+  const clearSensitiveCaches = () => {
+    setDonors([]);
+    setDonations([]);
+    setOfflineGifts([]);
+    setAnnualCommitments([]);
+    setBankSettlements([]);
+    setDiscrepancies([]);
+    setSelectedReceipt(null);
+    setLedgerStatus('idle');
+    setLedgerError(null);
+  };
+
   useEffect(() => {
-    void fetchApiConfig().then((api) => {
-      if (!api?.church) return;
-      const c = api.church;
-      // Prefer server church identity; blank EIN/address from env clears stale localStorage
-      setConfig((prev) => ({
-        ...prev,
-        name: c.name?.trim() || prev.name,
-        legalEntityName:
-          c.legalEntityName != null ? String(c.legalEntityName).trim() : prev.legalEntityName,
-        address: c.address != null ? String(c.address).trim() : prev.address,
-        cityStateZip: c.cityStateZip != null ? String(c.cityStateZip).trim() : prev.cityStateZip,
-        ein: c.ein != null ? String(c.ein).trim() : prev.ein,
-        phone: c.phone != null ? String(c.phone).trim() : prev.phone,
-        email: c.email?.trim() || prev.email,
-        website: c.website?.trim() || prev.website,
-      }));
+    purgeLegacyStewardshipStorage();
+    setConfigStatus('loading');
+    setConfigError(null);
+    void fetchChurchSettings()
+      .then((c) => {
+        setConfig((prev) => ({
+          ...prev,
+          name: c.name || prev.name,
+          legalEntityName: c.legalEntityName,
+          address: c.address,
+          cityStateZip: c.cityStateZip,
+          ein: c.ein,
+          phone: c.phone,
+          email: c.email || prev.email,
+          website: c.website,
+          seniorPastor: c.seniorPastor || prev.seniorPastor,
+          financialOfficer: c.financialOfficer,
+          taxExemptStatus: c.taxExemptStatus || prev.taxExemptStatus,
+        }));
+        setConfigStatus('ready');
+      })
+      .catch((err) => {
+        setConfigStatus('error');
+        setConfigError(err instanceof Error ? err.message : 'Could not load church settings');
+      });
+
+    setFundsStatus('loading');
+    void fetchPublicFunds()
+      .then((list) => {
+        if (list.length) {
+          setFunds(
+            list.map((f) => ({
+              id: f.id,
+              name: f.name,
+              description: f.description,
+              code: '',
+              goalAmount: 0,
+              currentAmount: 0,
+              category: 'General' as const,
+              active: true,
+              sortOrder: f.sortOrder,
+            }))
+          );
+        }
+        setFundsStatus('ready');
+      })
+      .catch(() => setFundsStatus('error'));
+
+    void fetchStaffSession().then((session) => {
+      if (!session.authenticated || !session.role || session.needsEnrollment || session.mfaRequired) return;
+      setIsMfaVerified(true);
+      setStaffPortalRole(session.role);
+      setCurrentRole(session.role);
+      void hydrateStaffLedger();
     });
+    // hydrateStaffLedger is stable enough for first paint; defined below via closure on each render is unsafe.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_funds`, JSON.stringify(funds));
-  }, [funds]);
-
-  useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_donors`, JSON.stringify(donors));
-  }, [donors]);
-
-  useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_donations`, JSON.stringify(donations));
-  }, [donations]);
-
-  useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_audit`, JSON.stringify(auditLogs));
-  }, [auditLogs]);
-
-  useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_offline`, JSON.stringify(offlineGifts));
-  }, [offlineGifts]);
-
-  useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_pledges`, JSON.stringify(pledges));
-  }, [pledges]);
-
-  useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_dcu_deposits`, JSON.stringify(dcuDeposits));
-  }, [dcuDeposits]);
-
-  useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_discrepancies`, JSON.stringify(discrepancies));
-  }, [discrepancies]);
 
   useEffect(() => {
     if (darkMode) {
@@ -276,347 +257,30 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
 
-  const switchRole = (role: UserRole) => {
-    setCurrentRole(role);
-    if (role === 'admin' && !isMfaVerified) {
-      addNotification('info', 'MFA Required', 'Please enter your 6-digit TOTP code to unlock Admin privileges.');
-    } else {
-      const label = role === 'first_lady' ? 'FIRST LADY' : role.toUpperCase();
-      addNotification('info', 'Role Switched', `Active view updated to ${label}`);
-    }
-  };
-
-  const verifyStaffAccess = async (inviteCode: string, authenticatorCode: string): Promise<boolean> => {
-    try {
-      const result = await verifyStaffPortalAccess({ inviteCode, authenticatorCode });
-      if (!result.ok) {
-        addNotification('error', 'Staff Portal Locked', result.error || 'Invalid invite or code.');
-        return false;
+  const refreshStaffSession = async (): Promise<boolean> => {
+    const session = await fetchStaffSession();
+    if (!session.authenticated || !session.role || session.needsEnrollment || session.mfaRequired) {
+      if (!session.authenticated) {
+        setIsMfaVerified(false);
+        setStaffPortalRole(null);
+        setCurrentRole('donor');
       }
-      setIsMfaVerified(true);
-      const auditEntry: AuditLog = {
-        id: `audit-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        actorId: 'usr-admin-session',
-        actorName: 'Administrative Steward',
-        actorRole: 'admin',
-        action: 'STAFF_PORTAL_ACCESS',
-        resource: 'Security Perimeter',
-        details: 'Staff invite/access code and authenticator verified for Staff Portal session.',
-        ipAddress: '192.168.1.102',
-        integrityHash: generateIntegrityHash(`staff_access_${Date.now()}`),
-      };
-      setAuditLogs((prev) => [auditEntry, ...prev]);
-      addNotification('success', 'Staff Portal Unlocked', 'Authorized staff session started.');
-      void hydrateStaffLedger();
-      return true;
-    } catch (err) {
-      addNotification(
-        'error',
-        'Staff Portal Locked',
-        err instanceof Error ? err.message : 'Could not verify staff access.'
-      );
       return false;
     }
+    setIsMfaVerified(true);
+    setStaffPortalRole(session.role);
+    setCurrentRole(session.role);
+    void hydrateStaffLedger();
+    return true;
   };
 
   const resetMfa = () => {
+    void logoutStaff();
     setIsMfaVerified(false);
-    addNotification('info', 'Staff Portal Locked', 'Staff session closed. Invite code required to re-enter.');
-  };
-
-  const makeDonation = async (input: DonationInput): Promise<Donation> => {
-    const feeAmount = input.feeCovered ? Number((input.amount * 0.029 + 0.3).toFixed(2)) : 0;
-    const totalCharged = Number((input.amount + feeAmount).toFixed(2));
-    const now = new Date();
-    const timestamp = now.toISOString();
-    const targetFund = funds.find((f) => f.id === input.fundId) || funds[0];
-    const displayName = input.isAnonymous ? 'Anonymous' : input.donorName;
-
-    // Persist to server ledger (Neon when DATABASE_URL is set; otherwise memory on API)
-    let serverDonation: Donation | null = null;
-    let serverDonorId: string | null = null;
-    try {
-      const recorded = await recordGift({
-        amount: input.amount,
-        feeCovered: input.feeCovered,
-        feeAmount,
-        frequency: input.frequency,
-        fundId: targetFund.id,
-        fundName: targetFund.name,
-        fundCode: targetFund.code,
-        donorName: input.donorName,
-        donorEmail: input.donorEmail,
-        donorAddress: input.donorAddress,
-        paymentMethod: input.paymentMethod,
-        cardBrand: input.cardBrand,
-        cardLast4: input.cardLast4,
-        dedication: input.dedication,
-        isAnonymous: input.isAnonymous,
-        stripePaymentIntentId: input.stripePaymentIntentId,
-        plaidTransferId: input.plaidTransferId,
-        plaidInstitution: input.plaidInstitution,
-        plaidAccountMask: input.plaidAccountMask,
-        awcDcbVoucher: input.awcDcbVoucher,
-        awcSynced: input.awcSynced,
-        transactionId: input.stripePaymentIntentId || input.plaidTransferId,
-      });
-
-      serverDonorId = recorded.donor.id;
-      const sd = recorded.donation;
-      serverDonation = {
-        id: sd.id,
-        transactionId: sd.transactionId,
-        receiptNumber: sd.receiptNumber,
-        donorId: sd.donorId,
-        donorName: sd.donorName,
-        donorEmail: sd.donorEmail,
-        donorAddress: sd.donorAddress,
-        amount: sd.amount,
-        feeCovered: sd.feeCovered,
-        feeAmount: sd.feeAmount,
-        totalCharged: sd.totalCharged,
-        frequency: sd.frequency as DonationFrequency,
-        fundId: sd.fundId,
-        fundName: sd.fundName,
-        paymentMethod: sd.paymentMethod as PaymentMethod,
-        cardBrand: sd.cardBrand,
-        cardLast4: sd.cardLast4,
-        status: sd.status as Donation['status'],
-        dedication: sd.dedication,
-        isAnonymous: sd.isAnonymous,
-        timestamp: sd.timestamp,
-        nextBillingDate: sd.nextBillingDate,
-        stripePaymentIntentId: sd.stripePaymentIntentId || '',
-        encryptedToken: sd.encryptedToken,
-        envelopeNumber: sd.envelopeNumber,
-        awcDcbVoucher: sd.awcDcbVoucher,
-        awcSynced: sd.awcSynced,
-        plaidInstitution: sd.plaidInstitution,
-        plaidAccountMask: sd.plaidAccountMask,
-        plaidTransferId: sd.plaidTransferId,
-      };
-
-      // Mirror server donor into local UI state
-      setDonors((prev) => {
-        const existing = prev.find((d) => d.id === recorded.donor.id || d.email.toLowerCase() === recorded.donor.email.toLowerCase());
-        if (existing) {
-          return prev.map((d) =>
-            d.id === existing.id
-              ? {
-                  ...d,
-                  ...recorded.donor,
-                  recurringFrequency: recorded.donor.recurringFrequency as DonationFrequency | undefined,
-                }
-              : d
-          );
-        }
-        return [
-          {
-            ...recorded.donor,
-            recurringFrequency: recorded.donor.recurringFrequency as DonationFrequency | undefined,
-          },
-          ...prev,
-        ];
-      });
-    } catch (err) {
-      console.warn('[makeDonation] server persist failed; using local fallback', err);
-    }
-
-    // Next billing date if recurring
-    let nextBillingDate: string | undefined = undefined;
-    if (input.frequency !== 'one-time') {
-      const nextDate = new Date(now);
-      if (input.frequency === 'weekly') nextDate.setDate(now.getDate() + 7);
-      else if (input.frequency === 'bi-weekly') nextDate.setDate(now.getDate() + 14);
-      else if (input.frequency === 'monthly') nextDate.setMonth(now.getMonth() + 1);
-      else if (input.frequency === 'annually') nextDate.setFullYear(now.getFullYear() + 1);
-      nextBillingDate = nextDate.toISOString();
-    }
-
-    const receiptNumber =
-      serverDonation?.receiptNumber || `REC-${now.getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
-    const transactionId =
-      serverDonation?.transactionId ||
-      input.stripePaymentIntentId ||
-      input.plaidTransferId ||
-      `ch_3N${Math.random().toString(36).substring(2, 10).toUpperCase()}${Date.now().toString().slice(-6)}`;
-
-    let donor = donors.find((d) => d.email.toLowerCase() === input.donorEmail.toLowerCase());
-    let donorId = serverDonorId || (donor ? donor.id : `donor-${Date.now()}`);
-
-    if (!serverDonation) {
-      if (donor) {
-        setDonors((prev) =>
-          prev.map((d) => {
-            if (d.id === donor!.id) {
-              return {
-                ...d,
-                name: input.isAnonymous ? d.name : input.donorName || d.name,
-                address: input.donorAddress || d.address,
-                lifetimeGiving: d.lifetimeGiving + input.amount,
-                totalGiftsCount: d.totalGiftsCount + 1,
-                lastGiftDate: timestamp,
-                recurringActive: input.frequency !== 'one-time' ? true : d.recurringActive,
-                recurringAmount: input.frequency !== 'one-time' ? input.amount : d.recurringAmount,
-                recurringFrequency: input.frequency !== 'one-time' ? input.frequency : d.recurringFrequency,
-              };
-            }
-            return d;
-          })
-        );
-      } else {
-        const newDonor: Donor = {
-          id: donorId,
-          name: displayName || 'Friend',
-          email: input.donorEmail,
-          phone: '',
-          address: input.donorAddress || '',
-          lifetimeGiving: input.amount,
-          totalGiftsCount: 1,
-          firstGiftDate: timestamp,
-          lastGiftDate: timestamp,
-          recurringActive: input.frequency !== 'one-time',
-          recurringAmount: input.frequency !== 'one-time' ? input.amount : undefined,
-          recurringFrequency: input.frequency !== 'one-time' ? input.frequency : undefined,
-          gdprConsent: true,
-          gdprConsentDate: timestamp,
-        };
-        setDonors((prev) => [newDonor, ...prev]);
-      }
-    }
-
-    setFunds((prev) =>
-      prev.map((f) => (f.id === targetFund.id ? { ...f, currentAmount: f.currentAmount + input.amount } : f))
-    );
-
-    setPledges((prev) =>
-      prev.map((p) => {
-        if (p.donorId === donorId && p.fundId === targetFund.id && p.taxYear === now.getFullYear()) {
-          const newFulfilled = p.fulfilledAmount + input.amount;
-          const status = newFulfilled >= p.committedAmount ? 'fulfilled' : 'active';
-          return {
-            ...p,
-            fulfilledAmount: newFulfilled,
-            status,
-            updatedAt: timestamp,
-          };
-        }
-        return p;
-      })
-    );
-
-    const envelopeNumber = input.envelopeNumber || donor?.envelopeNumber;
-    const awcDcbVoucher =
-      input.awcDcbVoucher || serverDonation?.awcDcbVoucher || `AWC-VOUCH-${receiptNumber.replace('REC-', '')}`;
-    const dcuSettlementRef = `DCU-DEP-${Math.floor(10000 + Math.random() * 90000)}`;
-
-    const newDonation: Donation =
-      serverDonation ||
-      ({
-        id: `don-${Date.now()}`,
-        transactionId,
-        receiptNumber,
-        donorId,
-        donorName: displayName,
-        donorEmail: input.donorEmail,
-        donorAddress: input.donorAddress,
-        amount: input.amount,
-        feeCovered: input.feeCovered,
-        feeAmount,
-        totalCharged,
-        frequency: input.frequency,
-        fundId: targetFund.id,
-        fundName: targetFund.name,
-        paymentMethod: input.paymentMethod,
-        cardBrand:
-          input.cardBrand ||
-          (input.paymentMethod === 'plaid'
-            ? input.plaidInstitution || 'Plaid Bank Link'
-            : input.paymentMethod === 'ach'
-              ? 'Bank ACH'
-              : 'Visa'),
-        cardLast4:
-          input.cardLast4 ||
-          (input.paymentMethod === 'plaid'
-            ? input.plaidAccountMask
-            : input.paymentMethod === 'ach'
-              ? undefined
-              : undefined),
-        status: 'completed',
-        dedication: input.dedication,
-        isAnonymous: Boolean(input.isAnonymous),
-        timestamp,
-        nextBillingDate,
-        stripePaymentIntentId: input.stripePaymentIntentId,
-        encryptedToken: `enc_sec_${Math.random().toString(36).substring(2, 16)}`,
-        envelopeNumber,
-        awcDcbVoucher,
-        awcSynced: input.awcSynced !== undefined ? input.awcSynced : true,
-        dcuSettlementRef,
-        plaidInstitution: input.plaidInstitution,
-        plaidAccountMask: input.plaidAccountMask,
-        plaidTransferId: input.plaidTransferId,
-      } as Donation);
-
-    setDonations((prev) => {
-      if (prev.some((d) => d.id === newDonation.id || d.transactionId === newDonation.transactionId)) {
-        return prev;
-      }
-      return [newDonation, ...prev];
-    });
-
-    const newDeposit: DcuBankDeposit = {
-      id: `dep-${Date.now()}`,
-      date: timestamp,
-      description:
-        input.paymentMethod === 'plaid'
-          ? `PLAID INSTANT BANK TRANSFER - ${input.plaidInstitution || 'DCU Depository'} (${displayName})`
-          : `STRIPE SETTLEMENT BATCH - DCU BATCH (${input.cardBrand || 'Card'} *${input.cardLast4 || '****'})`,
-      amount: input.amount,
-      type: input.paymentMethod === 'plaid' ? 'plaid_bank_transfer' : 'card_batch_settlement',
-      batchReference: dcuSettlementRef,
-      dcuTraceNumber: `DCU-TRC-${Math.floor(100000000 + Math.random() * 900000000)}`,
-      status: 'cleared',
-      matchedAwcVoucherId: awcDcbVoucher,
-    };
-    setDcuDeposits((prev) => [newDeposit, ...prev]);
-
-    // Record Immutable Audit Log
-    const auditRecord: AuditLog = {
-      id: `audit-${Date.now()}`,
-      timestamp,
-      actorId: donorId,
-      actorName: input.isAnonymous ? 'Anonymous Donor' : input.donorName,
-      actorRole: 'donor',
-      action: input.frequency === 'one-time' ? 'GIFT_CONTRIBUTED' : 'RECURRING_PLEDGE_ESTABLISHED',
-      resource: `${targetFund.code} (${targetFund.name})`,
-      details: `${input.frequency.toUpperCase()} gift of $${input.amount.toFixed(2)} processed via Stripe. Fee covered: ${input.feeCovered ? 'YES' : 'NO'}. Receipt: ${receiptNumber}.`,
-      ipAddress: '198.51.100.42',
-      integrityHash: generateIntegrityHash(`${transactionId}_${receiptNumber}_${input.amount}_${timestamp}`),
-    };
-    setAuditLogs((prev) => [auditRecord, ...prev]);
-
-    // Confetti celebration
-    try {
-      confetti({
-        particleCount: 80,
-        spread: 70,
-        origin: { y: 0.6 },
-        colors: ['#4A0404', '#D4AF37', '#7A1414', '#F4CF67'],
-      });
-    } catch {
-      // ignore
-    }
-
-    addNotification(
-      'success',
-      'Donation Successful',
-      `Thank you for your generous gift of $${input.amount.toFixed(2)} to ${targetFund.name}. Receipt #${receiptNumber} generated.`
-    );
-
-    setSelectedReceipt(newDonation);
-    return newDonation;
+    setStaffPortalRole(null);
+    setCurrentRole('donor');
+    clearSensitiveCaches();
+    addNotification('info', 'Staff Portal Locked', 'Staff session closed.');
   };
 
   const refundDonation = (transactionId: string, reason: string) => {
@@ -650,15 +314,19 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       action: 'TRANSACTION_REFUNDED',
       resource: transactionId,
       details: `Refund of $${target.amount.toFixed(2)} processed for receipt ${target.receiptNumber}. Reason: ${reason}.`,
-      ipAddress: '192.168.1.102',
+      ipAddress: '',
       integrityHash: generateIntegrityHash(`refund_${transactionId}_${Date.now()}`),
     };
     setAuditLogs((prev) => [auditRecord, ...prev]);
 
-    addNotification('warning', 'Refund Processed', `Transaction ${transactionId} refunded successfully.`);
+    addNotification(
+      'warning',
+      'Marked as refunded',
+      `Transaction ${transactionId} is marked refunded on this screen. Stripe was not charged back.`
+    );
   };
 
-  const cancelRecurringPledge = (donorId: string) => {
+  const cancelRecurringGift = (donorId: string) => {
     setDonors((prev) =>
       prev.map((d) => (d.id === donorId ? { ...d, recurringActive: false } : d))
     );
@@ -669,15 +337,15 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       actorId: donorId,
       actorName: 'Donor Self-Service',
       actorRole: 'donor',
-      action: 'RECURRING_PLEDGE_CANCELLED',
+      action: 'RECURRING_GIFT_CANCELLED',
       resource: donorId,
       details: `Donor recurring contribution schedule paused/cancelled. Future billing halted in Stripe gateway.`,
-      ipAddress: '198.51.100.42',
-      integrityHash: generateIntegrityHash(`cancel_pledge_${donorId}_${Date.now()}`),
+      ipAddress: '',
+      integrityHash: generateIntegrityHash(`cancel_recurring_${donorId}_${Date.now()}`),
     };
     setAuditLogs((prev) => [auditRecord, ...prev]);
 
-    addNotification('info', 'Pledge Cancelled', 'Recurring donation schedule has been stopped.');
+    addNotification('info', 'Recurring gift cancelled', 'Recurring donation schedule has been stopped.');
   };
 
   const queueOfflineGift = (gift: Omit<OfflineGift, 'id' | 'timestamp' | 'synced'>) => {
@@ -692,13 +360,13 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const auditRecord: AuditLog = {
       id: `audit-${Date.now()}`,
       timestamp: newGift.timestamp,
-      actorId: 'kiosk-usher-mode',
-      actorName: 'Service Kiosk Usher',
-      actorRole: 'bookkeeper',
+      actorId: staffPortalRole || 'staff',
+      actorName: 'Staff',
+      actorRole: 'staff',
       action: 'OFFLINE_GIFT_QUEUED',
       resource: `Offline Queue (${gift.method})`,
       details: `Physical gift envelope of $${gift.amount.toFixed(2)} for ${gift.donorName} logged offline.`,
-      ipAddress: '127.0.0.1 (Local SQLite Cache)',
+      ipAddress: '',
       integrityHash: generateIntegrityHash(`offline_${newGift.id}`),
     };
     setAuditLogs((prev) => [auditRecord, ...prev]);
@@ -731,7 +399,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       timestamp: sd.timestamp,
       nextBillingDate: sd.nextBillingDate,
       stripePaymentIntentId: sd.stripePaymentIntentId || '',
-      encryptedToken: sd.encryptedToken || '',
+      encryptedToken: '',
       envelopeNumber: sd.envelopeNumber,
       awcDcbVoucher: sd.awcDcbVoucher,
       awcSynced: sd.awcSynced,
@@ -754,32 +422,25 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     recurringActive: sd.recurringActive,
     recurringAmount: sd.recurringAmount,
     recurringFrequency: sd.recurringFrequency as DonationFrequency | undefined,
-    gdprConsent: sd.gdprConsent,
-    gdprConsentDate: sd.gdprConsentDate,
+    gdprConsent: false,
+    gdprConsentDate: '',
     isAnonymized: sd.isAnonymized,
   });
 
   /** Pull Neon/memory ledger into staff dashboard (requires staff session cookie). */
   const hydrateStaffLedger = async () => {
+    setLedgerStatus('loading');
+    setLedgerError(null);
     try {
       const ledger = await fetchStaffLedger(500);
-      if (ledger.donations.length > 0) {
-        setDonations(ledger.donations.map(mapServerDonation));
-      }
-      if (ledger.donors.length > 0) {
-        setDonors(ledger.donors.map(mapServerDonor));
-      }
-      addNotification(
-        'info',
-        'Ledger refreshed',
-        `Loaded ${ledger.donations.length} gifts from ${ledger.mode === 'neon' ? 'Neon' : 'memory'} store.`
-      );
+      setDonations(ledger.donations.map(mapServerDonation));
+      setDonors(ledger.donors.map(mapServerDonor));
+      setLedgerStatus('ready');
     } catch (err) {
-      addNotification(
-        'warning',
-        'Ledger refresh skipped',
-        err instanceof Error ? err.message : 'Could not load staff ledger.'
-      );
+      const message = err instanceof Error ? err.message : 'Could not load staff ledger.';
+      setLedgerStatus('error');
+      setLedgerError(message);
+      addNotification('warning', 'Ledger unavailable', message);
     }
   };
 
@@ -800,7 +461,6 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const channelLabels: Record<string, string> = {
         cash: 'Cash Envelope',
         check: ref ? `Check #${ref}` : 'Physical Check',
-        card_kiosk: 'Service Kiosk Card',
         cash_app: ref ? `Cash App (${ref})` : 'Cash App',
         zelle: ref ? `Zelle (${ref})` : 'Zelle',
         venmo: ref ? `Venmo (${ref})` : 'Venmo',
@@ -808,7 +468,6 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const paymentMethodMap: Record<string, PaymentMethod> = {
         cash: 'cash',
         check: 'check',
-        card_kiosk: 'card',
         cash_app: 'cash_app',
         zelle: 'zelle',
         venmo: 'venmo',
@@ -820,7 +479,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           donorEmail: g.donorEmail,
           fundId: g.fundId,
           fundName: fund?.name || 'General Tithes & Offerings',
-          fundCode: fund?.code || '1001-OPS',
+          fundCode: fund?.code || '',
           paymentMethod: paymentMethodMap[g.method] || 'cash',
           frequency: g.frequency,
           cardBrand: channelLabels[g.method] || g.method,
@@ -830,16 +489,18 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         });
         syncedIds.push(g.id);
         syncedCount += 1;
+        if (result.donation) {
         setDonations((prev) => {
-          const mapped = mapServerDonation(result.donation);
+          const mapped = mapServerDonation(result.donation!);
           if (prev.some((d) => d.id === mapped.id || d.transactionId === mapped.transactionId)) {
             return prev;
           }
           return [mapped, ...prev];
         });
+        }
         if (result.donor) {
           setDonors((prev) => {
-            const mapped = mapServerDonor(result.donor);
+            const mapped = mapServerDonor(result.donor!);
             const without = prev.filter(
               (d) => d.id !== mapped.id && d.email.toLowerCase() !== mapped.email.toLowerCase()
             );
@@ -860,11 +521,11 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       timestamp: new Date().toISOString(),
       actorId: 'contribution-log-sync',
       actorName: 'Contribution Log Sync',
-      actorRole: 'bookkeeper',
+      actorRole: 'staff',
       action: 'OFFLINE_BATCH_SYNC',
       resource: `${syncedCount} gifts synchronized`,
-      details: `Synced ${syncedCount} contribution-log gifts to ledger + DCB${failedCount ? ` (${failedCount} failed)` : ''}.`,
-      ipAddress: '192.168.1.150',
+      details: `Synced ${syncedCount} contribution-log gifts to ledger${failedCount ? ` (${failedCount} failed)` : ''}.`,
+      ipAddress: '',
       integrityHash: generateIntegrityHash(`sync_batch_${Date.now()}`),
     };
     setAuditLogs((prev) => [auditRecord, ...prev]);
@@ -873,7 +534,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       addNotification(
         'success',
         'Sync Complete',
-        `Synced ${syncedCount} gift${syncedCount === 1 ? '' : 's'} to the ledger and Digital Contribution Book.`
+        `Synced ${syncedCount} gift${syncedCount === 1 ? '' : 's'} to the staff contribution log.`
       );
     }
     if (failedCount > 0) {
@@ -885,59 +546,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  const requestGdprErasure = (donorId: string) => {
-    const donor = donors.find((d) => d.id === donorId);
-    if (!donor) return;
-
-    setDonors((prev) =>
-      prev.map((d) => {
-        if (d.id === donorId) {
-          return {
-            ...d,
-            name: `Anonymized Contributor #${d.id.slice(-4)}`,
-            email: `anonymized_${d.id.slice(-4)}@privacy-shield.local`,
-            phone: 'REDACTED',
-            address: 'REDACTED PER CCPA/GDPR',
-            taxId: 'REDACTED',
-            isAnonymized: true,
-          };
-        }
-        return d;
-      })
-    );
-
-    setDonations((prev) =>
-      prev.map((don) => {
-        if (don.donorId === donorId) {
-          return {
-            ...don,
-            donorName: `Anonymized Contributor #${donorId.slice(-4)}`,
-            donorEmail: `anonymized_${donorId.slice(-4)}@privacy-shield.local`,
-            donorAddress: 'REDACTED PER CCPA/GDPR',
-          };
-        }
-        return don;
-      })
-    );
-
-    const auditRecord: AuditLog = {
-      id: `audit-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      actorId: donorId,
-      actorName: 'GDPR / CCPA Privacy Officer',
-      actorRole: 'auditor',
-      action: 'GDPR_RIGHT_TO_ERASURE',
-      resource: donorId,
-      details: `PII for donor permanently sanitized in compliance with GDPR Art 17 & CCPA. Historical ledger financial totals preserved for IRS 501(c)(3) tax audit requirements.`,
-      ipAddress: '198.51.100.42',
-      integrityHash: generateIntegrityHash(`gdpr_erase_${donorId}_${Date.now()}`),
-    };
-    setAuditLogs((prev) => [auditRecord, ...prev]);
-
-    addNotification('info', 'Privacy Sanitization', 'Donor personal identifying information (PII) has been erased in compliance with GDPR & CCPA.');
-  };
-
-  const requestGdprExport = (donorId: string) => {
+  const requestPrivacyExport = (donorId: string) => {
     const donor = donors.find((d) => d.id === donorId);
     const donorGifts = donations.filter((d) => d.donorId === donorId);
 
@@ -945,7 +554,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       church: config.name,
       ein: config.ein,
       exportDate: new Date().toISOString(),
-      complianceStandard: 'GDPR Article 20 & CCPA Right to Portability',
+      complianceStandard: 'Data portability export',
       donorProfile: donor,
       contributionsHistory: donorGifts,
     };
@@ -953,7 +562,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(payload, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', dataStr);
-    downloadAnchor.setAttribute('download', `gdpr-data-archive-${donorId}.json`);
+    downloadAnchor.setAttribute('download', `data-archive-${donorId}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
@@ -1014,7 +623,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       action: 'CSV_LEDGER_EXPORT',
       resource: 'Financial Ledger',
       details: `Generated and downloaded master CSV ledger containing ${donations.length} records.`,
-      ipAddress: '192.168.1.102',
+      ipAddress: '',
       integrityHash: generateIntegrityHash(`export_csv_${donations.length}_${Date.now()}`),
     };
     setAuditLogs((prev) => [auditRecord, ...prev]);
@@ -1047,7 +656,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     addNotification('success', 'Audit Trail Exported', 'Security and financial audit logs exported.');
   };
 
-  const createOrUpdatePledge = (input: {
+  const createOrUpdateCommitment = (input: {
     donorId: string;
     donorName: string;
     donorEmail: string;
@@ -1055,7 +664,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     fundId: string;
     committedAmount: number;
     notes?: string;
-  }): AnnualPledge => {
+  }): AnnualCommitment => {
     const targetFund = funds.find((f) => f.id === input.fundId) || funds[0];
     const now = new Date();
     const timestamp = now.toISOString();
@@ -1064,11 +673,11 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       .filter((d) => d.donorId === input.donorId && d.fundId === input.fundId && d.status === 'completed' && new Date(d.timestamp).getFullYear() === input.taxYear)
       .reduce((sum, d) => sum + d.amount, 0);
 
-    const existing = pledges.find((p) => p.donorId === input.donorId && p.fundId === input.fundId && p.taxYear === input.taxYear);
+    const existing = annualCommitments.find((p) => p.donorId === input.donorId && p.fundId === input.fundId && p.taxYear === input.taxYear);
 
-    let updatedPledge: AnnualPledge;
+    let updatedCommitment: AnnualCommitment;
     if (existing) {
-      updatedPledge = {
+      updatedCommitment = {
         ...existing,
         committedAmount: input.committedAmount,
         fulfilledAmount: Math.max(existing.fulfilledAmount, actualGiftsSum),
@@ -1076,9 +685,9 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         updatedAt: timestamp,
         status: actualGiftsSum >= input.committedAmount ? 'fulfilled' : 'active',
       };
-      setPledges((prev) => prev.map((p) => (p.id === existing.id ? updatedPledge : p)));
+      setAnnualCommitments((prev) => prev.map((p) => (p.id === existing.id ? updatedCommitment : p)));
     } else {
-      updatedPledge = {
+      updatedCommitment = {
         id: `plg-${Date.now()}`,
         donorId: input.donorId,
         donorName: input.donorName,
@@ -1093,7 +702,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         status: actualGiftsSum >= input.committedAmount ? 'fulfilled' : 'active',
         notes: input.notes,
       };
-      setPledges((prev) => [updatedPledge, ...prev]);
+      setAnnualCommitments((prev) => [updatedCommitment, ...prev]);
     }
 
     const auditRecord: AuditLog = {
@@ -1102,11 +711,11 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       actorId: input.donorId,
       actorName: input.donorName,
       actorRole: 'donor',
-      action: 'ANNUAL_PLEDGE_REGISTERED',
+      action: 'ANNUAL_COMMITMENT_REGISTERED',
       resource: `${targetFund.name} (${input.taxYear})`,
       details: `Annual commitment of $${input.committedAmount.toLocaleString()} recorded for tax year ${input.taxYear}.`,
-      ipAddress: '198.51.100.42',
-      integrityHash: generateIntegrityHash(`pledge_${input.donorId}_${input.committedAmount}_${timestamp}`),
+      ipAddress: '',
+      integrityHash: generateIntegrityHash(`commitment_${input.donorId}_${input.committedAmount}_${timestamp}`),
     };
     setAuditLogs((prev) => [auditRecord, ...prev]);
 
@@ -1116,44 +725,44 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       `Your annual faith commitment of $${input.committedAmount.toLocaleString()} to ${targetFund.name} has been recorded.`
     );
 
-    return updatedPledge;
+    return updatedCommitment;
   };
 
-  const calculatePledgeGap = (taxYear: number = 2026): PledgeGapSummary => {
-    const yearPledges = pledges.filter((p) => p.taxYear === taxYear);
-    const totalPledged = yearPledges.reduce((sum, p) => sum + p.committedAmount, 0);
-    const totalReceived = yearPledges.reduce((sum, p) => sum + p.fulfilledAmount, 0);
-    const netGap = Math.max(0, totalPledged - totalReceived);
-    const percentFulfilled = totalPledged > 0 ? (totalReceived / totalPledged) * 100 : 0;
-    const fulfilledPledgesCount = yearPledges.filter((p) => p.status === 'fulfilled' || p.fulfilledAmount >= p.committedAmount).length;
+  const calculateCommitmentGap = (taxYear: number = 2026): CommitmentGapSummary => {
+    const yearCommitments = annualCommitments.filter((p) => p.taxYear === taxYear);
+    const totalCommitted = yearCommitments.reduce((sum, p) => sum + p.committedAmount, 0);
+    const totalReceived = yearCommitments.reduce((sum, p) => sum + p.fulfilledAmount, 0);
+    const netGap = Math.max(0, totalCommitted - totalReceived);
+    const percentFulfilled = totalCommitted > 0 ? (totalReceived / totalCommitted) * 100 : 0;
+    const fulfilledCommitmentsCount = yearCommitments.filter((p) => p.status === 'fulfilled' || p.fulfilledAmount >= p.committedAmount).length;
 
     const fundBreakdown = funds.map((f) => {
-      const fundPlgs = yearPledges.filter((p) => p.fundId === f.id);
-      const fPledged = fundPlgs.reduce((sum, p) => sum + p.committedAmount, 0);
-      const fReceived = fundPlgs.reduce((sum, p) => sum + p.fulfilledAmount, 0);
-      const fGap = Math.max(0, fPledged - fReceived);
-      const fPercent = fPledged > 0 ? (fReceived / fPledged) * 100 : 0;
+      const fundCommitments = yearCommitments.filter((p) => p.fundId === f.id);
+      const fCommitted = fundCommitments.reduce((sum, p) => sum + p.committedAmount, 0);
+      const fReceived = fundCommitments.reduce((sum, p) => sum + p.fulfilledAmount, 0);
+      const fGap = Math.max(0, fCommitted - fReceived);
+      const fPercent = fCommitted > 0 ? (fReceived / fCommitted) * 100 : 0;
 
       return {
         fundId: f.id,
         fundName: f.name,
-        totalPledged: fPledged,
+        totalCommitted: fCommitted,
         totalReceived: fReceived,
         gapAmount: fGap,
         percentFulfilled: Number(fPercent.toFixed(1)),
-        pledgeCount: fundPlgs.length,
+        commitmentCount: fundCommitments.length,
       };
     });
 
     return {
       taxYear,
-      totalPledged,
+      totalCommitted,
       totalReceived,
       netGap,
       percentFulfilled: Number(percentFulfilled.toFixed(1)),
-      totalPledgesCount: yearPledges.length,
-      fulfilledPledgesCount,
-      activePledgesCount: yearPledges.length - fulfilledPledgesCount,
+      totalCommitmentsCount: yearCommitments.length,
+      fulfilledCommitmentsCount,
+      activeCommitmentsCount: yearCommitments.length - fulfilledCommitmentsCount,
       fundBreakdown,
     };
   };
@@ -1181,7 +790,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const targetDisc = discrepancies.find((d) => d.id === id);
     if (targetDisc && actionType === 'create_voucher' && targetDisc.dcuDepositId) {
       const voucherNum = `AWC-VOUCH-${Math.floor(10000 + Math.random() * 90000)}`;
-      setDcuDeposits((prev) =>
+      setBankSettlements((prev) =>
         prev.map((dep) =>
           dep.id === targetDisc.dcuDepositId ? { ...dep, matchedAwcVoucherId: voucherNum } : dep
         )
@@ -1195,9 +804,9 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       actorName: 'Staff Administrator',
       actorRole: currentRole,
       action: 'RECONCILIATION_DISCREPANCY_RESOLVED',
-      resource: `DCU vs AWC Ledger (${id})`,
+      resource: `Bank vs Ledger (${id})`,
       details: `Discrepancy ${id} resolved via action [${actionType}]: ${note}`,
-      ipAddress: '192.168.1.102',
+      ipAddress: '',
       integrityHash: generateIntegrityHash(`reconcile_${id}_${actionType}_${Date.now()}`),
     };
     setAuditLogs((prev) => [auditRecord, ...prev]);
@@ -1207,7 +816,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const runAutoReconciliation = (): { matchedCount: number; remainingCount: number } => {
     let newlyMatched = 0;
-    setDcuDeposits((prev) =>
+    setBankSettlements((prev) =>
       prev.map((dep) => {
         if (!dep.matchedAwcVoucherId) {
           const match = donations.find(
@@ -1228,7 +837,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     addNotification(
       'info',
       'Auto-Reconciliation Complete',
-      `Continuous reconciliation finished. Re-evaluated all DCU Credit Union deposits against AWC DCB records.`
+      `Continuous reconciliation finished. Re-evaluated all bank deposits against ledger records.`
     );
     return {
       matchedCount: newlyMatched,
@@ -1255,17 +864,17 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       actorName: 'Administrative Financial Officer',
       actorRole: currentRole,
       action: 'STRIPE_FINANCIAL_CONNECTIONS_LINKED',
-      resource: 'DCU Credit Union (Digital Federal Credit Union)',
-      details: 'DCU Credit Union operating depository account securely authenticated via Stripe Financial Connections OAuth rails.',
-      ipAddress: '192.168.1.102',
+      resource: 'Church operating account',
+      details: 'Operating depository account authenticated via Stripe Financial Connections.',
+      ipAddress: '',
       integrityHash: generateIntegrityHash(`dcu_fc_link_${Date.now()}`),
     };
     setAuditLogs((prev) => [auditRecord, ...prev]);
 
     addNotification(
       'success',
-      'DCU Account Verified',
-      'DCU Credit Union checking account linked via Stripe Financial Connections with continuous AWC DCB reconciliation enabled.'
+      'Bank account verified',
+      'Operating account linked via Stripe Financial Connections.'
     );
   };
 
@@ -1287,21 +896,21 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const simulateIncomingDcuDeposit = (
     amount: number,
     description: string,
-    type: DcuBankDeposit['type'],
+    type: BankSettlement['type'],
     envelopeRef?: string
-  ): DcuBankDeposit => {
+  ): BankSettlement => {
     const timestamp = new Date().toISOString();
-    const newDep: DcuBankDeposit = {
+    const newDep: BankSettlement = {
       id: `dep-${Date.now()}`,
       date: timestamp,
       description,
       amount,
       type,
-      batchReference: `DCU-MANUAL-BATCH-${Math.floor(1000 + Math.random() * 9000)}`,
-      dcuTraceNumber: `DCU-TRC-${Math.floor(100000000 + Math.random() * 900000000)}`,
+      batchReference: `MANUAL-BATCH-${Math.floor(1000 + Math.random() * 9000)}`,
+      dcuTraceNumber: `TRC-${Math.floor(100000000 + Math.random() * 900000000)}`,
       status: 'cleared',
     };
-    setDcuDeposits((prev) => [newDep, ...prev]);
+    setBankSettlements((prev) => [newDep, ...prev]);
 
     const newDisc: ReconciliationDiscrepancy = {
       id: `disc-${Date.now()}`,
@@ -1313,7 +922,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       varianceAmount: amount,
       discrepancyType: 'unmatched_bank_deposit',
       status: 'flagged',
-      details: `New incoming DCU deposit of $${amount.toFixed(2)} received without prior AWC DCB voucher entry.`,
+      details: `New incoming bank deposit of $${amount.toFixed(2)} received without a matching voucher entry.`,
       timestamp,
     };
     setDiscrepancies((prev) => [newDisc, ...prev]);
@@ -1321,7 +930,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     addNotification(
       'warning',
       'New Bank Deposit Captured',
-      `Incoming DCU deposit of $${amount.toFixed(2)} recorded. Discrepancy flagged for bookkeeper reconciliation.`
+      `Incoming bank deposit of $${amount.toFixed(2)} recorded.`
     );
     return newDep;
   };
@@ -1335,29 +944,27 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         donations,
         auditLogs,
         offlineGifts,
-        pledges,
-        dcuDeposits,
+        annualCommitments,
+        bankSettlements,
         discrepancies,
         currentRole,
+        staffPortalRole,
         isMfaVerified,
         darkMode,
         notifications,
         selectedReceipt,
         setSelectedReceipt,
         toggleDarkMode,
-        switchRole,
-        verifyStaffAccess,
+        refreshStaffSession,
         resetMfa,
-        makeDonation,
         refundDonation,
-        cancelRecurringPledge,
-        createOrUpdatePledge,
-        calculatePledgeGap,
+        cancelRecurringGift,
+        createOrUpdateCommitment,
+        calculateCommitmentGap,
         queueOfflineGift,
         syncOfflineGifts,
         hydrateStaffLedger,
-        requestGdprErasure,
-        requestGdprExport,
+        requestPrivacyExport,
         exportTransactionsCSV,
         exportAuditLogsCSV,
         resolveDiscrepancy,
@@ -1367,6 +974,13 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         simulateIncomingDcuDeposit,
         dismissNotification,
         addNotification,
+        configStatus,
+        configError,
+        fundsStatus,
+        ledgerStatus,
+        ledgerError,
+        clearSensitiveCaches,
+        refreshChurchSettings,
       }}
     >
       {children}

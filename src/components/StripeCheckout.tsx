@@ -2,11 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { loadStripe, type Stripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
 import { Lock } from 'lucide-react';
-import { confirmStripeAndSync, createStripePaymentIntent } from '../lib/api';
+import { createStripePaymentIntent, pollStripePaymentStatus, updateStripePaymentIntent } from '../lib/api';
 
 interface StripeCheckoutProps {
   amount: number;
-  feeAmount: number;
+  coverFees?: boolean;
   donorName: string;
   donorEmail: string;
   fundId: string;
@@ -15,50 +15,80 @@ interface StripeCheckoutProps {
   frequency: string;
   isAnonymous?: boolean;
   publishableKey: string;
-  onSuccess: (result: {
-    paymentIntentId: string;
-    voucherNumber: string;
-    awcSynced: boolean;
-  }) => void;
+  turnstileToken?: string | null;
+  onProcessing: (result: { paymentIntentId: string; status: string; receiptNumber?: string }) => void;
   onError: (message: string) => void;
-  onCancelSimulatorHint?: () => void;
+  onMethodChange?: (method: string) => void;
 }
 
 function StripePaymentForm({
-  onSuccess,
+  paymentIntentId,
+  coverFees,
+  onProcessing,
   onError,
-  isReady,
+  onMethodChange,
 }: {
-  onSuccess: StripeCheckoutProps['onSuccess'];
+  paymentIntentId: string;
+  coverFees: boolean;
+  onProcessing: StripeCheckoutProps['onProcessing'];
   onError: StripeCheckoutProps['onError'];
-  isReady: boolean;
+  onMethodChange?: (method: string) => void;
 }) {
   const stripe = useStripe();
   const elements = useElements();
   const [submitting, setSubmitting] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const [methodType, setMethodType] = useState('card');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await updateStripePaymentIntent({
+          paymentIntentId,
+          coverFees,
+          paymentMethodType: methodType,
+        });
+      } catch (err) {
+        if (!cancelled) onError(err instanceof Error ? err.message : 'Could not update the gift total.');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [coverFees, methodType, paymentIntentId, onError]);
 
   const handlePay = async () => {
     if (!stripe || !elements) return;
     setSubmitting(true);
     try {
+      await updateStripePaymentIntent({
+        paymentIntentId,
+        coverFees,
+        paymentMethodType: methodType,
+      });
       const { error, paymentIntent } = await stripe.confirmPayment({
         elements,
         redirect: 'if_required',
       });
       if (error) {
-        onError(error.message || 'Card payment failed.');
+        onError(error.message || 'Payment failed.');
         return;
       }
-      if (!paymentIntent || paymentIntent.status !== 'succeeded') {
-        onError('Payment was not completed. Please try again.');
-        return;
-      }
-      const synced = await confirmStripeAndSync(paymentIntent.id);
-      onSuccess({
-        paymentIntentId: synced.paymentIntentId,
-        voucherNumber: synced.voucherNumber,
-        awcSynced: synced.awcSynced,
-      });
+      const id = paymentIntent?.id || paymentIntentId;
+      setConfirmed(true);
+      onProcessing({ paymentIntentId: id, status: 'processing' });
+      void pollStripePaymentStatus(id)
+        .then((status) =>
+          onProcessing({
+            paymentIntentId: id,
+            status: status.status,
+            receiptNumber: status.receiptNumber,
+          })
+        )
+        .catch((err) =>
+          onError(err instanceof Error ? err.message : 'Could not check payment status.')
+        );
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Stripe confirmation failed.');
     } finally {
@@ -68,15 +98,24 @@ function StripePaymentForm({
 
   return (
     <div className="space-y-4">
-      <PaymentElement options={{ layout: 'tabs' }} />
+      <PaymentElement
+        options={{ layout: 'tabs' }}
+        onChange={(event) => {
+          const type = event.value?.type;
+          if (type && type !== methodType) {
+            setMethodType(type);
+            onMethodChange?.(type);
+          }
+        }}
+      />
       <button
         type="button"
-        disabled={!isReady || !stripe || submitting}
+        disabled={!stripe || submitting || confirmed}
         onClick={handlePay}
         className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-church-burgundy hover:bg-church-burgundy-light disabled:opacity-60 text-white font-semibold py-3 px-4 transition-colors"
       >
         <Lock className="h-4 w-4" />
-        {submitting ? 'Processing secure payment…' : 'Pay with Stripe'}
+        {submitting ? 'Processing…' : confirmed ? 'Gift submitted' : 'Give now'}
       </button>
     </div>
   );
@@ -84,7 +123,7 @@ function StripePaymentForm({
 
 export const StripeCheckout: React.FC<StripeCheckoutProps> = ({
   amount,
-  feeAmount,
+  coverFees = false,
   donorName,
   donorEmail,
   fundId,
@@ -93,11 +132,14 @@ export const StripeCheckout: React.FC<StripeCheckoutProps> = ({
   frequency,
   isAnonymous = false,
   publishableKey,
-  onSuccess,
+  turnstileToken = null,
+  onProcessing,
   onError,
+  onMethodChange,
 }) => {
   const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -110,10 +152,9 @@ export const StripeCheckout: React.FC<StripeCheckoutProps> = ({
       setLoading(true);
       setClientSecret(null);
       try {
-        const total = Number((amount + feeAmount).toFixed(2));
         const intent = await createStripePaymentIntent({
-          amount: total,
-          feeAmount,
+          amount,
+          coverFees,
           donorName,
           donorEmail,
           fundId,
@@ -121,10 +162,14 @@ export const StripeCheckout: React.FC<StripeCheckoutProps> = ({
           fundName,
           frequency,
           isAnonymous,
+          turnstileToken,
         });
-        if (!cancelled) setClientSecret(intent.clientSecret);
+        if (!cancelled) {
+          setClientSecret(intent.clientSecret);
+          setPaymentIntentId(intent.paymentIntentId);
+        }
       } catch (err) {
-        if (!cancelled) onError(err instanceof Error ? err.message : 'Could not start Stripe payment.');
+        if (!cancelled) onError(err instanceof Error ? err.message : 'Could not start checkout.');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -132,19 +177,21 @@ export const StripeCheckout: React.FC<StripeCheckoutProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [amount, feeAmount, donorName, donorEmail, fundId, fundCode, fundName, frequency, isAnonymous, onError]);
+  }, [amount, donorEmail, donorName, fundCode, fundId, fundName, frequency, isAnonymous, turnstileToken, onError]);
 
-  if (loading || !clientSecret || !stripePromise) {
-    return (
-      <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 p-4 text-sm text-slate-500">
-        Preparing secure Stripe checkout…
-      </div>
-    );
+  if (loading || !clientSecret || !paymentIntentId || !stripePromise) {
+    return <p className="text-sm text-slate-600">Preparing secure checkout…</p>;
   }
 
   return (
-    <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'stripe' } }}>
-      <StripePaymentForm onSuccess={onSuccess} onError={onError} isReady={!loading} />
+    <Elements stripe={stripePromise} options={{ clientSecret }}>
+      <StripePaymentForm
+        paymentIntentId={paymentIntentId}
+        coverFees={coverFees}
+        onProcessing={onProcessing}
+        onError={onError}
+        onMethodChange={onMethodChange}
+      />
     </Elements>
   );
 };

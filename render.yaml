@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: awc-tithe
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: BETTER_AUTH_SECRET
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PUBLISHABLE_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: TURNSTILE_SECRET_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RECEIPT_FROM_EMAIL
+        sync: false
+      - key: PUBLIC_APP_URL
+        sync: false
+      - key: AWC_DCB_API_URL
+        sync: false
+      - key: AWC_DCB_KEY_TITHE
+        sync: false
+      - key: DCB_REQUIRED
+        sync: false

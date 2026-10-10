@@ -1,39 +1,25 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useChurch } from '../context/ChurchContext';
-import { DonationFrequency, PaymentMethod } from '../types';
-import {
-  CreditCard,
-  Building2,
-  Lock,
-  Sparkles,
-  ShieldCheck,
-  AlertCircle,
-  Landmark,
-  ArrowRight,
-} from 'lucide-react';
+import { DonationFrequency } from '../types';
+import { ShieldCheck, AlertCircle, ArrowRight, Sparkles } from 'lucide-react';
 import { fetchApiConfig, type ApiConfig } from '../lib/api';
 import {
-  getDonorSessionEmail,
-  loadDonorProfileByEmail,
+  loadVerifiedDonorProfile,
   normalizeDonorEmail,
   setDonorSessionEmail,
 } from '../lib/donorSession';
-import { getTangibleImpact } from '../lib/tangibleImpact';
+import { computeProcessingFee, formatFeeLabel } from '../../shared/fees';
 import { StripeCheckout } from './StripeCheckout';
-import { PlaidBankLink } from './PlaidBankLink';
-import { GivingOnboardingWizard } from './GivingOnboardingWizard';
 import { StewardshipFaq } from './StewardshipFaq';
-
-export { getTangibleImpact } from '../lib/tangibleImpact';
+import { TurnstileWidget } from './TurnstileWidget';
 
 export const DonorPortal: React.FC<{
   onViewMyGiving?: (email: string) => void;
-  initialMode?: 'classic' | 'guided';
   initialFundId?: string;
   onConsumedInitialFund?: () => void;
-}> = ({ onViewMyGiving, initialMode = 'classic', initialFundId, onConsumedInitialFund }) => {
-  const { funds, makeDonation, addNotification, donors, donations } = useChurch();
-  const [giveMode, setGiveMode] = useState<'classic' | 'guided'>(initialMode);
+}> = ({ onViewMyGiving, initialFundId, onConsumedInitialFund }) => {
+  const { funds, addNotification } = useChurch();
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   const [frequency, setFrequency] = useState<DonationFrequency>('monthly');
   const [selectedFundId, setSelectedFundId] = useState<string>(
@@ -48,13 +34,24 @@ export const DonorPortal: React.FC<{
     onConsumedInitialFund?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialFundId]);
+
+  // Keep selection on the sole active fund when designation UI is hidden
+  useEffect(() => {
+    const active = funds.filter((f) => f.active);
+    if (active.length === 1 && selectedFundId !== active[0].id) {
+      setSelectedFundId(active[0].id);
+    } else if (active.length > 0 && !active.some((f) => f.id === selectedFundId)) {
+      setSelectedFundId(active[0].id);
+    }
+  }, [funds, selectedFundId]);
   const [presetAmount, setPresetAmount] = useState<number | 'custom'>(100);
   const [customAmountStr, setCustomAmountStr] = useState<string>('');
   const [coverFees, setCoverFees] = useState<boolean>(true);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
   const [apiConfig, setApiConfig] = useState<ApiConfig | null>(null);
   const [apiConfigLoading, setApiConfigLoading] = useState(true);
   const [lastGiftEmail, setLastGiftEmail] = useState<string | null>(null);
+  const [giftNote, setGiftNote] = useState<string | null>(null);
+  const [feeMethod, setFeeMethod] = useState('card');
 
   // Donor credentials
   const [donorName, setDonorName] = useState<string>('');
@@ -62,36 +59,13 @@ export const DonorPortal: React.FC<{
   const [donorAddress, setDonorAddress] = useState<string>('');
   const [dedication, setDedication] = useState<string>('');
   const [isAnonymous, setIsAnonymous] = useState<boolean>(false);
-  const [profileFound, setProfileFound] = useState(false);
-  const [profileLookingUp, setProfileLookingUp] = useState(false);
-  const [profileStatus, setProfileStatus] = useState<'idle' | 'found' | 'new'>('idle');
-  /** Name/address last applied by session/lookup — used so manual edits are not overwritten. */
+  const [profilePrefillApplied, setProfilePrefillApplied] = useState(false);
+  /** Name/address last applied from verified session — used so manual edits are not overwritten. */
   const autoFilledRef = React.useRef({ name: '', address: '' });
-  const donorNameRef = React.useRef(donorName);
-  const donorAddressRef = React.useRef(donorAddress);
-  donorNameRef.current = donorName;
-  donorAddressRef.current = donorAddress;
 
-  // Card details (simulator)
-  const [cardNumber, setCardNumber] = useState<string>('');
-  const [cardExpiry, setCardExpiry] = useState<string>('');
-  const [cardCvc, setCardCvc] = useState<string>('');
-  const [cardZip, setCardZip] = useState<string>('');
-  const [achBankName, setAchBankName] = useState<string>('');
-  const [achRouting, setAchRouting] = useState<string>('');
-  const [achAccount, setAchAccount] = useState<string>('');
-
-  // Plaid simulator fallback labels
-  const [plaidInstitution, setPlaidInstitution] = useState<string>('');
-  const [plaidAccountMask, setPlaidAccountMask] = useState<string>('');
-
-  // Processing state
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [show3DSModal, setShow3DSModal] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const stripeLive = Boolean(apiConfig?.integrations.stripe.configured && apiConfig.stripePublishableKey);
-  const plaidLive = Boolean(apiConfig?.integrations.plaid.configured);
 
   useEffect(() => {
     let cancelled = false;
@@ -106,62 +80,26 @@ export const DonorPortal: React.FC<{
     };
   }, []);
 
-  const applyProfilePrefill = useCallback(async (email: string, source: 'session' | 'lookup') => {
-    const normalized = normalizeDonorEmail(email);
-    if (!normalized.includes('@')) return;
-
-    setProfileLookingUp(true);
-    try {
-      const profile = await loadDonorProfileByEmail(normalized, source, {
-        donors,
-        donations,
-      });
-      setDonorEmail(profile.email);
-
-      const currentName = donorNameRef.current.trim();
-      const currentAddress = donorAddressRef.current.trim();
-      const nameIsAutoOrEmpty =
-        !currentName || currentName === autoFilledRef.current.name.trim();
-      const addressIsAutoOrEmpty =
-        !currentAddress || currentAddress === autoFilledRef.current.address.trim();
-
-      if (profile.found) {
-        if (nameIsAutoOrEmpty && profile.name) {
-          setDonorName(profile.name);
-          autoFilledRef.current.name = profile.name;
-        }
-        if (addressIsAutoOrEmpty && profile.address) {
-          setDonorAddress(profile.address);
-          autoFilledRef.current.address = profile.address;
-        }
-        setProfileFound(true);
-        setProfileStatus('found');
-      } else {
-        if (nameIsAutoOrEmpty) {
-          setDonorName('');
-          autoFilledRef.current.name = '';
-        }
-        if (addressIsAutoOrEmpty) {
-          setDonorAddress('');
-          autoFilledRef.current.address = '';
-        }
-        setProfileFound(false);
-        setProfileStatus('new');
-      }
-    } catch {
-      setProfileStatus('idle');
-    } finally {
-      setProfileLookingUp(false);
-    }
-  }, [donors, donations]);
-
-  // Prefill from My Giving session when present (once on load)
+  // Prefill only from verified Better Auth session (no public email lookup)
   useEffect(() => {
-    const sessionEmail = getDonorSessionEmail();
-    if (sessionEmail) {
-      void applyProfilePrefill(sessionEmail, 'session');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let cancelled = false;
+    void (async () => {
+      const profile = await loadVerifiedDonorProfile();
+      if (cancelled || !profile?.found) return;
+      setDonorEmail(profile.email);
+      if (profile.name) {
+        setDonorName(profile.name);
+        autoFilledRef.current.name = profile.name;
+      }
+      if (profile.address) {
+        setDonorAddress(profile.address);
+        autoFilledRef.current.address = profile.address;
+      }
+      setProfilePrefillApplied(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const selectedFund = funds.find((f) => f.id === selectedFundId) || funds[0];
@@ -171,107 +109,36 @@ export const DonorPortal: React.FC<{
       ? parseFloat(customAmountStr) || 0
       : Number(presetAmount);
 
-  const feeAmount =
-    coverFees && principalAmount > 0
-      ? paymentMethod === 'plaid'
-        ? Number(Math.min(5.0, principalAmount * 0.008).toFixed(2))
-        : Number(((principalAmount * 0.029) + 0.30).toFixed(2))
-      : 0;
-  const totalCharged = Number((principalAmount + feeAmount).toFixed(2));
-  const tangibleImpact = getTangibleImpact(principalAmount, selectedFund.id);
+  const { feeAmount, totalCharged } = computeProcessingFee({
+    principal: principalAmount,
+    method: feeMethod,
+    coverFees,
+  });
+  const feeLabel = formatFeeLabel(feeAmount, principalAmount);
 
   const handlePaymentError = useCallback((message: string) => {
     setErrorMessage(message);
-    setIsProcessing(false);
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMessage(null);
-
-    if (principalAmount <= 0) {
-      setErrorMessage('Please select or specify a contribution amount greater than $0.');
-      return;
-    }
-
-    if (!donorEmail || !donorEmail.includes('@')) {
-      setErrorMessage('A valid email address is required for automated 501(c)(3) tax receipt delivery.');
-      return;
-    }
-
-    // Live Stripe / Plaid flows use their own confirm buttons
-    if (stripeLive && paymentMethod === 'card') return;
-    if (plaidLive && paymentMethod === 'plaid') return;
-
-    if (paymentMethod === 'card' && cardNumber.includes('0002')) {
-      setIsProcessing(true);
-      setTimeout(() => {
-        setIsProcessing(false);
-        setErrorMessage('Your card was declined by the issuer (Error code: card_declined). Please try another card.');
-      }, 900);
-      return;
-    }
-
-    if (paymentMethod === 'card' && cardNumber.includes('3063')) {
-      setShow3DSModal(true);
-      return;
-    }
-
-    await executePayment();
   };
 
-  const executePayment = async (overrides?: {
-    paymentMethod?: PaymentMethod;
-    cardBrand?: string;
-    cardLast4?: string;
-    stripePaymentIntentId?: string;
-    plaidTransferId?: string;
-    plaidInstitution?: string;
-    plaidAccountMask?: string;
-    awcDcbVoucher?: string;
-    awcSynced?: boolean;
-  }) => {
-    setIsProcessing(true);
-    try {
-      if (!overrides) {
-        await new Promise((resolve) => setTimeout(resolve, 800));
-      }
-      const method = overrides?.paymentMethod || paymentMethod;
-      await makeDonation({
-        amount: principalAmount,
-        feeCovered: coverFees,
-        frequency,
-        fundId: selectedFund.id,
-        donorName: isAnonymous ? 'Anonymous Donor' : donorName,
-        donorEmail,
-        donorAddress,
-        paymentMethod: method,
-        cardBrand:
-          overrides?.cardBrand ||
-          (method === 'plaid' ? plaidInstitution : method === 'ach' ? 'Bank ACH' : 'Visa'),
-        cardLast4:
-          overrides?.cardLast4 ||
-          (method === 'plaid' ? plaidAccountMask : method === 'ach' ? '9012' : cardNumber.slice(-4)),
-        dedication,
-        isAnonymous,
-        plaidInstitution: method === 'plaid' ? overrides?.plaidInstitution || plaidInstitution : undefined,
-        plaidAccountMask: method === 'plaid' ? overrides?.plaidAccountMask || plaidAccountMask : undefined,
-        stripePaymentIntentId: overrides?.stripePaymentIntentId,
-        plaidTransferId: overrides?.plaidTransferId,
-        awcDcbVoucher: overrides?.awcDcbVoucher,
-        awcSynced: overrides?.awcSynced,
-      });
-      if (donorEmail.trim()) {
-        const normalized = normalizeDonorEmail(donorEmail);
-        setLastGiftEmail(normalized);
-        setDonorSessionEmail(normalized);
-      }
-    } catch {
-      setErrorMessage('An unexpected payment error occurred. Please try again.');
-    } finally {
-      setIsProcessing(false);
-      setShow3DSModal(false);
+  const handleStripeProcessing = (result: { status: string; receiptNumber?: string }) => {
+    if (result.status === 'failed') {
+      setErrorMessage('The payment did not go through. You can try another method.');
+      return;
     }
+    if (donorEmail.trim()) {
+      const normalized = normalizeDonorEmail(donorEmail);
+      setLastGiftEmail(normalized);
+      setDonorSessionEmail(normalized);
+    }
+    setGiftNote(
+      result.receiptNumber
+        ? `Receipt ${result.receiptNumber} is on its way.`
+        : 'Your gift is processing. A receipt will be emailed when the payment completes.'
+    );
   };
 
   const scrollToGiveForm = () => {
@@ -280,13 +147,6 @@ export const DonorPortal: React.FC<{
 
   return (
     <div>
-      {giveMode === 'guided' ? (
-        <GivingOnboardingWizard
-          onExitToClassic={() => setGiveMode('classic')}
-          onViewMyGiving={onViewMyGiving}
-        />
-      ) : (
-        <>
       {/* Brand-led full-bleed hero — first viewport */}
       <section className="relative w-full min-h-[min(96vh,900px)] flex items-end overflow-hidden text-white">
         <div className="absolute inset-0 give-hero-media">
@@ -343,12 +203,10 @@ export const DonorPortal: React.FC<{
           <div className="give-hero-rise-delay mt-5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-white/55">
             <span className="inline-flex items-center gap-1.5">
               <ShieldCheck className="h-3.5 w-3.5" style={{ color: '#D4AF37' }} />
-              Stripe PCI-DSS
+              Secure via Stripe
             </span>
             <span className="text-white/30">·</span>
-            <span>501(c)(3) receipts</span>
-            <span className="text-white/30">·</span>
-            <span>Settled to DCU</span>
+            <span>Contribution receipts</span>
           </div>
 
           <div className="give-hero-rise-delay mt-10 flex flex-col sm:flex-row sm:items-center gap-4">
@@ -360,13 +218,6 @@ export const DonorPortal: React.FC<{
             >
               Give now
               <ArrowRight className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setGiveMode('guided')}
-              className="text-sm text-white/75 hover:text-white underline-offset-4 hover:underline transition-colors text-left"
-            >
-              Prefer a guided walkthrough?
             </button>
           </div>
         </div>
@@ -384,7 +235,7 @@ export const DonorPortal: React.FC<{
           >
             <div>
               <p className="text-sm font-semibold" style={{ color: '#4A0404' }}>
-                Gift received — thank you
+                {giftNote || 'Gift received — thank you'}
               </p>
               <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
                 View receipts and tax statements for {lastGiftEmail}.
@@ -473,25 +324,6 @@ export const DonorPortal: React.FC<{
                   />
                 </div>
               )}
-
-              {tangibleImpact && (
-                <div
-                  className="mt-4 rounded-xl border border-[#B7D4C2] dark:border-emerald-800 bg-[#ECF5EF] dark:bg-emerald-950/55 px-4 py-3.5"
-                  style={{
-                    borderLeftWidth: '3px',
-                    borderLeftColor: '#3D7A5A',
-                  }}
-                >
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#3D7A5A] dark:text-emerald-300 mb-1">
-                    Tangible ministry impact
-                  </p>
-                  <p className="text-sm leading-relaxed text-slate-700 dark:text-emerald-50/90">
-                    <span className="font-semibold text-slate-900 dark:text-emerald-50">{tangibleImpact.headline}</span>
-                    {' — '}
-                    <span className="text-slate-600 dark:text-emerald-100/85">{tangibleImpact.description}</span>
-                  </p>
-                </div>
-              )}
             </div>
 
             {/* Schedule */}
@@ -533,33 +365,39 @@ export const DonorPortal: React.FC<{
               )}
             </div>
 
-            {/* Fund */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
-                Designate to
-              </label>
-              <div className="space-y-2.5">
-                {funds.map((f) => (
-                  <button
-                    key={f.id}
-                    type="button"
-                    aria-label={`Designate gift to ${f.name}`}
-                    aria-pressed={selectedFundId === f.id}
-                    onClick={() => setSelectedFundId(f.id)}
-                    className={`w-full min-h-[3.25rem] p-4 text-left rounded-xl border transition-all ${
-                      selectedFundId === f.id
-                        ? 'border-[#D4AF37] bg-[rgba(212,175,55,0.12)] dark:bg-[rgba(212,175,55,0.16)]'
-                        : 'border-slate-200 bg-white/60 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800/60 dark:hover:border-slate-500'
-                    }`}
-                  >
-                    <span className="text-sm font-semibold text-slate-900 dark:text-white">{f.name}</span>
-                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 line-clamp-2 leading-snug">
-                      {f.description}
-                    </p>
-                  </button>
-                ))}
+            {/* Fund — hidden when only one active fund (auto-designated) */}
+            {funds.filter((f) => f.active).length > 1 ? (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
+                  Designate to
+                </label>
+                <div className="space-y-2.5">
+                  {funds
+                    .filter((f) => f.active)
+                    .map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        aria-label={`Designate gift to ${f.name}`}
+                        aria-pressed={selectedFundId === f.id}
+                        onClick={() => setSelectedFundId(f.id)}
+                        className={`w-full min-h-[3.25rem] p-4 text-left rounded-xl border transition-all ${
+                          selectedFundId === f.id
+                            ? 'border-[#D4AF37] bg-[rgba(212,175,55,0.12)] dark:bg-[rgba(212,175,55,0.16)]'
+                            : 'border-slate-200 bg-white/60 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800/60 dark:hover:border-slate-500'
+                        }`}
+                      >
+                        <span className="text-sm font-semibold text-slate-900 dark:text-white">{f.name}</span>
+                        {f.description ? (
+                          <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 line-clamp-2 leading-snug">
+                            {f.description}
+                          </p>
+                        ) : null}
+                      </button>
+                    ))}
+                </div>
               </div>
-            </div>
+            ) : null}
 
             {/* Identity — email first for returning donors */}
             <div className="pt-2">
@@ -578,44 +416,29 @@ export const DonorPortal: React.FC<{
                   <input
                     type="email"
                     value={donorEmail}
-                    onChange={(e) => {
-                      setDonorEmail(e.target.value);
-                      setProfileStatus('idle');
-                    }}
-                    onBlur={() => {
-                      const normalized = normalizeDonorEmail(donorEmail);
-                      if (normalized.includes('@')) {
-                        void applyProfilePrefill(normalized, 'lookup');
-                      }
-                    }}
+                    onChange={(e) => setDonorEmail(e.target.value)}
                     required
                     placeholder="you@example.com"
                     autoComplete="email"
                     className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:text-white focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37]/40 outline-none"
                   />
-                  {profileLookingUp && (
-                    <p className="mt-1.5 text-[11px] text-slate-500">Looking up your giving profile…</p>
-                  )}
-                  {!profileLookingUp && (
-                    <button
-                      type="button"
-                      disabled={!normalizeDonorEmail(donorEmail).includes('@')}
-                      onClick={() => void applyProfilePrefill(donorEmail, 'lookup')}
-                      className="mt-2 text-[11px] font-semibold underline-offset-2 hover:underline disabled:opacity-40"
-                      style={{ color: '#4A0404' }}
-                    >
-                      Find my profile from prior gifts
-                    </button>
-                  )}
-                  {!profileLookingUp && profileStatus === 'found' && profileFound && (
+                  {profilePrefillApplied ? (
                     <p className="mt-1.5 text-[11px] font-medium" style={{ color: '#4A0404' }}>
-                      Welcome back{donorName ? `, ${donorName.split(' ')[0]}` : ''} — we filled your details
-                      from prior gifts. Confirm or edit below.
+                      Welcome back{donorName ? `, ${donorName.split(' ')[0]}` : ''} — details from your signed-in
+                      My Giving session. Confirm or edit below.
                     </p>
-                  )}
-                  {!profileLookingUp && profileStatus === 'new' && (
+                  ) : (
                     <p className="mt-1.5 text-[11px] text-slate-500">
-                      No prior gifts for this email — enter your details for this receipt.
+                      Given before?{' '}
+                      <button
+                        type="button"
+                        onClick={() => onViewMyGiving?.(normalizeDonorEmail(donorEmail) || '')}
+                        className="font-semibold underline-offset-2 hover:underline"
+                        style={{ color: '#4A0404' }}
+                      >
+                        Sign in to My Giving
+                      </button>{' '}
+                      to prefill your details.
                     </p>
                   )}
                 </div>
@@ -685,69 +508,16 @@ export const DonorPortal: React.FC<{
                 Payment
               </span>
 
-              {/* Method Tabs */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('card')}
-                  className={`flex items-center justify-center gap-1.5 min-h-11 py-2.5 px-3 text-xs font-medium rounded-lg border transition-all ${
-                    paymentMethod === 'card'
-                      ? 'border-church-gold bg-church-gold/10 text-church-burgundy font-semibold dark:border-church-gold dark:bg-church-burgundy/30 dark:text-church-gold-light'
-                      : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
-                  }`}
-                >
-                  <CreditCard className="h-3.5 w-3.5 shrink-0" />
-                  <span>Card</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('plaid')}
-                  className={`flex items-center justify-center gap-1.5 min-h-11 py-2.5 px-3 text-xs font-medium rounded-lg border transition-all ${
-                    paymentMethod === 'plaid'
-                      ? 'border-church-gold bg-church-gold/10 text-church-burgundy font-semibold dark:border-church-gold dark:bg-church-burgundy/30 dark:text-church-gold-light'
-                      : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
-                  }`}
-                >
-                  <Landmark className="h-3.5 w-3.5 shrink-0" />
-                  <span>Plaid Bank</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('ach')}
-                  className={`flex items-center justify-center gap-1.5 min-h-11 py-2.5 px-3 text-xs font-medium rounded-lg border transition-all ${
-                    paymentMethod === 'ach'
-                      ? 'border-church-gold bg-church-gold/10 text-church-burgundy font-semibold dark:border-church-gold dark:bg-church-burgundy/30 dark:text-church-gold-light'
-                      : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
-                  }`}
-                >
-                  <Building2 className="h-3.5 w-3.5 shrink-0" />
-                  <span>Manual ACH</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('apple_pay')}
-                  className={`flex items-center justify-center gap-1.5 min-h-11 py-2.5 px-3 text-xs font-medium rounded-lg border transition-all ${
-                    paymentMethod === 'apple_pay'
-                      ? 'border-church-gold bg-church-gold/10 text-church-burgundy font-semibold dark:border-church-gold dark:bg-church-burgundy/30 dark:text-church-gold-light'
-                      : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
-                  }`}
-                >
-                  <Sparkles className="h-3.5 w-3.5 shrink-0" />
-                  <span>Wallet</span>
-                </button>
-              </div>
-
-              {apiConfigLoading && (paymentMethod === 'card' || paymentMethod === 'plaid') && (
+              {apiConfigLoading && (
                 <div className="mb-4 rounded-xl border border-[#E8E2D9] bg-[#F7F4EF] px-4 py-3.5 text-sm text-slate-600">
                   Checking payment options…
                 </div>
               )}
-
-              {/* Card Inputs — live Stripe Elements or simulator */}
-              {!apiConfigLoading && paymentMethod === 'card' && stripeLive && apiConfig?.stripePublishableKey && (
+              <TurnstileWidget onToken={setTurnstileToken} className="mb-4" />
+              {!apiConfigLoading && stripeLive && apiConfig?.stripePublishableKey && selectedFund && (
                 <StripeCheckout
                   amount={principalAmount}
-                  feeAmount={feeAmount}
+                  coverFees={coverFees}
                   donorName={isAnonymous ? 'Anonymous' : donorName}
                   donorEmail={donorEmail}
                   fundId={selectedFund.id}
@@ -755,179 +525,16 @@ export const DonorPortal: React.FC<{
                   fundName={selectedFund.name}
                   frequency={frequency}
                   isAnonymous={isAnonymous}
+                  turnstileToken={turnstileToken}
                   publishableKey={apiConfig.stripePublishableKey}
+                  onMethodChange={setFeeMethod}
                   onError={handlePaymentError}
-                  onSuccess={async (result) => {
-                    await executePayment({
-                      paymentMethod: 'card',
-                      stripePaymentIntentId: result.paymentIntentId,
-                      awcDcbVoucher: result.voucherNumber,
-                      awcSynced: result.awcSynced,
-                      cardBrand: 'Card',
-                      cardLast4: '****',
-                    });
-                  }}
+                  onProcessing={handleStripeProcessing}
                 />
               )}
-
-              {!apiConfigLoading && paymentMethod === 'card' && !stripeLive && (
-                <div className="space-y-3 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
-                  <div>
-                    <label className="block text-[11px] text-slate-500 uppercase tracking-wider mb-1">Card Number</label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={cardNumber}
-                        onChange={(e) => setCardNumber(e.target.value)}
-                        className="w-full pl-3 pr-10 py-2 text-xs font-mono rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white"
-                        placeholder="Card number"
-                        autoComplete="cc-number"
-                      />
-                      <CreditCard className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <div>
-                      <label className="block text-[11px] text-slate-500 uppercase tracking-wider mb-1">Expires</label>
-                      <input
-                        type="text"
-                        value={cardExpiry}
-                        onChange={(e) => setCardExpiry(e.target.value)}
-                        placeholder="MM/YY"
-                        autoComplete="cc-exp"
-                        className="w-full px-2 py-2 text-xs font-mono rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] text-slate-500 uppercase tracking-wider mb-1">CVC</label>
-                      <input
-                        type="text"
-                        value={cardCvc}
-                        onChange={(e) => setCardCvc(e.target.value)}
-                        placeholder="CVC"
-                        autoComplete="cc-csc"
-                        className="w-full px-2 py-2 text-xs font-mono rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] text-slate-500 uppercase tracking-wider mb-1">Postal Code</label>
-                      <input
-                        type="text"
-                        value={cardZip}
-                        onChange={(e) => setCardZip(e.target.value)}
-                        placeholder="ZIP"
-                        autoComplete="postal-code"
-                        className="w-full px-2 py-2 text-xs font-mono rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Plaid bank link — live or simulator */}
-              {!apiConfigLoading && paymentMethod === 'plaid' && plaidLive && (
-                <PlaidBankLink
-                  amount={principalAmount}
-                  feeAmount={feeAmount}
-                  donorName={isAnonymous ? 'Anonymous' : donorName}
-                  donorEmail={donorEmail}
-                  fundId={selectedFund.id}
-                  fundCode={selectedFund.code}
-                  fundName={selectedFund.name}
-                  frequency={frequency}
-                  isAnonymous={isAnonymous}
-                  onError={handlePaymentError}
-                  onSuccess={async (result) => {
-                    setPlaidInstitution(result.institutionName);
-                    setPlaidAccountMask(result.accountMask);
-                    await executePayment({
-                      paymentMethod: 'plaid',
-                      plaidTransferId: result.transferId,
-                      plaidInstitution: result.institutionName,
-                      plaidAccountMask: result.accountMask,
-                      cardBrand: result.institutionName,
-                      cardLast4: result.accountMask,
-                      awcDcbVoucher: result.voucherNumber,
-                      awcSynced: result.awcSynced,
-                    });
-                  }}
-                />
-              )}
-
-              {!apiConfigLoading && paymentMethod === 'plaid' && !plaidLive && (
-                <div className="space-y-3 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
-                  <p className="text-slate-600 dark:text-slate-300">
-                    Enter your bank details to continue. Live Plaid linking activates once bank credentials are configured.
-                  </p>
-                  <div>
-                    <label className="block text-[11px] text-slate-500 uppercase tracking-wider mb-1">Institution</label>
-                    <input
-                      type="text"
-                      value={plaidInstitution}
-                      onChange={(e) => setPlaidInstitution(e.target.value)}
-                      placeholder="Your bank or credit union"
-                      className="w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-500 uppercase tracking-wider mb-1">Account ending in</label>
-                    <input
-                      type="text"
-                      value={plaidAccountMask}
-                      onChange={(e) => setPlaidAccountMask(e.target.value)}
-                      placeholder="Last 4 digits"
-                      className="w-full px-3 py-2 font-mono rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* ACH Inputs */}
-              {paymentMethod === 'ach' && (
-                <div className="space-y-3 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
-                  <div>
-                    <label className="block text-[11px] text-slate-500 uppercase tracking-wider mb-1">Bank Name</label>
-                    <input
-                      type="text"
-                      value={achBankName}
-                      onChange={(e) => setAchBankName(e.target.value)}
-                      placeholder="Bank name"
-                      className="w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[11px] text-slate-500 uppercase tracking-wider mb-1">Routing Number</label>
-                      <input
-                        type="text"
-                        value={achRouting}
-                        onChange={(e) => setAchRouting(e.target.value)}
-                        placeholder="9-digit routing"
-                        className="w-full px-3 py-2 font-mono rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] text-slate-500 uppercase tracking-wider mb-1">Account Number</label>
-                      <input
-                        type="text"
-                        value={achAccount}
-                        onChange={(e) => setAchAccount(e.target.value)}
-                        placeholder="Account number"
-                        className="w-full px-3 py-2 font-mono rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Apple Pay / Digital Wallet */}
-              {paymentMethod === 'apple_pay' && (
-                <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700 text-center">
-                  <p className="text-xs text-slate-600 dark:text-slate-300">
-                    {stripeLive
-                      ? 'Use the Card tab — Stripe Payment Element includes Apple Pay / Google Pay when available on your device.'
-                      : 'One-touch authentication with Apple Pay / Google Pay. Ready on your secure device (simulator).'}
-                  </p>
+              {!apiConfigLoading && !stripeLive && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  Online giving is temporarily unavailable. Please email {apiConfig?.church?.email || 'stewardship@anointedworshipcenter.com'}.
                 </div>
               )}
             </div>
@@ -943,10 +550,11 @@ export const DonorPortal: React.FC<{
                 />
                 <div className="text-xs">
                   <span className="font-semibold text-church-burgundy-dark dark:text-church-gold-light">
-                    Cover credit card processing fee (${feeAmount.toFixed(2)})
+                    {feeLabel}
                   </span>
                   <p className="text-church-burgundy/80 dark:text-church-gold mt-0.5">
-                    Adding ${feeAmount.toFixed(2)} ensures that 100% of your ${principalAmount.toFixed(2)} pledge goes directly into {selectedFund.name}.
+                    Adding ${feeAmount.toFixed(2)} ensures that 100% of your ${principalAmount.toFixed(2)} gift goes
+                    directly into {selectedFund.name}.
                   </p>
                 </div>
               </label>
@@ -960,36 +568,9 @@ export const DonorPortal: React.FC<{
               </div>
             )}
 
-            {/* Primary Submit Button — hidden when live Stripe/Plaid UI owns confirmation */}
-            {!(stripeLive && paymentMethod === 'card') &&
-              !(plaidLive && paymentMethod === 'plaid') &&
-              !(apiConfigLoading && (paymentMethod === 'card' || paymentMethod === 'plaid')) && (
-            <button
-              type="submit"
-              disabled={isProcessing || principalAmount <= 0}
-              className="give-cta w-full min-h-12 py-4 px-4 text-white font-semibold text-sm rounded-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              style={{ backgroundColor: '#4A0404' }}
-            >
-              {isProcessing ? (
-                <>
-                  <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span>Securing Payment with Stripe...</span>
-                </>
-              ) : (
-                <>
-                  <Lock className="h-4 w-4 text-church-gold-light" />
-                  <span>
-                    Give ${totalCharged.toFixed(2)}{' '}
-                    {frequency !== 'one-time' ? `${frequency}` : 'Now'}
-                  </span>
-                </>
-              )}
-            </button>
-            )}
-
             <div className="text-center text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-1">
               <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-              <span>TLS 1.3 · Stripe PCI-DSS Level 1 · IRS 501(c)(3) Receipt Issued Immediately</span>
+              <span>Secure checkout via Stripe · Contribution receipt for your records</span>
             </div>
 
           </form>
@@ -998,58 +579,6 @@ export const DonorPortal: React.FC<{
         <StewardshipFaq />
       </div>
 
-
-      {/* 3D Secure Simulation Modal */}
-      {show3DSModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 mb-4">
-              <ShieldCheck className="h-6 w-6" />
-            </div>
-            <h3 className="font-serif-display text-lg font-bold text-slate-900 dark:text-white">
-              Stripe 3D Secure Verification
-            </h3>
-            <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-              Your financial institution requires two-factor confirmation for this transaction of <strong>${totalCharged.toFixed(2)}</strong>.
-            </p>
-
-            <div className="my-6 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg text-left text-xs space-y-1">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Merchant:</span>
-                <span className="font-semibold text-slate-900 dark:text-white">AWC Tithe</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Cardholder:</span>
-                <span>{donorName}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Card ending:</span>
-                <span className="font-mono">•••• 3063</span>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setShow3DSModal(false)}
-                className="flex-1 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg dark:bg-slate-800 dark:text-slate-300"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => executePayment()}
-                className="flex-1 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm"
-              >
-                Authorize Payment
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-        </>
-      )}
     </div>
   );
 };

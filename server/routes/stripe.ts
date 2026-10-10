@@ -1,15 +1,25 @@
 import { Router, type Request, type Response } from 'express';
 import Stripe from 'stripe';
 import { env, stripeStatus } from '../config';
-import { buildVoucherNumber, postContributionToDcb, type DcbContributionPayload } from '../dcb/client';
-import { dcbDonorDisplayName } from '../dcb/displayName';
-import { createGift } from '../gifts/store';
+import { createStripeClient, paymentIntentIdFromClientSecret } from '../stripe/client';
+import {
+  findDonorByEmail,
+  getGiftByTransactionId,
+  setDonorStripeCustomerId,
+} from '../gifts/store';
+import { handleStripeEvent } from '../stripe/handleWebhook';
+import { piBelongsToSession, rememberPaymentIntent } from '../stripe/piCookie';
+import { payRateLimitMiddleware } from '../middleware/rateLimit';
+import { requireTurnstile, validateMinGiftAmount } from '../middleware/turnstile';
+import { computeProcessingFee } from '../../shared/fees';
+import { fromNodeHeaders } from 'better-auth/node';
+import { auth } from '../auth/betterAuth';
 
 const router = Router();
 
 function getStripe(): Stripe | null {
   if (!stripeStatus().configured) return null;
-  return new Stripe(env.stripeSecretKey);
+  return createStripeClient(env.stripeSecretKey);
 }
 
 function metaFlagAnonymous(meta: Stripe.Metadata): boolean {
@@ -17,199 +27,407 @@ function metaFlagAnonymous(meta: Stripe.Metadata): boolean {
   return raw === 'true' || raw === '1' || raw === 'yes';
 }
 
-async function syncSucceededPaymentIntent(pi: Stripe.PaymentIntent) {
-  const meta = pi.metadata || {};
-  const amount = (pi.amount_received || pi.amount) / 100;
-  const feeAmount = Number(meta.feeAmount || 0);
-  const isAnonymous = metaFlagAnonymous(meta);
-  const donorName = dcbDonorDisplayName({
-    isAnonymous,
-    donorName: meta.donorName,
-  });
-  const voucherNumber = buildVoucherNumber(pi.id);
-  const payload: DcbContributionPayload = {
-    bookId: env.awcDcbBookId,
-    voucherNumber,
-    donorName,
-    donorEmail: meta.donorEmail || pi.receipt_email || '',
-    envelopeNumber: meta.envelopeNumber || undefined,
-    amount,
-    feeAmount,
-    netAmount: Number((amount - feeAmount).toFixed(2)),
-    fundCode: meta.fundCode || '1001-OPS',
-    fundName: meta.fundName || 'General Tithes & Offerings',
-    paymentMethod: 'card',
-    transactionId: pi.id,
-    contributedAt: new Date().toISOString(),
-  };
-
-  const dcb = await postContributionToDcb(payload);
-
-  const gift = await createGift({
-    amount,
-    feeCovered: feeAmount > 0,
-    feeAmount,
-    frequency: (meta.frequency as 'one-time' | 'weekly' | 'bi-weekly' | 'monthly' | 'annually') || 'one-time',
-    fundId: meta.fundId || 'fund-tithes',
-    fundName: meta.fundName || 'General Tithes & Offerings',
-    fundCode: meta.fundCode || '1001-OPS',
-    donorName: meta.donorName || donorName,
-    donorEmail: meta.donorEmail || pi.receipt_email || '',
-    paymentMethod: 'card',
-    isAnonymous,
-    stripePaymentIntentId: pi.id,
-    transactionId: pi.id,
-    awcDcbVoucher: dcb.voucherId,
-    awcSynced: dcb.ok,
-  });
-
-  return { amount, dcb, voucherNumber: dcb.voucherId, gift };
+function metaFlagCovered(meta: Stripe.Metadata): boolean {
+  const raw = String(meta.feeCovered || '').toLowerCase();
+  return raw === 'true' || raw === '1' || raw === 'yes';
 }
 
-router.post('/create-payment-intent', async (req: Request, res: Response) => {
-  const status = stripeStatus();
-  if (!status.configured) {
-    return res.status(503).json({
-      error: 'INTEGRATION_NOT_CONFIGURED',
-      integration: 'stripe',
-      message: 'Set STRIPE_SECRET_KEY and STRIPE_PUBLISHABLE_KEY to enable live card processing.',
-    });
+function parseBoolean(value: unknown): boolean {
+  return value === true || value === 'true' || value === '1';
+}
+
+function recurringCadence(frequency: string): {
+  interval: 'week' | 'month' | 'year';
+  interval_count: number;
+} {
+  if (frequency === 'weekly') return { interval: 'week', interval_count: 1 };
+  if (frequency === 'bi-weekly') return { interval: 'week', interval_count: 2 };
+  if (frequency === 'annually') return { interval: 'year', interval_count: 1 };
+  return { interval: 'month', interval_count: 1 };
+}
+
+async function ensureStripeCustomer(
+  stripe: Stripe,
+  email: string,
+  name: string
+): Promise<string | undefined> {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized.includes('@')) return undefined;
+
+  const existingDonor = await findDonorByEmail(normalized);
+  if (existingDonor?.stripeCustomerId) {
+    return existingDonor.stripeCustomerId;
   }
 
-  const stripe = getStripe()!;
-  const {
-    amount,
-    currency = 'usd',
-    donorName,
-    donorEmail,
-    fundId,
-    fundCode,
-    fundName,
-    feeAmount = 0,
-    envelopeNumber,
-    frequency = 'one-time',
-    isAnonymous = false,
-  } = req.body as Record<string, unknown>;
-
-  const amountCents = Math.round(Number(amount) * 100);
-  if (!Number.isFinite(amountCents) || amountCents < 50) {
-    return res.status(400).json({ error: 'INVALID_AMOUNT', message: 'Amount must be at least $0.50.' });
+  const listed = await stripe.customers.list({ email: normalized, limit: 1 });
+  if (listed.data[0]?.id) {
+    await setDonorStripeCustomerId(normalized, listed.data[0].id);
+    return listed.data[0].id;
   }
 
-  try {
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: amountCents,
-      currency: String(currency),
-      automatic_payment_methods: { enabled: true },
-      receipt_email: typeof donorEmail === 'string' ? donorEmail : undefined,
-      metadata: {
-        product: 'awc_tithe',
-        donorName: String(donorName || ''),
-        donorEmail: String(donorEmail || ''),
-        fundId: String(fundId || ''),
-        fundCode: String(fundCode || ''),
-        fundName: String(fundName || ''),
-        feeAmount: String(feeAmount || 0),
-        envelopeNumber: String(envelopeNumber || ''),
-        frequency: String(frequency || 'one-time'),
-        isAnonymous: String(Boolean(isAnonymous)),
-      },
-      statement_descriptor_suffix: 'AWC TITHE',
-    });
+  const created = await stripe.customers.create({
+    email: normalized,
+    name: name || undefined,
+    metadata: { product: 'awc_tithe' },
+  });
+  await setDonorStripeCustomerId(normalized, created.id);
+  return created.id;
+}
 
-    return res.json({
-      clientSecret: paymentIntent.client_secret,
-      paymentIntentId: paymentIntent.id,
-      mode: status.mode,
-    });
-  } catch (err) {
-    console.error('[stripe] create-payment-intent', err);
-    return res.status(500).json({
-      error: 'STRIPE_ERROR',
-      message: err instanceof Error ? err.message : 'Failed to create PaymentIntent',
-    });
-  }
-});
-
-/** Confirm a succeeded PaymentIntent client-side and sync to AWC DCB + ledger */
-router.post('/confirm-and-sync', async (req: Request, res: Response) => {
-  const status = stripeStatus();
-  if (!status.configured) {
-    return res.status(503).json({
-      error: 'INTEGRATION_NOT_CONFIGURED',
-      integration: 'stripe',
-    });
-  }
-
-  const stripe = getStripe()!;
-  const { paymentIntentId } = req.body as { paymentIntentId?: string };
-  if (!paymentIntentId) {
-    return res.status(400).json({ error: 'MISSING_PAYMENT_INTENT' });
-  }
-
-  try {
-    const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
-    if (pi.status !== 'succeeded') {
-      return res.status(400).json({
-        error: 'PAYMENT_NOT_SUCCEEDED',
-        status: pi.status,
+router.post(
+  '/create-payment-intent',
+  payRateLimitMiddleware,
+  requireTurnstile,
+  async (req: Request, res: Response) => {
+    const status = stripeStatus();
+    if (!status.configured) {
+      return res.status(503).json({
+        error: 'INTEGRATION_NOT_CONFIGURED',
+        integration: 'stripe',
+        message: 'Set STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, and STRIPE_WEBHOOK_SECRET to enable Stripe giving.',
       });
     }
 
-    const synced = await syncSucceededPaymentIntent(pi);
+    const stripe = getStripe()!;
+    const {
+      amount,
+      donorName,
+      donorEmail,
+      fundId,
+      fundCode,
+      fundName,
+      envelopeNumber,
+      frequency = 'one-time',
+      isAnonymous = false,
+      coverFees = false,
+    } = req.body as Record<string, unknown>;
+
+    const principal = Number(amount);
+    const minGift = validateMinGiftAmount(principal);
+    if (!minGift.ok) {
+      return res.status(400).json({
+        error: 'INVALID_AMOUNT',
+        message: `Amount must be at least $${(minGift.minCents / 100).toFixed(2)}.`,
+        minGiftCents: minGift.minCents,
+      });
+    }
+
+    const cover = parseBoolean(coverFees);
+    const fees = computeProcessingFee({
+      principal,
+      method: 'card',
+      coverFees: cover,
+    });
+    const amountCents = Math.round(fees.totalCharged * 100);
+    const email = String(donorEmail || '').trim();
+    const name = String(donorName || '').trim();
+
+    try {
+      const customerId = email ? await ensureStripeCustomer(stripe, email, name) : undefined;
+
+      const frequencyName = String(frequency || 'one-time');
+      if (frequencyName !== 'one-time') {
+        if (!customerId) {
+          return res.status(400).json({ error: 'EMAIL_REQUIRED', message: 'A valid email is required for recurring gifts.' });
+        }
+        const recurring = recurringCadence(frequencyName);
+        const subscription = await stripe.subscriptions.create({
+          customer: customerId,
+          items: [
+            {
+              price_data: {
+                currency: 'usd',
+                product_data: { name: String(fundName || 'Gift') },
+                unit_amount: amountCents,
+                recurring,
+              },
+            },
+          ],
+          payment_behavior: 'default_incomplete',
+          payment_settings: {
+            save_default_payment_method: 'on_subscription',
+            payment_method_types: ['card', 'us_bank_account'],
+            payment_method_options: {
+              us_bank_account: {
+                financial_connections: { permissions: ['payment_method'] },
+              },
+            },
+          },
+          expand: ['latest_invoice.confirmation_secret', 'latest_invoice.payments.data.payment'],
+          metadata: {
+            product: 'awc_tithe',
+            giftType: 'subscription',
+            donorName: name,
+            donorEmail: email,
+            fundId: String(fundId || ''),
+            fundCode: String(fundCode || ''),
+            fundName: String(fundName || ''),
+            principalAmount: String(fees.principal),
+            feeAmount: String(fees.feeAmount),
+            feeCovered: String(cover),
+            frequency: frequencyName,
+            isAnonymous: String(parseBoolean(isAnonymous)),
+          },
+        });
+        const invoice = subscription.latest_invoice;
+        const invoiceObj = invoice && typeof invoice === 'object' ? invoice : null;
+        const clientSecret = invoiceObj?.confirmation_secret?.client_secret || '';
+        if (!clientSecret) {
+          return res.status(500).json({ error: 'SUBSCRIPTION_INTENT_MISSING' });
+        }
+        let paymentIntentId = paymentIntentIdFromClientSecret(clientSecret);
+        for (const payment of invoiceObj?.payments?.data || []) {
+          if (payment.payment?.type !== 'payment_intent') continue;
+          const pi = payment.payment.payment_intent;
+          if (typeof pi === 'string') paymentIntentId = pi;
+          else if (pi && typeof pi === 'object' && 'id' in pi) paymentIntentId = String(pi.id);
+        }
+        if (paymentIntentId) rememberPaymentIntent(req, res, paymentIntentId);
+        return res.json({
+          clientSecret,
+          paymentIntentId: paymentIntentId || subscription.id,
+          subscriptionId: subscription.id,
+          mode: status.mode,
+          principalAmount: fees.principal,
+          feeAmount: fees.feeAmount,
+          totalCharged: fees.totalCharged,
+        });
+      }
+
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amountCents,
+        currency: 'usd',
+        customer: customerId,
+        automatic_payment_methods: { enabled: true },
+        payment_method_options: {
+          us_bank_account: {
+            financial_connections: { permissions: ['payment_method'] },
+          },
+        },
+        receipt_email: email || undefined,
+        metadata: {
+          product: 'awc_tithe',
+          giftType: 'one-time',
+          donorName: name,
+          donorEmail: email,
+          fundId: String(fundId || ''),
+          fundCode: String(fundCode || ''),
+          fundName: String(fundName || ''),
+          principalAmount: String(fees.principal),
+          feeAmount: String(fees.feeAmount),
+          feeCovered: String(cover),
+          envelopeNumber: String(envelopeNumber || ''),
+          frequency: String(frequency || 'one-time'),
+          isAnonymous: String(parseBoolean(isAnonymous)),
+          stripeCustomerId: customerId || '',
+        },
+        statement_descriptor_suffix: 'AWC TITHE',
+      });
+
+      rememberPaymentIntent(req, res, paymentIntent.id);
+      return res.json({
+        clientSecret: paymentIntent.client_secret,
+        paymentIntentId: paymentIntent.id,
+        mode: status.mode,
+        principalAmount: fees.principal,
+        feeAmount: fees.feeAmount,
+        totalCharged: fees.totalCharged,
+      });
+    } catch (err) {
+      console.error('[stripe] create-payment-intent', err);
+      return res.status(500).json({
+        error: 'STRIPE_ERROR',
+        message: 'Failed to create PaymentIntent',
+      });
+    }
+  }
+);
+
+router.post('/update-payment-intent', async (req: Request, res: Response) => {
+  const stripe = getStripe();
+  if (!stripe) return res.status(503).json({ error: 'INTEGRATION_NOT_CONFIGURED' });
+  const { paymentIntentId, coverFees, paymentMethodType } = req.body as {
+    paymentIntentId?: string;
+    coverFees?: boolean;
+    paymentMethodType?: string;
+  };
+  if (!paymentIntentId || !piBelongsToSession(req, paymentIntentId)) {
+    return res.status(404).json({ error: 'NOT_FOUND' });
+  }
+  const methodType = String(paymentMethodType || 'card');
+  if (methodType !== 'card' && methodType !== 'us_bank_account') {
+    return res.status(400).json({ error: 'UNSUPPORTED_PAYMENT_METHOD' });
+  }
+  try {
+    const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+    if (pi.status !== 'requires_payment_method' && pi.status !== 'requires_confirmation' && pi.status !== 'requires_action') {
+      return res.status(409).json({ error: 'PAYMENT_INTENT_LOCKED', status: pi.status });
+    }
+    const principal = Number(pi.metadata?.principalAmount || 0);
+    const fees = computeProcessingFee({
+      principal,
+      method: methodType,
+      coverFees: parseBoolean(coverFees),
+    });
+    const subscriptionId = String(pi.metadata?.subscriptionId || '');
+    if (subscriptionId) {
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      const subscriptionFeeChanged =
+        Number(subscription.metadata?.feeAmount || 0) !== fees.feeAmount ||
+        String(subscription.metadata?.feeCovered || '') !== String(parseBoolean(coverFees)) ||
+        String(subscription.metadata?.paymentMethodType || 'card') !== methodType;
+      if (subscriptionFeeChanged) {
+        const item = subscription.items.data[0];
+        if (!item) throw new Error(`Subscription ${subscriptionId} has no price item.`);
+        await stripe.subscriptions.update(subscriptionId, {
+          items: [
+            {
+              id: item.id,
+              price_data: {
+                currency: 'usd',
+                product_data: { name: pi.metadata?.fundName || 'Gift' },
+                unit_amount: Math.round(fees.totalCharged * 100),
+                recurring: recurringCadence(pi.metadata?.frequency || 'monthly'),
+              },
+            },
+          ],
+          proration_behavior: 'none',
+          metadata: {
+            ...subscription.metadata,
+            feeAmount: String(fees.feeAmount),
+            feeCovered: String(parseBoolean(coverFees)),
+            paymentMethodType: methodType,
+          },
+        });
+      }
+    }
+    const updated = await stripe.paymentIntents.update(paymentIntentId, {
+      amount: Math.round(fees.totalCharged * 100),
+      metadata: {
+        ...pi.metadata,
+        feeAmount: String(fees.feeAmount),
+        feeCovered: String(parseBoolean(coverFees)),
+        paymentMethodType: methodType,
+      },
+    });
     return res.json({
-      paymentIntentId: pi.id,
-      amount: synced.amount,
-      dcb: synced.dcb,
-      voucherNumber: synced.voucherNumber,
-      awcSynced: synced.dcb.ok,
-      donation: synced.gift.donation,
-      donor: synced.gift.donor,
+      ok: true,
+      paymentIntentId: updated.id,
+      principalAmount: fees.principal,
+      feeAmount: fees.feeAmount,
+      totalCharged: fees.totalCharged,
     });
   } catch (err) {
-    console.error('[stripe] confirm-and-sync', err);
+    console.error('[stripe] update-payment-intent', err);
+    return res.status(500).json({ error: 'STRIPE_ERROR' });
+  }
+});
+
+router.get('/payment-status/:paymentIntentId', async (req: Request, res: Response) => {
+  const paymentIntentId = String(req.params.paymentIntentId || '');
+  if (!piBelongsToSession(req, paymentIntentId)) {
+    return res.status(404).json({ error: 'NOT_FOUND' });
+  }
+  const gift = await getGiftByTransactionId(paymentIntentId);
+  if (!gift) return res.json({ status: 'processing' });
+  return res.json({
+    status: gift.status === 'completed' ? 'completed' : gift.status === 'failed' || gift.status === 'refunded' ? 'failed' : 'pending',
+    receiptNumber: gift.status === 'completed' ? gift.receiptNumber : undefined,
+  });
+});
+
+/**
+ * POST /api/stripe/customer-portal
+ * Donor-session only. Opens Stripe Customer Portal for that donor's own customer id.
+ */
+router.post('/customer-portal', async (req: Request, res: Response) => {
+  try {
+    const session = await auth.api.getSession({ headers: fromNodeHeaders(req.headers) });
+    const email = session?.user?.email?.trim().toLowerCase();
+    if (!email) {
+      return res.status(401).json({
+        ok: false,
+        error: 'UNAUTHORIZED',
+        message: 'Sign in to My Giving to manage recurring gifts.',
+      });
+    }
+
+    const status = stripeStatus();
+    if (!status.configured) {
+      return res.status(503).json({ ok: false, error: 'INTEGRATION_NOT_CONFIGURED' });
+    }
+
+    const donor = await findDonorByEmail(email);
+    if (!donor?.stripeCustomerId) {
+      return res.status(404).json({
+        ok: false,
+        error: 'NO_STRIPE_CUSTOMER',
+        message: 'No Stripe customer is linked to this giving profile yet.',
+      });
+    }
+
+    const stripe = getStripe()!;
+    const returnUrl = `${env.publicAppUrl.replace(/\/$/, '')}/`;
+    const portal = await stripe.billingPortal.sessions.create({
+      customer: donor.stripeCustomerId,
+      return_url: returnUrl,
+    });
+
+    return res.json({ ok: true, url: portal.url });
+  } catch (err) {
+    console.error('[stripe] customer-portal', err);
     return res.status(500).json({
-      error: 'STRIPE_ERROR',
-      message: err instanceof Error ? err.message : 'Confirm failed',
+      ok: false,
+      error: 'PORTAL_FAILED',
+      message: 'Could not open billing portal',
     });
   }
 });
 
-router.post('/webhook', async (req: Request, res: Response) => {
-  const status = stripeStatus();
-  if (!status.configured) {
-    return res.status(503).json({ error: 'INTEGRATION_NOT_CONFIGURED' });
+/**
+ * Stripe webhook handler — must be mounted with express.raw BEFORE express.json.
+ */
+export async function stripeWebhookHandler(req: Request, res: Response): Promise<void> {
+  if (!env.stripeSecretKey) {
+    res.status(503).json({ error: 'STRIPE_SECRET_KEY_REQUIRED' });
+    return;
   }
-
-  const stripe = getStripe()!;
+  const stripe = createStripeClient(env.stripeSecretKey);
   let event: Stripe.Event;
 
+  const secret = env.stripeWebhookSecret;
+  if (!secret) {
+    res.status(503).json({
+      error: 'WEBHOOK_SECRET_REQUIRED',
+      message: 'STRIPE_WEBHOOK_SECRET must be configured before webhook events can be processed.',
+    });
+    return;
+  }
   try {
-    if (env.stripeWebhookSecret) {
-      const signature = req.headers['stripe-signature'];
-      if (!signature || typeof signature !== 'string') {
-        return res.status(400).send('Missing stripe-signature');
-      }
-      const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
-      event = stripe.webhooks.constructEvent(rawBody || req.body, signature, env.stripeWebhookSecret);
-    } else {
-      event = req.body as Stripe.Event;
+    const signature = req.headers['stripe-signature'];
+    if (!signature || typeof signature !== 'string') {
+      res.status(400).send('Missing stripe-signature');
+      return;
     }
+    if (!Buffer.isBuffer(req.body)) {
+      console.error('[stripe] webhook expected raw Buffer body');
+      res.status(400).send('Webhook Error: raw body required');
+      return;
+    }
+    event = stripe.webhooks.constructEvent(req.body, signature, secret);
   } catch (err) {
     console.error('[stripe] webhook signature', err);
-    return res.status(400).send(`Webhook Error: ${err instanceof Error ? err.message : 'invalid'}`);
+    res.status(400).send('Webhook Error: invalid');
+    return;
   }
 
-  if (event.type === 'payment_intent.succeeded') {
-    const pi = event.data.object as Stripe.PaymentIntent;
-    try {
-      await syncSucceededPaymentIntent(pi);
-    } catch (err) {
-      console.error('[stripe] webhook persist', err);
-    }
+  try {
+    const result = await handleStripeEvent(stripe, event);
+    res.json({ received: true, duplicate: result.duplicate });
+  } catch (err) {
+    console.error('[stripe] webhook persist', err);
+    res.status(500).json({ error: 'WEBHOOK_PROCESS_FAILED' });
   }
-
-  return res.json({ received: true });
-});
+}
 
 export default router;

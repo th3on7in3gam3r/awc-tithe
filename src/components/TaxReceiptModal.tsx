@@ -45,7 +45,7 @@ export const TaxReceiptModal: React.FC<TaxReceiptModalProps> = ({ donation, onCl
     addNotification(
       'success',
       'Receipt Emailed',
-      `Official IRS receipt has been resent to ${donation.donorEmail}.`
+      `Contribution receipt has been resent to ${donation.donorEmail}.`
     );
   };
 
@@ -73,7 +73,7 @@ export const TaxReceiptModal: React.FC<TaxReceiptModalProps> = ({ donation, onCl
         <div className="flex min-w-0 items-center gap-2">
           <CheckCircle className="h-4 w-4 shrink-0 text-[#D4AF37]" />
           <h3 id="receipt-modal-title" className="truncate text-sm font-semibold">
-            Official Contribution Receipt
+            Printable copy of your receipt
           </h3>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -241,8 +241,8 @@ export const TaxReceiptModal: React.FC<TaxReceiptModalProps> = ({ donation, onCl
               </div>
 
               <p>
-                This letter serves as your official acknowledgment for tax purposes. {config.name} is
-                a {config.taxExemptStatus}. No goods or services were provided in exchange for this
+                This letter is your contribution acknowledgment for tax records. {config.name} is a{' '}
+                {config.taxExemptStatus}. No goods or services were provided in exchange for this
                 contribution other than intangible religious benefits, in accordance with Internal
                 Revenue Code Section 170(f)(8).
               </p>
@@ -275,7 +275,7 @@ export const TaxReceiptModal: React.FC<TaxReceiptModalProps> = ({ donation, onCl
             >
               <p>
                 Transaction reference: {donation.transactionId}
-                {donation.awcDcbVoucher ? ` · AWC DCB voucher: ${donation.awcDcbVoucher}` : ''}
+                
               </p>
               <p className="mt-1">
                 Please retain this letter with your tax records. For stewardship questions, contact{' '}

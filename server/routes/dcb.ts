@@ -1,97 +1,100 @@
+/**
+ * server/routes/dcb.ts
+ *
+ * Admin-only DCB outbox management endpoints.
+ *
+ * NOTE: POST /api/dcb/sync has been removed. Client-supplied contribution
+ * data is never accepted — all DCB delivery goes through the outbox worker
+ * which builds payloads from the database only.
+ */
+
 import { Router, type Request, type Response } from 'express';
-import { env } from '../config';
+import { requireAdminSession, getStaffSessionOrNull } from '../auth/staffGate';
+import { writeActivityAudit } from '../audit/activity';
+import { clientIp } from '../middleware/rateLimit';
 import {
-  buildVoucherNumber,
-  mockDcbEntries,
-  postContributionToDcb,
-  type DcbContributionPayload,
-} from '../dcb/client';
-import { dcbDonorDisplayName } from '../dcb/displayName';
-import { requireStaffSession } from '../auth/session';
+  getOutboxRowById,
+  listFailedAndNeedsReview,
+  requeueOutboxRow,
+} from '../dcb/outbox';
 
 const router = Router();
 
-/** Dev mock endpoint — receives the same payload AWC DCB would */
-router.post('/mock/entries', (req: Request, res: Response) => {
-  const body = req.body as Partial<DcbContributionPayload> & { isAnonymous?: boolean };
-  if (body.amount == null || !body.donorName) {
-    return res.status(400).json({ error: 'MISSING_FIELDS', message: 'donorName and amount are required' });
+/**
+ * GET /api/dcb/outbox
+ * Admin-only: list failed and needs_review outbox rows joined to donation data.
+ */
+router.get('/outbox', requireAdminSession, async (_req: Request, res: Response) => {
+  try {
+    const rows = await listFailedAndNeedsReview(200);
+    return res.json({ ok: true, rows });
+  } catch (err) {
+    console.error('[dcb] list outbox', err);
+    return res.status(500).json({
+      ok: false,
+      error: 'OUTBOX_LIST_FAILED',
+      message: 'Failed to list outbox',
+    });
   }
-  const donorName = dcbDonorDisplayName({
-    isAnonymous: Boolean(body.isAnonymous),
-    donorName: body.donorName,
-  });
-  const voucherNumber = body.voucherNumber || buildVoucherNumber(body.transactionId || String(Date.now()));
-  const entry = {
-    bookId: body.bookId || env.awcDcbBookId,
-    voucherNumber,
-    donorName,
-    donorEmail: body.donorEmail || '',
-    envelopeNumber: body.envelopeNumber,
-    amount: Number(body.amount),
-    feeAmount: Number(body.feeAmount || 0),
-    netAmount: Number(body.netAmount ?? body.amount),
-    fundCode: body.fundCode || '1001-OPS',
-    fundName: body.fundName || 'General Tithes & Offerings',
-    paymentMethod: body.paymentMethod || 'card',
-    transactionId: body.transactionId || `txn_${Date.now()}`,
-    contributedAt: body.contributedAt || new Date().toISOString(),
-    id: `dcb-mock-${Date.now()}`,
-    receivedAt: new Date().toISOString(),
-  };
-  mockDcbEntries.unshift(entry);
-  return res.status(201).json({ ok: true, voucherId: voucherNumber, entry });
 });
 
-router.get('/mock/entries', (_req: Request, res: Response) => {
-  return res.json({ bookId: env.awcDcbBookId, count: mockDcbEntries.length, entries: mockDcbEntries });
-});
+/**
+ * POST /api/dcb/outbox/:id/retry
+ * Admin-only: re-queue an existing outbox row for immediate retry.
+ * Payload is NEVER accepted from the client — it is rebuilt from the database.
+ */
+router.post('/outbox/:id/retry', requireAdminSession, async (req: Request, res: Response) => {
+  const actor = getStaffSessionOrNull(req);
+  if (!actor) return res.status(401).json({ ok: false, error: 'STAFF_AUTH_REQUIRED' });
 
-/** Manual / retry sync for admin console — staff session required */
-router.post('/sync', requireStaffSession, async (req: Request, res: Response) => {
-  const body = req.body as
-    | (Partial<DcbContributionPayload> & { isAnonymous?: boolean })
-    | { donations?: Array<Partial<DcbContributionPayload> & { isAnonymous?: boolean }> };
+  const id = String(req.params.id || '').trim();
+  if (!id) return res.status(400).json({ ok: false, error: 'MISSING_ID' });
 
-  const items: Array<Partial<DcbContributionPayload> & { isAnonymous?: boolean }> = Array.isArray(
-    (body as { donations?: unknown }).donations
-  )
-    ? ((body as { donations: Array<Partial<DcbContributionPayload> & { isAnonymous?: boolean }> }).donations)
-    : [body as Partial<DcbContributionPayload> & { isAnonymous?: boolean }];
-
-  const results = [];
-  for (const item of items) {
-    if (item.amount == null || !item.donorName) {
-      results.push({ ok: false, error: 'MISSING_FIELDS' });
-      continue;
+  try {
+    // Verify the row exists before requeuing
+    const existing = await getOutboxRowById(id);
+    if (!existing) {
+      return res.status(404).json({ ok: false, error: 'OUTBOX_ROW_NOT_FOUND' });
     }
-    const voucherNumber = item.voucherNumber || buildVoucherNumber(item.transactionId || String(Date.now()));
-    const payload: DcbContributionPayload = {
-      bookId: item.bookId || env.awcDcbBookId,
-      voucherNumber,
-      donorName: dcbDonorDisplayName({
-        isAnonymous: Boolean(item.isAnonymous),
-        donorName: item.donorName,
-      }),
-      donorEmail: item.donorEmail || '',
-      envelopeNumber: item.envelopeNumber,
-      amount: Number(item.amount),
-      feeAmount: Number(item.feeAmount || 0),
-      netAmount: Number(item.netAmount ?? Number(item.amount) - Number(item.feeAmount || 0)),
-      fundCode: item.fundCode || '1001-OPS',
-      fundName: item.fundName || 'General Tithes & Offerings',
-      paymentMethod: item.paymentMethod || 'card',
-      transactionId: item.transactionId || `txn_${Date.now()}`,
-      contributedAt: item.contributedAt || new Date().toISOString(),
-    };
-    results.push(await postContributionToDcb(payload));
-  }
 
-  return res.json({
-    synced: results.filter((r) => r.ok).length,
-    failed: results.filter((r) => !r.ok).length,
-    results,
-  });
+    const { found } = await requeueOutboxRow(id);
+    if (!found) {
+      return res.status(404).json({ ok: false, error: 'OUTBOX_ROW_NOT_FOUND' });
+    }
+
+    // Audit log who triggered the retry
+    await writeActivityAudit({
+      actorId: actor.userId,
+      actorLabel: actor.email,
+      actorRole: actor.role,
+      action: 'DCB_OUTBOX_RETRY',
+      resource: id,
+      details: JSON.stringify({
+        donationId: existing.donationId,
+        eventType: existing.eventType,
+        previousStatus: existing.status,
+        previousAttempts: existing.attempts,
+      }),
+      ipAddress: clientIp(req),
+    });
+
+    return res.json({ ok: true, id });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Retry failed';
+    if (message === 'DONATION_NOT_FOUND') {
+      return res.status(409).json({
+        ok: false,
+        error: 'DONATION_NOT_FOUND',
+        message: 'Retry payload is built from the donation row, which was not found.',
+      });
+    }
+    console.error('[dcb] outbox retry', err);
+    return res.status(500).json({
+      ok: false,
+      error: 'OUTBOX_RETRY_FAILED',
+      message: 'Retry failed',
+    });
+  }
 });
 
 export default router;

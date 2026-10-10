@@ -4,24 +4,20 @@ import {
   ApiConfig,
   IntegrationStatus,
   fetchApiConfig,
+  patchChurchSettings,
 } from '../lib/api';
 import {
   CreditCard,
-  Landmark,
   Database,
-  BookOpen,
-  ExternalLink,
   RefreshCw,
-  Info,
 } from 'lucide-react';
 
-type BadgeKind = 'live' | 'sandbox' | 'simulator' | 'not_configured';
+type BadgeKind = 'live' | 'sandbox' | 'not_configured';
 
 function badgeKind(status: IntegrationStatus | undefined): BadgeKind {
   if (!status || !status.configured) return 'not_configured';
   if (status.mode === 'live') return 'live';
-  if (status.mode === 'sandbox') return 'sandbox';
-  return 'simulator';
+  return 'sandbox';
 }
 
 function badgeLabel(kind: BadgeKind): string {
@@ -30,8 +26,6 @@ function badgeLabel(kind: BadgeKind): string {
       return 'Live';
     case 'sandbox':
       return 'Sandbox';
-    case 'simulator':
-      return 'Simulator';
     default:
       return 'Not configured';
   }
@@ -41,7 +35,6 @@ function Badge({ kind }: { kind: BadgeKind }) {
   const styles: Record<BadgeKind, string> = {
     live: 'bg-emerald-50 text-emerald-800 border-emerald-200',
     sandbox: 'bg-amber-50 text-amber-900 border-amber-200',
-    simulator: 'bg-slate-100 text-slate-600 border-slate-200',
     not_configured: 'bg-slate-100 text-slate-500 border-slate-200',
   };
   return (
@@ -123,35 +116,48 @@ const IntegrationCard: React.FC<IntegrationCardProps> = ({
 };
 
 function meaningFor(
-  key: 'stripe' | 'plaid' | 'database' | 'dcb',
+  key: 'stripe' | 'database',
   status: IntegrationStatus | undefined,
   giftStore?: 'neon' | 'memory'
 ): string {
   const kind = badgeKind(status);
   if (key === 'stripe') {
-    if (kind === 'live') return 'Live Stripe keys are active. Card and wallet gifts settle through Stripe.';
+    if (kind === 'live') return 'Live Stripe keys are active. Cards, wallets, and US bank accounts settle through Stripe.';
     if (kind === 'sandbox') return 'Test Stripe keys are set. Donors can pay, but charges run in Stripe test mode.';
-    return 'Stripe keys are missing. The Give form uses the built-in card simulator until keys are added on Render.';
+    return 'Stripe keys are missing. Online giving stays unavailable until keys are added on Render.';
   }
-  if (key === 'plaid') {
-    if (kind === 'live') return 'Production Plaid credentials are active. Bank Link is available on the Give form.';
-    if (kind === 'sandbox') return 'Plaid sandbox credentials are set. Bank Link works in test mode.';
-    return 'Plaid is not configured. The Give form shows the bank simulator until credentials are added on Render.';
+  // database
+  if (kind === 'live' || giftStore === 'neon') {
+    return 'Neon Postgres is connected. Gift ledger data persists across deploys and restarts.';
   }
-  if (key === 'database') {
-    if (kind === 'live' || giftStore === 'neon') {
-      return 'Neon Postgres is connected. Gift ledger data persists across deploys and restarts.';
-    }
-    return 'No DATABASE_URL. Gifts use in-memory storage and are lost when the Render service restarts.';
-  }
-  // dcb
-  if (kind === 'live') return 'DCB ingest URL and HMAC secret are set. Completed gifts sync to the Digital Contribution Book.';
-  if (kind === 'sandbox') return 'No remote DCB URL — the local mock ingest endpoint is used for development.';
-  return 'DCB URL is set but AWC_DCB_SERVICE_SECRET is missing. Sync will not authenticate to production DCB.';
+  return 'No DATABASE_URL. Gifts use in-memory storage and are lost when the Render service restarts.';
 }
 
 export const IntegrationsSettingsPanel: React.FC = () => {
-  const { config } = useChurch();
+  const { config, staffPortalRole, refreshChurchSettings, addNotification } = useChurch();
+  const isAdmin = staffPortalRole === 'admin';
+  const [identityDraft, setIdentityDraft] = React.useState({
+    legalEntityName: '',
+    address: '',
+    cityStateZip: '',
+    ein: '',
+    email: '',
+    phone: '',
+    website: '',
+  });
+  const [savingIdentity, setSavingIdentity] = React.useState(false);
+
+  React.useEffect(() => {
+    setIdentityDraft({
+      legalEntityName: config.legalEntityName || '',
+      address: config.address || '',
+      cityStateZip: config.cityStateZip || '',
+      ein: config.ein || '',
+      email: config.email || '',
+      phone: config.phone || '',
+      website: config.website || '',
+    });
+  }, [config.legalEntityName, config.address, config.cityStateZip, config.ein, config.email, config.phone, config.website]);
   const [apiConfig, setApiConfig] = useState<ApiConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -171,7 +177,6 @@ export const IntegrationsSettingsPanel: React.FC = () => {
   }, [load]);
 
   const integrations = apiConfig?.integrations;
-  const plaidConfigured = Boolean(integrations?.plaid?.configured);
 
   return (
     <div className="space-y-8">
@@ -203,55 +208,15 @@ export const IntegrationsSettingsPanel: React.FC = () => {
         <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>
       ) : null}
 
-      {!plaidConfigured && !loading ? (
-        <div
-          className="rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3.5 flex gap-3"
-          role="note"
-        >
-          <Info className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
-          <div className="text-xs text-amber-950 leading-relaxed space-y-1.5">
-            <p className="font-semibold">Connect Plaid for bank giving</p>
-            <p>
-              Set <span className="font-mono">PLAID_CLIENT_ID</span> and{' '}
-              <span className="font-mono">PLAID_SECRET</span> on Render (Environment), then set{' '}
-              <span className="font-mono">PLAID_ENV</span> to <span className="font-mono">sandbox</span> first
-              or <span className="font-mono">production</span> when ready.
-            </p>
-            <p>
-              Create credentials in the{' '}
-              <a
-                href="https://dashboard.plaid.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-0.5 font-semibold text-church-burgundy underline-offset-2 hover:underline"
-              >
-                Plaid Dashboard
-                <ExternalLink className="h-3 w-3" />
-              </a>
-              . Also connect Stripe inside the Plaid Dashboard so{' '}
-              <span className="font-mono">bank_account_token</span> support works for ACH transfers.
-            </p>
-          </div>
-        </div>
-      ) : null}
-
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <IntegrationCard
           icon={<CreditCard className="h-4 w-4" />}
           title="Stripe"
-          description="Card and digital wallet payments"
+          description="Cards, wallets, and US bank accounts"
           status={integrations?.stripe}
           meaning={meaningFor('stripe', integrations?.stripe)}
-          envVars={['STRIPE_SECRET_KEY', 'STRIPE_PUBLISHABLE_KEY']}
-          note="Optional: STRIPE_WEBHOOK_SECRET for webhook verification."
-        />
-        <IntegrationCard
-          icon={<Landmark className="h-4 w-4" />}
-          title="Plaid"
-          description="Bank Link / ACH transfers"
-          status={integrations?.plaid}
-          meaning={meaningFor('plaid', integrations?.plaid)}
-          envVars={['PLAID_CLIENT_ID', 'PLAID_SECRET', 'PLAID_ENV']}
+          envVars={['STRIPE_SECRET_KEY', 'STRIPE_PUBLISHABLE_KEY', 'STRIPE_WEBHOOK_SECRET']}
+          note="All three are required before online giving and webhook gift writes are enabled."
         />
         <IntegrationCard
           icon={<Database className="h-4 w-4" />}
@@ -266,15 +231,6 @@ export const IntegrationsSettingsPanel: React.FC = () => {
               : undefined
           }
         />
-        <IntegrationCard
-          icon={<BookOpen className="h-4 w-4" />}
-          title="AWC DCB"
-          description="Digital Contribution Book sync"
-          status={integrations?.dcb}
-          meaning={meaningFor('dcb', integrations?.dcb)}
-          envVars={['AWC_DCB_API_URL', 'AWC_DCB_SERVICE_SECRET']}
-          note={apiConfig?.dcbBookId ? `Book ID: ${apiConfig.dcbBookId}` : undefined}
-        />
       </div>
 
       <div className="bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 p-6 shadow-sm">
@@ -282,12 +238,55 @@ export const IntegrationsSettingsPanel: React.FC = () => {
           Church identity
         </h3>
         <p className="text-xs text-slate-500 dark:text-slate-400 mb-5 leading-relaxed max-w-2xl">
-          Read-only public identity used in the footer and receipts. Update these on Render under Environment
-          (<span className="font-mono">CHURCH_LEGAL_NAME</span>, <span className="font-mono">CHURCH_ADDRESS</span>,{' '}
-          <span className="font-mono">CHURCH_CITY_STATE_ZIP</span>, <span className="font-mono">CHURCH_EIN</span>,{' '}
-          <span className="font-mono">CHURCH_SUPPORT_EMAIL</span>, <span className="font-mono">CHURCH_PHONE</span>,{' '}
-          <span className="font-mono">CHURCH_WEBSITE</span>). Leave EIN blank until the Pastor provides it.
+          Stored in Neon. Administrators can edit it here. Staff can view it.
         </p>
+        {isAdmin ? (
+          <form
+            className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setSavingIdentity(true);
+              void patchChurchSettings(identityDraft)
+                .then(() => refreshChurchSettings())
+                .then(() => addNotification('success', 'Church identity saved', 'Updated on the server.'))
+                .catch((err) =>
+                  addNotification('error', 'Save failed', err instanceof Error ? err.message : 'Error')
+                )
+                .finally(() => setSavingIdentity(false));
+            }}
+          >
+            {(
+              [
+                ['legalEntityName', 'Legal name'],
+                ['address', 'Address'],
+                ['cityStateZip', 'City / State / ZIP'],
+                ['ein', 'EIN'],
+                ['email', 'Support email'],
+                ['phone', 'Phone'],
+                ['website', 'Website'],
+              ] as const
+            ).map(([key, label]) => (
+              <label key={key} className="text-xs text-slate-500">
+                {label}
+                <input
+                  className="mt-1 w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-2 text-sm"
+                  value={identityDraft[key]}
+                  onChange={(e) => setIdentityDraft((prev) => ({ ...prev, [key]: e.target.value }))}
+                />
+              </label>
+            ))}
+            <div className="sm:col-span-2">
+              <button
+                type="submit"
+                disabled={savingIdentity}
+                className="rounded-md px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                style={{ backgroundColor: '#4A0404' }}
+              >
+                {savingIdentity ? 'Saving…' : 'Save church identity'}
+              </button>
+            </div>
+          </form>
+        ) : null}
         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-xs">
           {[
             { label: 'Legal name', value: config.legalEntityName },

@@ -1,15 +1,12 @@
 import React, { useState } from 'react';
 import { useChurch } from '../context/ChurchContext';
-import { UserRole, AppPortalMode } from '../types';
+import { AppPortalMode } from '../types';
 import {
   Moon,
   Sun,
   ShieldCheck,
-  Wifi,
-  WifiOff,
   Menu,
   X,
-  ChevronDown,
   Lock,
   Users,
 } from 'lucide-react';
@@ -30,20 +27,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenMfaModal,
   onEnterDonorPortal,
 }) => {
-  const { currentRole, switchRole, isMfaVerified, darkMode, toggleDarkMode, offlineGifts } =
-    useChurch();
+  const { staffPortalRole, isMfaVerified, darkMode, toggleDarkMode } = useChurch();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
-
-  const pendingOfflineCount = offlineGifts.filter((g) => !g.synced).length;
-
-  const handleRoleSelect = (role: UserRole) => {
-    switchRole(role);
-    setRoleDropdownOpen(false);
-    if (role === 'admin' && !isMfaVerified) {
-      onOpenMfaModal();
-    }
-  };
 
   const handleSelectDonorPortal = () => {
     onEnterDonorPortal();
@@ -63,13 +48,11 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const publicNavItems = [
     { id: 'give', label: 'Give Now' },
-    { id: 'funds', label: 'Ministries & Goals' },
     { id: 'my-giving', label: 'My Giving' },
   ];
 
   const adminNavItems = [
     { id: 'admin', label: 'Dashboard' },
-    { id: 'api-docs', label: 'API Docs' },
   ];
 
   const isAdmin = portalMode === 'admin' && isMfaVerified;
@@ -129,7 +112,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           />
           <div className="text-left">
             <span className="block text-lg sm:text-xl font-extrabold tracking-tight text-[#4A0404] dark:text-[#F4CF67]">
-              AWC {isAdmin ? 'VAULT' : 'TITHE'}
+              AWC TITHE
             </span>
             <span className="hidden sm:block text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500 -mt-0.5">
               {isAdmin ? 'Stewardship Console' : 'Anointed Worship Center'}
@@ -161,68 +144,11 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {isAdmin && (
             <>
-              {pendingOfflineCount > 0 ? (
-                <button
-                  onClick={() => setActiveTab('admin')}
-                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded border animate-pulse"
-                  style={{ color: '#4A0404', backgroundColor: 'rgba(212,175,55,0.2)', borderColor: '#D4AF37' }}
-                >
-                  <WifiOff className="h-3.5 w-3.5" />
-                  {pendingOfflineCount} Offline
-                </button>
-              ) : (
-                <span className="hidden lg:flex items-center gap-1 text-xs text-slate-500">
-                  <Wifi className="h-3.5 w-3.5 text-emerald-600" />
-                  Live Sync
-                </span>
-              )}
 
-              <div className="relative hidden sm:block">
-                <button
-                  onClick={() => setRoleDropdownOpen(!roleDropdownOpen)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                >
-                  <ShieldCheck className="h-3.5 w-3.5 text-[#4A0404] dark:text-[#F4CF67]" />
-                  <span className="capitalize">
-                    {currentRole === 'first_lady' ? 'First Lady' : currentRole}
-                  </span>
-                  <span
-                    className="h-1.5 w-1.5 rounded-full"
-                    style={{ backgroundColor: isMfaVerified ? '#10b981' : '#D4AF37' }}
-                  />
-                  <ChevronDown className="h-3 w-3 text-slate-400" />
-                </button>
-                {roleDropdownOpen && (
-                  <div className="absolute right-0 mt-2 w-52 rounded-lg border border-slate-200 bg-white py-1.5 shadow-xl z-50 dark:border-slate-700 dark:bg-slate-900">
-                    <div
-                      className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em]"
-                      style={{ color: '#D4AF37' }}
-                    >
-                      Staff Role
-                    </div>
-                    {(
-                      [
-                        { id: 'admin' as UserRole, label: 'Admin' },
-                        { id: 'first_lady' as UserRole, label: 'First Lady' },
-                        { id: 'pastor' as UserRole, label: 'Pastor' },
-                        { id: 'bookkeeper' as UserRole, label: 'Bookkeeper' },
-                        { id: 'auditor' as UserRole, label: 'Auditor' },
-                      ]
-                    ).map((r) => (
-                      <button
-                        key={r.id}
-                        onClick={() => handleRoleSelect(r.id)}
-                        className={`w-full flex items-center justify-between px-3 py-1.5 text-xs text-left ${
-                          currentRole === r.id
-                            ? 'font-semibold text-[#4A0404] dark:text-[#F4CF67] bg-[rgba(74,4,4,0.06)] dark:bg-[rgba(212,175,55,0.12)]'
-                            : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
-                        }`}
-                      >
-                        {r.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
+              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md border border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                <ShieldCheck className="h-3.5 w-3.5 text-[#4A0404] dark:text-[#F4CF67]" />
+                <span className="capitalize">{staffPortalRole || 'staff'}</span>
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
               </div>
             </>
           )}

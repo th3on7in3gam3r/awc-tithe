@@ -1,14 +1,16 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useChurch } from '../context/ChurchContext';
-import { UserRole, DonationStatus, DonationFrequency, StaffContributionMethod } from '../types';
+import { DonationStatus, DonationFrequency, StaffContributionMethod } from '../types';
 import { RecurringTrendChart } from './RecurringTrendChart';
 import { DonorTenurePieChart } from './DonorTenurePieChart';
 import { DonorChurnAnalysis } from './DonorChurnAnalysis';
 import { ExportDataModal } from './ExportDataModal';
-import { AwcDcbIntegrationHub } from './AwcDcbIntegrationHub';
-import { DcuBankIntegration } from './DcuBankIntegration';
-import { RealTimeReconciliationPanel } from './RealTimeReconciliationPanel';
 import { IntegrationsSettingsPanel } from './IntegrationsSettingsPanel';
+import { GivingGoalsAdmin } from './GivingGoalsAdmin';
+import { YearEndStatementsAdmin } from './YearEndStatementsAdmin';
+import { DcbSyncStatusPanel } from './DcbSyncStatusPanel';
+import { auditStaffTwoFactor, fetchActivityAudit, fetchStaffSession, recordOfflineGift } from '../lib/api';
+import { staffAuthClient } from '../lib/authClient';
 import {
   DollarSign,
   Users,
@@ -18,7 +20,6 @@ import {
   Filter,
   ShieldCheck,
   Lock,
-  RefreshCw,
   PlusCircle,
   FileCheck,
   AlertTriangle,
@@ -30,41 +31,118 @@ import {
   ExternalLink,
 } from 'lucide-react';
 
+function StaffAuthenticatorSetup() {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [uri, setUri] = useState('');
+  const [backupCodes, setBackupCodes] = useState<string[]>([]);
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    void fetchStaffSession().then((session) => setEnabled(session.twoFactorEnabled));
+  }, []);
+
+  if (enabled !== false) return null;
+
+  const start = async () => {
+    setBusy(true);
+    setError('');
+    const result = await staffAuthClient.twoFactor.enable({ method: 'totp' });
+    setBusy(false);
+    const data = result.data as { totpURI?: string; backupCodes?: string[] } | null;
+    if (!data?.totpURI) {
+      setError('Could not start authenticator setup.');
+      return;
+    }
+    setUri(data.totpURI);
+    setBackupCodes(data.backupCodes || []);
+  };
+
+  const confirm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    const result = await staffAuthClient.twoFactor.verifyTotp({ code: code.trim() });
+    if (result.error) {
+      setBusy(false);
+      setError('That code did not match.');
+      return;
+    }
+    await auditStaffTwoFactor('enrolled');
+    setEnabled(true);
+    setBusy(false);
+  };
+
+  return (
+    <div className="mt-6 rounded-xl border border-[#E8E2D9] bg-[#FFFCF8] p-4 dark:border-slate-800 dark:bg-slate-900">
+      <p className="text-xs text-slate-600 dark:text-slate-300">
+        Authenticator apps are optional for staff. Admins must enroll before admin tools open.
+      </p>
+      {!uri ? (
+        <button
+          type="button"
+          onClick={() => void start()}
+          disabled={busy}
+          className="mt-3 rounded-lg bg-church-burgundy px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+        >
+          {busy ? 'Preparing…' : 'Set up authenticator'}
+        </button>
+      ) : (
+        <form onSubmit={(e) => void confirm(e)} className="mt-3 space-y-2">
+          <p className="break-all font-mono text-[11px] text-slate-700 dark:text-slate-200">{uri}</p>
+          <p className="text-xs text-slate-600 dark:text-slate-300">Save these backup codes now. They are shown once.</p>
+          <pre className="whitespace-pre-wrap rounded-lg bg-slate-50 p-2 text-[11px] dark:bg-slate-950">{backupCodes.join('\n')}</pre>
+          <input
+            inputMode="numeric"
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            placeholder="Code from the app"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
+          />
+          <button type="submit" disabled={busy} className="rounded-lg bg-church-burgundy px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60">
+            {busy ? 'Saving…' : 'Confirm authenticator'}
+          </button>
+        </form>
+      )}
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
+
 export const AdminDashboard: React.FC = () => {
   const {
     config,
     donations,
     donors,
     funds,
-    auditLogs,
-    offlineGifts,
-    pledges,
-    calculatePledgeGap,
-    currentRole,
+    staffPortalRole,
     isMfaVerified,
-    verifyStaffAccess,
     resetMfa,
     refundDonation,
-    queueOfflineGift,
-    syncOfflineGifts,
     hydrateStaffLedger,
+    ledgerStatus,
+    ledgerError,
+    configStatus,
+    configError,
+    fundsStatus,
     exportTransactionsCSV,
-    exportAuditLogsCSV,
     setSelectedReceipt,
     addNotification,
   } = useChurch();
+
+  const isPortalAdmin = staffPortalRole === 'admin';
 
   const [activeAdminSubTab, setActiveAdminSubTab] = useState<
     | 'analytics'
     | 'transactions'
     | 'donors'
-    | 'pledges'
-    | 'awc-dcb'
-    | 'rbac'
     | 'audit'
-    | 'privacy'
     | 'offline'
     | 'integrations'
+    | 'giving-goals'
+    | 'year-end'
+    | 'dcb-sync'
   >('analytics');
 
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -86,12 +164,12 @@ export const AdminDashboard: React.FC = () => {
   const [offlineMethod, setOfflineMethod] = useState<StaffContributionMethod>('check');
   const [offlineCheckNum, setOfflineCheckNum] = useState('');
   const [offlineNote, setOfflineNote] = useState('');
-
-  // Staff re-auth (invite + authenticator) if session was locked from dashboard
-  const [inviteInput, setInviteInput] = useState('');
-  const [totpInput, setTotpInput] = useState('');
-  const [mfaError, setMfaError] = useState(false);
-  const [mfaSubmitting, setMfaSubmitting] = useState(false);
+  const [offlineError, setOfflineError] = useState<string | null>(null);
+  const [offlineSaving, setOfflineSaving] = useState(false);
+  const [serverAudit, setServerAudit] = useState<
+    Array<{ id: string; at: string; actorLabel: string; actorRole: string; action: string; resource: string; details: string; ipAddress: string }>
+  >([]);
+  const [auditError, setAuditError] = useState<string | null>(null);
 
   // Financial Calculations
   const completedDonations = donations.filter((d) => d.status === 'completed');
@@ -114,19 +192,17 @@ export const AdminDashboard: React.FC = () => {
     return matchesSearch && matchesFund && matchesStatus;
   });
 
-  const handleMfaSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setMfaSubmitting(true);
-    const success = await verifyStaffAccess(inviteInput, totpInput);
-    setMfaSubmitting(false);
-    if (!success) {
-      setMfaError(true);
-    } else {
-      setMfaError(false);
-      setInviteInput('');
-      setTotpInput('');
-    }
-  };
+  const loggedContributions = donations.filter((d) =>
+    ['cash', 'check', 'cash_app', 'zelle', 'venmo', 'card'].includes(d.paymentMethod)
+  ).slice(0, 40);
+
+  useEffect(() => {
+    if (activeAdminSubTab !== 'audit' || !isMfaVerified) return;
+    setAuditError(null);
+    void fetchActivityAudit()
+      .then(setServerAudit)
+      .catch((err) => setAuditError(err instanceof Error ? err.message : 'Could not load audit'));
+  }, [activeAdminSubTab, isMfaVerified]);
 
   const handleConfirmRefund = () => {
     if (!refundTargetId) return;
@@ -135,78 +211,50 @@ export const AdminDashboard: React.FC = () => {
     setRefundReason('');
   };
 
-  const handleQueueOffline = (e: React.FormEvent) => {
+  const handleQueueOffline = async (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseFloat(offlineAmount);
-    if (!amt || amt <= 0) return;
-
+    if (!amt || amt <= 0) {
+      setOfflineError('Enter an amount greater than zero.');
+      return;
+    }
+    if (!offlineDonorEmail.trim().includes('@')) {
+      setOfflineError('Enter the donor email so the gift stays linked to them.');
+      return;
+    }
+    const fund = funds.find((f) => f.id === offlineFundId) || funds[0];
+    if (!fund) {
+      setOfflineError('No fund is available.');
+      return;
+    }
     const reference = offlineCheckNum.trim();
-    queueOfflineGift({
-      donorName: offlineDonorName || 'Sunday Service Attendee',
-      donorEmail: offlineDonorEmail || 'service.attendee@gracecommunity.local',
-      amount: amt,
-      fundId: offlineFundId,
-      frequency: 'one-time',
-      method: offlineMethod,
-      checkNumber: offlineMethod === 'check' ? reference : undefined,
-      channelReference: reference || undefined,
-      note: offlineNote,
-    });
-
-    setOfflineDonorName('');
-    setOfflineDonorEmail('');
-    setOfflineAmount('');
-    setOfflineCheckNum('');
-    setOfflineNote('');
+    setOfflineSaving(true);
+    setOfflineError(null);
+    try {
+      await recordOfflineGift({
+        amount: amt,
+        donorName: offlineDonorName.trim() || 'Donor',
+        donorEmail: offlineDonorEmail.trim(),
+        fundId: fund.id,
+        fundName: fund.name,
+        paymentMethod: offlineMethod,
+        cardBrand: reference || undefined,
+        dedication: offlineNote.trim() || undefined,
+      });
+      setOfflineDonorName('');
+      setOfflineDonorEmail('');
+      setOfflineAmount('');
+      setOfflineCheckNum('');
+      setOfflineNote('');
+      addNotification('success', 'Gift recorded', 'Saved to the church ledger.');
+      await hydrateStaffLedger();
+    } catch (err) {
+      setOfflineError(err instanceof Error ? err.message : 'Could not save this gift. The form is unchanged.');
+    } finally {
+      setOfflineSaving(false);
+    }
   };
 
-  const [selectedPledgeYear, setSelectedPledgeYear] = useState<number>(2026);
-  const pledgeGapSummary = calculatePledgeGap(selectedPledgeYear);
-
-  const exportPledgesCSV = () => {
-    const headers = [
-      'Pledge ID',
-      'Donor Name',
-      'Donor Email',
-      'Tax Year',
-      'Fund Name',
-      'Committed Amount',
-      'Fulfilled to Date',
-      'Remaining Gap',
-      'Fulfillment Percent',
-      'Status',
-      'Covenant Notes',
-    ];
-
-    const yearPledges = pledges.filter((p) => p.taxYear === selectedPledgeYear);
-    const rows = yearPledges.map((p) => {
-      const gap = Math.max(0, p.committedAmount - p.fulfilledAmount);
-      const pct = p.committedAmount > 0 ? ((p.fulfilledAmount / p.committedAmount) * 100).toFixed(1) : '0';
-      return [
-        p.id,
-        `"${p.donorName.replace(/"/g, '""')}"`,
-        p.donorEmail,
-        p.taxYear,
-        `"${p.fundName.replace(/"/g, '""')}"`,
-        p.committedAmount.toFixed(2),
-        p.fulfilledAmount.toFixed(2),
-        gap.toFixed(2),
-        `${pct}%`,
-        p.status,
-        `"${(p.notes || '').replace(/"/g, '""')}"`,
-      ];
-    });
-
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const link = document.createElement('a');
-    link.setAttribute('href', encodeURI(csvContent));
-    link.setAttribute('download', `grace-church-pledges-gap-${selectedPledgeYear}-${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-
-    addNotification('success', 'Pledge Gap CSV Exported', `Pledge reconciliation report for ${selectedPledgeYear} downloaded.`);
-  };
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -219,15 +267,20 @@ export const AdminDashboard: React.FC = () => {
               Contribution Central
             </span>
             <span className="text-[11px] font-normal text-slate-400 dark:text-slate-500 capitalize">
-              · {currentRole === 'first_lady' ? 'First Lady' : currentRole}
+              · {staffPortalRole || 'staff'}
             </span>
           </div>
           <h1 className="font-serif-display text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-white mt-1.5 tracking-tight">
             Stewardship Financial Dashboard
           </h1>
+          {(ledgerStatus === 'loading' || configStatus === 'loading' || fundsStatus === 'loading') && (
+            <p className="mt-2 text-xs text-slate-500">Loading church data from the server…</p>
+          )}
+          {(ledgerError || configError) && (
+            <p className="mt-2 text-xs text-red-600">{ledgerError || configError}</p>
+          )}
           <p className="mt-2 max-w-2xl text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-            All church giving channels—Cash App, Zelle, Venmo, check, cash, card, and wallets—are recorded here,
-            synced to the AWC Digital Contribution Book, and monitored by stewardship staff (including First Lady).
+            Cash, check, Cash App, Zelle, and Venmo gifts recorded by staff are stored with the church ledger.
           </p>
         </div>
 
@@ -241,7 +294,7 @@ export const AdminDashboard: React.FC = () => {
               Refresh ledger
             </button>
           )}
-          {currentRole === 'admin' && (
+          {isPortalAdmin && (
             <div className="flex items-center gap-2">
               {isMfaVerified ? (
                 <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
@@ -282,64 +335,28 @@ export const AdminDashboard: React.FC = () => {
 
 
       {/* Staff access banner if Admin & Not Verified */}
-      {currentRole === 'admin' && !isMfaVerified && (
-        <div className="mt-6 p-5 rounded-xl border border-church-gold/40 bg-church-gold/10 dark:bg-church-burgundy/30 dark:border-church-gold/30 flex flex-col gap-4">
-          <div className="flex items-start gap-3">
-            <Lock className="h-5 w-5 text-church-burgundy dark:text-church-gold mt-0.5" />
-            <div>
-              <h3 className="text-xs font-bold text-church-burgundy-dark dark:text-church-gold-light">
-                Staff Portal Locked — Invite Required
-              </h3>
-              <p className="text-xs text-church-burgundy/80 dark:text-church-gold mt-0.5">
-                Re-enter your staff invite/access code and 6-digit authenticator. Members without an invite cannot unlock financial controls.
-              </p>
-            </div>
-          </div>
-
-          <form onSubmit={(e) => void handleMfaSubmit(e)} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-            <input
-              type="password"
-              placeholder="Invite / access code"
-              value={inviteInput}
-              onChange={(e) => setInviteInput(e.target.value)}
-              className="flex-1 px-2.5 py-1.5 text-xs rounded border border-church-gold/40 bg-white dark:bg-slate-800 dark:text-white"
-            />
-            <input
-              type="text"
-              maxLength={6}
-              placeholder="6-digit MFA"
-              value={totpInput}
-              onChange={(e) => setTotpInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              className="w-28 px-2.5 py-1.5 text-center font-mono text-xs rounded border border-church-gold/40 bg-white dark:bg-slate-800 dark:text-white"
-            />
-            <button
-              type="submit"
-              disabled={mfaSubmitting}
-              className="px-3 py-1.5 text-xs font-semibold text-white bg-church-burgundy hover:bg-church-burgundy-light rounded shadow-sm disabled:opacity-60"
-            >
-              {mfaSubmitting ? 'Verifying…' : 'Unlock'}
-            </button>
-          </form>
-          {mfaError && (
-            <p className="text-xs text-red-600">Invalid invite or authenticator code.</p>
-          )}
+      {!isMfaVerified && (
+        <div className="mt-6 p-5 rounded-xl border border-church-gold/40 bg-church-gold/10">
+          <p className="text-xs text-church-burgundy">
+            Sign in from the Staff Portal with your own email. Admins also need an authenticator app before admin tools open.
+          </p>
         </div>
       )}
+      {isMfaVerified && staffPortalRole === 'staff' && <StaffAuthenticatorSetup />}
 
       {/* Sub-Tabs Navigation */}
       <div className="mt-8 border-b border-[#E8E2D9] dark:border-slate-800 overflow-x-auto">
         <nav className="flex gap-5">
           {[
             { id: 'analytics', label: 'Financial Analytics', count: null as number | null },
-            { id: 'awc-dcb', label: 'AWC DCB & DCU Bank', count: null },
-            { id: 'pledges', label: 'Pledge Gap Analysis', count: pledges.length },
+            ...(isPortalAdmin ? [{ id: 'giving-goals' as const, label: 'Giving Goals', count: null as number | null }] : []),
+            ...(isPortalAdmin ? [{ id: 'year-end' as const, label: 'Year-end statements', count: null as number | null }] : []),
             { id: 'transactions', label: 'Transactions', count: donations.length },
             { id: 'donors', label: 'Donor CRM', count: donors.length },
-            { id: 'rbac', label: 'RBAC & Security', count: null },
-            { id: 'audit', label: 'Audit Trails', count: auditLogs.length },
-            { id: 'privacy', label: 'GDPR / CCPA', count: null },
-            { id: 'offline', label: 'Contribution Log', count: offlineGifts.filter((g) => !g.synced).length },
+            { id: 'audit', label: 'Audit', count: null as number | null },
+            { id: 'offline', label: 'Contribution Log', count: null as number | null },
             { id: 'integrations', label: 'Integrations & Settings', count: null },
+            ...(isPortalAdmin ? [{ id: 'dcb-sync' as const, label: 'DCB Sync', count: null as number | null }] : []),
           ].map((tab) => (
             <button
               key={tab.id}
@@ -423,105 +440,28 @@ export const AdminDashboard: React.FC = () => {
           {/* Donor Giving Tenure Distribution (Recharts Pie Chart) */}
           <DonorTenurePieChart />
 
-          {/* Pledge Gap Overview Banner */}
-          <div className="bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 border-l-4 border-l-[#D4AF37] p-6 shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
-              <div>
-                <span className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  {selectedPledgeYear} Annual Faith Commitment Gap Analysis
-                </span>
-                <h4 className="font-serif-display text-lg font-semibold text-slate-900 dark:text-white mt-1">
-                  Pledged Commitments vs. Received Contributions
-                </h4>
-              </div>
 
-              <button
-                onClick={() => setActiveAdminSubTab('pledges')}
-                className="px-3 py-1.5 bg-church-burgundy hover:bg-church-burgundy-light text-white text-xs font-semibold rounded-xl shadow-sm self-start sm:self-auto flex items-center gap-1.5 transition-colors"
-              >
-                <span>Full Gap Analysis &amp; Ledger</span>
-                <ExternalLink className="h-3.5 w-3.5" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-6 text-xs mb-5">
-              <div>
-                <span className="text-slate-500 block text-[11px] font-medium uppercase tracking-wider">Total Pledged</span>
-                <span className="font-mono text-xl font-semibold text-slate-900 dark:text-white tabular-nums mt-1.5 block">
-                  ${pledgeGapSummary.totalPledged.toLocaleString()}
-                </span>
-                <span className="text-[11px] text-slate-400 mt-1 block">From {pledgeGapSummary.totalPledgesCount} commitments</span>
-              </div>
-
-              <div>
-                <span className="text-slate-500 block text-[11px] font-medium uppercase tracking-wider">Received toward Pledges</span>
-                <span className="font-mono text-xl font-semibold text-slate-900 dark:text-white tabular-nums mt-1.5 block">
-                  ${pledgeGapSummary.totalReceived.toLocaleString()}
-                </span>
-                <span className="text-[11px] text-slate-400 mt-1 block">{pledgeGapSummary.fulfilledPledgesCount} covenants fully met</span>
-              </div>
-
-              <div>
-                <span className="text-slate-500 block text-[11px] font-medium uppercase tracking-wider">Net Remaining Gap</span>
-                <span className="font-mono text-xl font-semibold text-church-burgundy dark:text-church-gold-light tabular-nums mt-1.5 block">
-                  ${pledgeGapSummary.netGap.toLocaleString()}
-                </span>
-                <span className="text-[11px] text-slate-400 mt-1 block">Needed to meet covenants</span>
-              </div>
-
-              <div>
-                <span className="text-slate-500 block text-[11px] font-medium uppercase tracking-wider">Fulfillment Rate</span>
-                <span className="font-mono text-xl font-semibold text-slate-900 dark:text-white tabular-nums mt-1.5 block">
-                  {pledgeGapSummary.percentFulfilled}%
-                </span>
-                <span className="text-[11px] text-slate-400 mt-1 block">Active stewardship pace</span>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex justify-between text-xs">
-                <span className="text-slate-500 dark:text-slate-400">
-                  Annual Commitment Fulfillment Progress
-                </span>
-                <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">
-                  ${pledgeGapSummary.totalReceived.toLocaleString()} / ${pledgeGapSummary.totalPledged.toLocaleString()} ({pledgeGapSummary.percentFulfilled}%)
-                </span>
-              </div>
-              <div className="h-2 w-full bg-[#E8E2D9]/80 dark:bg-slate-800 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-church-burgundy dark:bg-church-gold rounded-full transition-all duration-700"
-                  style={{ width: `${Math.min(100, pledgeGapSummary.percentFulfilled)}%` }}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Fund Allocation Distribution */}
+          {/* Fund received totals (no campaign goals here — admins use Giving Goals) */}
           <div className="bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 p-6 shadow-sm">
-            <h3 className="font-serif-display text-lg font-semibold text-slate-900 dark:text-white mb-5">
-              Fund Stewardship Breakdown
+            <h3 className="font-serif-display text-lg font-semibold text-slate-900 dark:text-white mb-2">
+              Giving by fund (completed)
             </h3>
-            <div className="space-y-5">
+            <p className="text-xs text-slate-500 mb-5">
+              {isPortalAdmin
+                ? 'Set annual goals under the Giving Goals tab.'
+                : 'Campaign goals are visible to administrators only.'}
+            </p>
+            <div className="space-y-3">
               {funds.map((f) => {
-                const percent = Math.min(100, (f.currentAmount / f.goalAmount) * 100);
+                const received = donations
+                  .filter((d) => d.fundId === f.id && d.status === 'completed')
+                  .reduce((s, d) => s + d.amount, 0);
                 return (
-                  <div key={f.id} className="space-y-2 text-xs">
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-slate-900 dark:text-white">{f.name}</span>
-                        <span className="font-mono text-[10px] text-slate-400">{f.code}</span>
-                      </div>
-                      <div className="font-mono tabular-nums text-right">
-                        <span className="font-semibold text-slate-900 dark:text-white">${f.currentAmount.toLocaleString()}</span>
-                        <span className="text-slate-400"> / ${f.goalAmount.toLocaleString()}</span>
-                      </div>
-                    </div>
-                    <div className="h-1.5 w-full bg-[#E8E2D9]/70 dark:bg-slate-800 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-church-burgundy dark:bg-church-gold rounded-full"
-                        style={{ width: `${percent}%` }}
-                      />
-                    </div>
+                  <div key={f.id} className="flex justify-between items-center text-xs">
+                    <span className="font-medium text-slate-900 dark:text-white">{f.name}</span>
+                    <span className="font-mono tabular-nums font-semibold text-slate-900 dark:text-white">
+                      ${received.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </span>
                   </div>
                 );
               })}
@@ -573,257 +513,13 @@ export const AdminDashboard: React.FC = () => {
                 </div>
                 <div className="flex items-start gap-2">
                   <CheckCircle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-slate-400" />
-                  <span>GDPR / CCPA consent logging enabled with immutable event hash</span>
+                  <span>Staff session and gift actions are recorded in the audit trail</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <CheckCircle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-slate-400" />
                   <span>Continuous backup &amp; cryptographically linked audit ledger</span>
                 </div>
               </div>
-            </div>
-          </div>
-
-        </div>
-      )}
-
-      {/* SUB-TAB: AWC Digital Contribution Book & DCU Credit Union Link */}
-      {activeAdminSubTab === 'awc-dcb' && (
-        <div className="mt-8 space-y-10">
-          <AwcDcbIntegrationHub />
-          <DcuBankIntegration />
-          <RealTimeReconciliationPanel />
-        </div>
-      )}
-
-      {/* SUB-TAB: Pledges & Gap Analysis */}
-      {activeAdminSubTab === 'pledges' && (
-        <div className="mt-10 space-y-10">
-          
-          {/* Controls Bar */}
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-[#FFFCF8] dark:bg-slate-900 p-5 rounded-xl border border-[#E8E2D9] dark:border-slate-800 gap-4 shadow-sm">
-            <div>
-              <h3 className="font-serif-display text-base font-semibold text-slate-900 dark:text-white">
-                Annual Faith Commitment &amp; Gap Reconciliation ({selectedPledgeYear})
-              </h3>
-              <p className="text-xs text-slate-500 mt-1">
-                Variance between pledged financial commitments and actual received contributions.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <select
-                value={selectedPledgeYear}
-                onChange={(e) => setSelectedPledgeYear(Number(e.target.value))}
-                className="text-xs px-3 py-1.5 rounded-xl border border-[#E8E2D9] dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium"
-              >
-                <option value={2026}>Tax Year 2026</option>
-                <option value={2025}>Tax Year 2025</option>
-              </select>
-
-              <button
-                onClick={exportPledgesCSV}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 rounded-xl border border-[#E8E2D9] dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 shadow-sm transition-colors whitespace-nowrap"
-              >
-                <Download className="h-3.5 w-3.5" />
-                <span>Export Pledge Reconciliation CSV</span>
-              </button>
-            </div>
-          </div>
-
-          {/* 4 Summary Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            <div className="h-full flex flex-col p-6 bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 shadow-sm">
-              <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">
-                Total Pledged Commitment
-              </span>
-              <p className="font-mono text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-white tabular-nums mt-3 tracking-tight">
-                ${pledgeGapSummary.totalPledged.toLocaleString()}
-              </p>
-              <p className="mt-auto pt-3 text-[11px] text-slate-500">
-                From {pledgeGapSummary.totalPledgesCount} committed member covenants
-              </p>
-            </div>
-
-            <div className="h-full flex flex-col p-6 bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 shadow-sm">
-              <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">
-                Received toward Pledges
-              </span>
-              <p className="font-mono text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-white tabular-nums mt-3 tracking-tight">
-                ${pledgeGapSummary.totalReceived.toLocaleString()}
-              </p>
-              <p className="mt-auto pt-3 text-[11px] text-slate-500">
-                {pledgeGapSummary.fulfilledPledgesCount} covenants fully fulfilled
-              </p>
-            </div>
-
-            <div className="h-full flex flex-col p-6 bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 shadow-sm">
-              <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">
-                Net Remaining Gap
-              </span>
-              <p className="font-mono text-2xl sm:text-3xl font-semibold text-church-burgundy dark:text-church-gold-light tabular-nums mt-3 tracking-tight">
-                ${pledgeGapSummary.netGap.toLocaleString()}
-              </p>
-              <p className="mt-auto pt-3 text-[11px] text-slate-500">
-                Outstanding balance to meet annual budget
-              </p>
-            </div>
-
-            <div className="h-full flex flex-col p-6 bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 shadow-sm">
-              <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">
-                Fulfillment Pace
-              </span>
-              <p className="font-mono text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-white tabular-nums mt-3 tracking-tight">
-                {pledgeGapSummary.percentFulfilled}%
-              </p>
-              <p className="mt-auto pt-3 text-[11px] text-slate-500">
-                {pledgeGapSummary.activePledgesCount} pledges actively in progress
-              </p>
-            </div>
-          </div>
-
-          {/* Fund-by-Fund Gap Analysis Table */}
-          <div className="bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 shadow-sm overflow-hidden">
-            <div className="px-6 py-5 border-b border-[#E8E2D9] dark:border-slate-800 flex justify-between items-center">
-              <div>
-                <h4 className="font-serif-display text-base font-semibold text-slate-900 dark:text-white">
-                  Ministry Fund Pledge Gap Breakdown
-                </h4>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Variance between promised campaign pledges and recorded contributions per fund
-                </p>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-slate-50 text-[11px] text-slate-500 uppercase tracking-wider dark:bg-slate-800/60">
-                  <tr>
-                    <th className="px-6 py-3 font-medium">Designated Ministry Fund</th>
-                    <th className="px-6 py-3 font-medium text-right">Committed Pledges</th>
-                    <th className="px-6 py-3 font-medium text-right">Received to Date</th>
-                    <th className="px-6 py-3 font-medium text-right">Remaining Gap</th>
-                    <th className="px-6 py-3 font-medium">Fulfillment Rate</th>
-                    <th className="px-6 py-3 font-medium text-center">Pledges</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {pledgeGapSummary.fundBreakdown.map((item) => (
-                    <tr key={item.fundId} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
-                      <td className="px-6 py-4 font-semibold text-slate-900 dark:text-white">
-                        {item.fundName}
-                      </td>
-                      <td className="px-6 py-4 text-right font-mono font-bold text-slate-900 dark:text-white tabular-nums">
-                        ${item.totalPledged.toLocaleString()}
-                      </td>
-                      <td className="px-6 py-4 text-right font-mono font-semibold text-slate-900 dark:text-white tabular-nums">
-                        ${item.totalReceived.toLocaleString()}
-                      </td>
-                      <td className="px-6 py-4 text-right font-mono font-bold text-church-burgundy dark:text-church-gold-light tabular-nums">
-                        ${item.gapAmount.toLocaleString()}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-[11px]">
-                            <span className="font-mono">{item.percentFulfilled}%</span>
-                          </div>
-                          <div className="h-2 w-36 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-church-burgundy-light dark:bg-church-gold rounded-full"
-                              style={{ width: `${Math.min(100, item.percentFulfilled)}%` }}
-                            />
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-center font-mono">
-                        {item.pledgeCount}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Individual Donor Pledge Registry */}
-          <div className="bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 shadow-sm overflow-hidden">
-            <div className="px-6 py-5 border-b border-[#E8E2D9] dark:border-slate-800 flex justify-between items-center">
-              <div>
-                <h4 className="font-serif-display text-base font-semibold text-slate-900 dark:text-white">
-                  Congregational Pledge Covenant Registry ({selectedPledgeYear})
-                </h4>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Individual pledge fulfillment progress and stewardship communication status
-                </p>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-slate-50 text-[11px] text-slate-500 uppercase tracking-wider dark:bg-slate-800/60">
-                  <tr>
-                    <th className="px-6 py-3 font-medium">Donor Name</th>
-                    <th className="px-6 py-3 font-medium">Fund</th>
-                    <th className="px-6 py-3 font-medium text-right">Committed</th>
-                    <th className="px-6 py-3 font-medium text-right">Received</th>
-                    <th className="px-6 py-3 font-medium text-right">Remaining Gap</th>
-                    <th className="px-6 py-3 font-medium text-center">Status</th>
-                    <th className="px-6 py-3 font-medium">Covenant Notes</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {pledges
-                    .filter((p) => p.taxYear === selectedPledgeYear)
-                    .map((p) => {
-                      const gap = Math.max(0, p.committedAmount - p.fulfilledAmount);
-                      let statusBadge = (
-                        <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                          In Progress
-                        </span>
-                      );
-
-                      if (p.fulfilledAmount >= p.committedAmount) {
-                        statusBadge = (
-                          <span className="text-[11px] font-medium text-slate-700 dark:text-slate-300">
-                            Fulfilled
-                          </span>
-                        );
-                      } else if (p.status === 'ahead') {
-                        statusBadge = (
-                          <span className="text-[11px] font-medium text-church-burgundy dark:text-church-gold">
-                            Ahead of Pace
-                          </span>
-                        );
-                      }
-
-                      return (
-                        <tr key={p.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
-                          <td className="px-6 py-3.5">
-                            <span className="font-semibold text-slate-900 dark:text-white block">{p.donorName}</span>
-                            <span className="text-[11px] text-slate-500">{p.donorEmail}</span>
-                          </td>
-                          <td className="px-6 py-3.5 font-medium text-slate-800 dark:text-slate-200">
-                            {p.fundName}
-                          </td>
-                          <td className="px-6 py-3.5 text-right font-mono font-bold text-slate-900 dark:text-white tabular-nums">
-                            ${p.committedAmount.toLocaleString()}
-                          </td>
-                          <td className="px-6 py-3.5 text-right font-mono font-semibold text-slate-900 dark:text-white tabular-nums">
-                            ${p.fulfilledAmount.toLocaleString()}
-                          </td>
-                          <td className="px-6 py-3.5 text-right font-mono font-bold text-church-burgundy dark:text-church-gold-light tabular-nums">
-                            ${gap.toLocaleString()}
-                          </td>
-                          <td className="px-6 py-3.5 text-center">
-                            {statusBadge}
-                          </td>
-                          <td className="px-6 py-3.5 text-slate-500 italic max-w-xs truncate" title={p.notes}>
-                            {p.notes || '—'}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
             </div>
           </div>
 
@@ -941,7 +637,7 @@ export const AdminDashboard: React.FC = () => {
                           >
                             Receipt
                           </button>
-                          {d.status === 'completed' && (currentRole === 'admin' || currentRole === 'bookkeeper') && (
+                          {d.status === 'completed' && isPortalAdmin && (
                             <button
                               onClick={() => setRefundTargetId(d.transactionId)}
                               className="text-slate-400 hover:text-red-600"
@@ -971,7 +667,7 @@ export const AdminDashboard: React.FC = () => {
                 Church Donor Directory ({donors.length})
               </h3>
               <span className="text-xs text-slate-500">
-                Field-level AES-256 tokenized records
+                Staff-only donor directory
               </span>
             </div>
 
@@ -981,11 +677,11 @@ export const AdminDashboard: React.FC = () => {
                   <tr>
                     <th className="px-6 py-3 font-medium">Donor Name</th>
                     <th className="px-6 py-3 font-medium">Contact</th>
-                    <th className="px-6 py-3 font-medium">Pledge Schedule</th>
+                    <th className="px-6 py-3 font-medium">Recurring</th>
                     <th className="px-6 py-3 font-medium">Gifts Count</th>
                     <th className="px-6 py-3 font-medium text-right">Lifetime Giving</th>
                     <th className="px-6 py-3 font-medium text-center">Tax ID</th>
-                    <th className="px-6 py-3 font-medium text-center">GDPR Consent</th>
+                    
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1018,11 +714,7 @@ export const AdminDashboard: React.FC = () => {
                       <td className="px-6 py-3.5 text-center font-mono text-slate-500">
                         {donor.taxId || '***-**-****'}
                       </td>
-                      <td className="px-6 py-3.5 text-center">
-                        <span className="px-2 py-0.5 text-[10px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 rounded">
-                          Opt-In Active
-                        </span>
-                      </td>
+
                     </tr>
                   ))}
                 </tbody>
@@ -1032,188 +724,7 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* SUB-TAB 4: RBAC & Security */}
-      {activeAdminSubTab === 'rbac' && (
-        <div className="mt-8 space-y-6">
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
-            <h3 className="font-serif-display text-base font-bold text-slate-900 dark:text-white mb-2">
-              Role-Based Access Control (RBAC) Architecture
-            </h3>
-            <p className="text-xs text-slate-500 mb-6 leading-relaxed">
-              Granular permission boundaries enforce separation of duties between pastors, First Lady stewardship access, financial administrators, bookkeepers, and independent auditors.
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-              {[
-                {
-                  id: 'admin' as UserRole,
-                  role: 'Admin',
-                  desc: 'Full financial authority, refund execution, gateway settings, fund creation, and user management.',
-                  perms: ['Full Ledger Access', 'Issue Refunds', 'MFA Protected', 'Audit Configuration'],
-                },
-                {
-                  id: 'first_lady' as UserRole,
-                  role: 'First Lady',
-                  desc: 'Contribution-central access: view giving across all channels, log Cash App / Zelle / Venmo / check / cash, and monitor the ledger. No refunds or gateway secret changes.',
-                  perms: ['View Analytics', 'Contribution Log', 'CSV Exports', 'Read Integrations Status', 'No Refund Rights'],
-                },
-                {
-                  id: 'pastor' as UserRole,
-                  role: 'Pastor',
-                  desc: 'High-level pastoral overview of campaigns, giving trends, and donor pastoral care.',
-                  perms: ['View Analytics', 'Fund Campaigns', 'Congregation Care', 'Read-Only Ledger'],
-                },
-                {
-                  id: 'bookkeeper' as UserRole,
-                  role: 'Bookkeeper',
-                  desc: 'Reconciliation, batch CSV exports, and contribution log entry for all channels.',
-                  perms: ['Ledger Reconciliation', 'Contribution Log', 'CSV Exports', 'No Refund Rights'],
-                },
-                {
-                  id: 'auditor' as UserRole,
-                  role: 'Auditor',
-                  desc: 'Independent compliance inspector auditing security logs, GDPR privacy requests, and IRS 501(c)(3) integrity.',
-                  perms: ['View Audit Trails', 'Verify Hashes', 'GDPR Inspection', 'Zero Data Mutation'],
-                },
-              ].map((item) => (
-                <div key={item.id} className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 flex flex-col justify-between">
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="font-bold text-sm text-slate-900 dark:text-white">{item.role}</span>
-                      {currentRole === item.id && (
-                        <span className="text-[10px] font-semibold text-church-burgundy dark:text-church-gold bg-church-gold/15 dark:bg-church-burgundy-dark/60 px-2 py-0.5 rounded">
-                          Current
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-snug mb-3">
-                      {item.desc}
-                    </p>
-                  </div>
-                  <div className="space-y-1 pt-3 border-t border-slate-200 dark:border-slate-700">
-                    {item.perms.map((p) => (
-                      <div key={p} className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-400">
-                        <CheckCircle className="h-3 w-3 text-emerald-600 shrink-0" />
-                        <span>{p}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* SUB-TAB 5: Audit Trails */}
-      {activeAdminSubTab === 'audit' && (
-        <div className="mt-8 space-y-4">
-          <div className="flex justify-between items-center bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
-            <div>
-              <h3 className="font-serif-display text-sm font-bold text-slate-900 dark:text-white">
-                Cryptographic Security &amp; Financial Audit Log
-              </h3>
-              <p className="text-xs text-slate-500">
-                Every financial transaction and administrative action is recorded with SHA-256 integrity hashes.
-              </p>
-            </div>
-            <button
-              onClick={exportAuditLogsCSV}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 rounded-lg border border-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 shadow-sm"
-            >
-              <Download className="h-3.5 w-3.5" />
-              <span>Export Audit Trail</span>
-            </button>
-          </div>
-
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-slate-50 text-[11px] text-slate-500 uppercase tracking-wider dark:bg-slate-800/60">
-                  <tr>
-                    <th className="px-5 py-3 font-medium">Timestamp</th>
-                    <th className="px-5 py-3 font-medium">Actor</th>
-                    <th className="px-5 py-3 font-medium">Role</th>
-                    <th className="px-5 py-3 font-medium">Action</th>
-                    <th className="px-5 py-3 font-medium">Resource</th>
-                    <th className="px-5 py-3 font-medium">Details</th>
-                    <th className="px-5 py-3 font-medium">Integrity Hash</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {auditLogs.map((log) => (
-                    <tr key={log.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
-                      <td className="px-5 py-3.5 font-mono text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                        {new Date(log.timestamp).toLocaleDateString()} {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                      </td>
-                      <td className="px-5 py-3.5 font-semibold text-slate-900 dark:text-white">
-                        {log.actorName}
-                      </td>
-                      <td className="px-5 py-3.5 capitalize text-slate-500">
-                        {log.actorRole}
-                      </td>
-                      <td className="px-5 py-3.5 font-mono font-medium text-church-burgundy dark:text-church-gold">
-                        {log.action}
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-600 dark:text-slate-300">
-                        {log.resource}
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-600 dark:text-slate-300 max-w-xs truncate" title={log.details}>
-                        {log.details}
-                      </td>
-                      <td className="px-5 py-3.5 font-mono text-[10px] text-slate-400 max-w-[120px] truncate" title={log.integrityHash}>
-                        {log.integrityHash}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* SUB-TAB 6: GDPR & CCPA Compliance */}
-      {activeAdminSubTab === 'privacy' && (
-        <div className="mt-8 space-y-6">
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
-            <h3 className="font-serif-display text-base font-bold text-slate-900 dark:text-white mb-2">
-              GDPR &amp; CCPA Information Governance
-            </h3>
-            <p className="text-xs text-slate-500 mb-6 leading-relaxed">
-              Automated compliance tools for donor privacy rights under General Data Protection Regulation (GDPR) and California Consumer Privacy Act (CCPA).
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
-                <ShieldCheck className="h-5 w-5 text-emerald-600 mb-2" />
-                <h4 className="font-semibold text-xs text-slate-900 dark:text-white">Right to Data Portability</h4>
-                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                  Donors can download a full, machine-readable JSON archive of all personal information and giving statements with one click.
-                </p>
-              </div>
-
-              <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
-                <RotateCcw className="h-5 w-5 text-church-gold-dark mb-2" />
-                <h4 className="font-semibold text-xs text-slate-900 dark:text-white">Right to Erasure (Sanitization)</h4>
-                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                  Purges all PII (name, phone, address) while retaining statutory financial sums required under federal 501(c)(3) audit laws.
-                </p>
-              </div>
-
-              <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40">
-                <Lock className="h-5 w-5 text-blue-600 mb-2" />
-                <h4 className="font-semibold text-xs text-slate-900 dark:text-white">Field-Level Encryption</h4>
-                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                  Stripe tokenization ensures zero raw credit card or bank credentials touch church database storage.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* SUB-TAB 7: Contribution Log (all external + physical channels) */}
+      {/* Contribution Log */}
       {activeAdminSubTab === 'offline' && (
         <div className="mt-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
           
@@ -1226,11 +737,11 @@ export const AdminDashboard: React.FC = () => {
               </h3>
             </div>
             <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-              Record gifts received through Cash App, Zelle, Venmo, check, cash, or service kiosk.
-              Sync pushes them into the master ledger and AWC Digital Contribution Book.
+              Record gifts received through Cash App, Zelle, Venmo, check, or cash.
+              Sync pushes them into the master ledger.
             </p>
 
-            <form onSubmit={handleQueueOffline} className="space-y-4 text-xs">
+            <form onSubmit={(e) => void handleQueueOffline(e)} className="space-y-4 text-xs">
               <div>
                 <label className="block text-[11px] text-slate-600 dark:text-slate-400 mb-1">Donor Name</label>
                 <input
@@ -1279,12 +790,11 @@ export const AdminDashboard: React.FC = () => {
                     <option value="venmo">Venmo</option>
                     <option value="check">Physical Check</option>
                     <option value="cash">Cash Envelope</option>
-                    <option value="card_kiosk">Service Kiosk</option>
                   </select>
                 </div>
               </div>
 
-              {offlineMethod !== 'cash' && offlineMethod !== 'card_kiosk' && (
+              {offlineMethod !== 'cash' && (
                 <div>
                   <label className="block text-[11px] text-slate-600 dark:text-slate-400 mb-1">
                     {offlineMethod === 'check'
@@ -1337,41 +847,31 @@ export const AdminDashboard: React.FC = () => {
                 />
               </div>
 
+              {offlineError ? (
+                <p className="text-xs text-red-600" role="alert">{offlineError}</p>
+              ) : null}
               <button
                 type="submit"
-                className="w-full py-2.5 px-4 bg-church-burgundy hover:bg-church-burgundy-light text-white font-semibold rounded-lg shadow-sm flex items-center justify-center gap-1.5"
+                disabled={offlineSaving}
+                className="w-full py-2.5 px-4 bg-church-burgundy hover:bg-church-burgundy-light text-white font-semibold rounded-lg shadow-sm flex items-center justify-center gap-1.5 disabled:opacity-60"
               >
                 <PlusCircle className="h-4 w-4" />
-                <span>Save to Contribution Queue</span>
+                <span>{offlineSaving ? 'Saving…' : 'Save contribution'}</span>
               </button>
             </form>
           </div>
 
-          {/* Queue & Sync Button */}
           <div className="lg:col-span-7 space-y-4">
             <div className="bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 p-6 shadow-sm">
-              <div className="flex justify-between items-center pb-4 border-b border-slate-100 dark:border-slate-800">
-                <div>
-                  <h3 className="font-serif-display text-sm font-bold text-slate-900 dark:text-white">
-                    Contribution Queue ({offlineGifts.length})
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    {offlineGifts.filter((g) => !g.synced).length} pending ledger &amp; DCB sync
-                  </p>
-                </div>
-                <button
-                  onClick={() => void syncOfflineGifts()}
-                  disabled={offlineGifts.filter((g) => !g.synced).length === 0}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg shadow-sm disabled:opacity-50 transition-colors"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  <span>Batch Sync to Cloud Master Ledger</span>
-                </button>
-              </div>
-
-              {offlineGifts.length === 0 ? (
+              <h3 className="font-serif-display text-sm font-bold text-slate-900 dark:text-white">
+                Recorded contributions
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Saved on the server. Refresh the ledger if a gift you just entered is missing.
+              </p>
+              {loggedContributions.length === 0 ? (
                 <div className="py-8 text-center text-xs text-slate-500">
-                  No gifts currently queued. Use the form on the left to log physical service collections.
+                  No cash, check, or app gifts in the current ledger yet.
                 </div>
               ) : (
                 <div className="mt-4 overflow-x-auto">
@@ -1381,44 +881,18 @@ export const AdminDashboard: React.FC = () => {
                         <th className="px-4 py-2.5 font-medium">Donor</th>
                         <th className="px-4 py-2.5 font-medium">Method</th>
                         <th className="px-4 py-2.5 font-medium text-right">Amount</th>
-                        <th className="px-4 py-2.5 font-medium text-center">Sync Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {offlineGifts.map((gift) => (
+                      {loggedContributions.map((gift) => (
                         <tr key={gift.id}>
                           <td className="px-4 py-2.5">
                             <span className="font-medium text-slate-900 dark:text-white">{gift.donorName}</span>
                             <span className="block text-[10px] text-slate-500">{gift.donorEmail}</span>
                           </td>
-                          <td className="px-4 py-2.5 text-slate-600 dark:text-slate-400">
-                            {(
-                              {
-                                cash: 'Cash',
-                                check: 'Check',
-                                card_kiosk: 'Kiosk',
-                                cash_app: 'Cash App',
-                                zelle: 'Zelle',
-                                venmo: 'Venmo',
-                              } as Record<string, string>
-                            )[gift.method] || gift.method}
-                            {(gift.channelReference || gift.checkNumber)
-                              ? ` (${gift.channelReference || gift.checkNumber})`
-                              : ''}
-                          </td>
+                          <td className="px-4 py-2.5 text-slate-600 dark:text-slate-400">{gift.paymentMethod}</td>
                           <td className="px-4 py-2.5 text-right font-mono font-bold text-slate-900 dark:text-white tabular-nums">
                             ${gift.amount.toFixed(2)}
-                          </td>
-                          <td className="px-4 py-2.5 text-center">
-                            {gift.synced ? (
-                              <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
-                                Synced
-                              </span>
-                            ) : (
-                              <span className="text-[10px] font-semibold text-church-gold-dark bg-church-gold/10 px-2 py-0.5 rounded">
-                                Pending Sync
-                              </span>
-                            )}
                           </td>
                         </tr>
                       ))}
@@ -1432,9 +906,52 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
+      {activeAdminSubTab === 'audit' && (
+        <div className="mt-8 space-y-4">
+          {auditError ? <p className="text-xs text-red-600">{auditError}</p> : null}
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
+            <h3 className="font-serif-display text-sm font-bold text-slate-900 dark:text-white">Activity log</h3>
+            <p className="text-xs text-slate-500 mt-1">Records written by the server when staff take actions such as sending year-end statements.</p>
+          </div>
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-slate-50 text-[11px] text-slate-500 uppercase tracking-wider dark:bg-slate-800/60">
+                <tr>
+                  <th className="px-5 py-3 font-medium">When</th>
+                  <th className="px-5 py-3 font-medium">Who</th>
+                  <th className="px-5 py-3 font-medium">Action</th>
+                  <th className="px-5 py-3 font-medium">Details</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {serverAudit.length === 0 ? (
+                  <tr><td colSpan={4} className="px-5 py-6 text-slate-500">No server audit entries yet.</td></tr>
+                ) : serverAudit.map((log) => (
+                  <tr key={log.id}>
+                    <td className="px-5 py-3 font-mono whitespace-nowrap">{new Date(log.at).toLocaleString()}</td>
+                    <td className="px-5 py-3">{log.actorLabel} <span className="text-slate-400">({log.actorRole})</span></td>
+                    <td className="px-5 py-3 font-mono">{log.action}</td>
+                    <td className="px-5 py-3">{log.details}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeAdminSubTab === 'giving-goals' && isPortalAdmin && <GivingGoalsAdmin />}
+      {activeAdminSubTab === 'year-end' && isPortalAdmin && <YearEndStatementsAdmin />}
+
       {activeAdminSubTab === 'integrations' && (
         <div className="mt-6">
           <IntegrationsSettingsPanel />
+        </div>
+      )}
+
+      {activeAdminSubTab === 'dcb-sync' && isPortalAdmin && (
+        <div className="mt-6">
+          <DcbSyncStatusPanel />
         </div>
       )}
 
@@ -1449,7 +966,7 @@ export const AdminDashboard: React.FC = () => {
               </h3>
             </div>
             <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed mb-4">
-              Processing a refund for transaction <strong>{refundTargetId}</strong> will reverse the charge in Stripe, deduct the principal from the fund's ledger balance, and record a permanent audit entry.
+              This marks transaction <strong>{refundTargetId}</strong> as refunded on this screen only. It does not reverse the charge in Stripe. Issue Stripe refunds from the Stripe Dashboard.
             </p>
 
             <div className="mb-4">

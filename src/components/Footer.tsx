@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { useChurch } from '../context/ChurchContext';
 import { AppPortalMode } from '../types';
 import { ShieldCheck, Lock, ArrowLeft, Users, Mail, Phone } from 'lucide-react';
@@ -97,9 +98,6 @@ export const Footer: React.FC<FooterProps> = ({
                   <button onClick={() => setActiveTab('give')} className="hover:text-[#D4AF37] transition-colors">
                     Give Online
                   </button>
-                  <button onClick={() => setActiveTab('funds')} className="hover:text-[#D4AF37] transition-colors">
-                    Ministries &amp; Goals
-                  </button>
                   <button
                     onClick={onEnterDonorPortal}
                     className="flex items-center gap-1 hover:text-[#D4AF37] transition-colors"
@@ -121,9 +119,6 @@ export const Footer: React.FC<FooterProps> = ({
                   <button onClick={() => setActiveTab('admin')} className="hover:text-[#D4AF37] transition-colors">
                     Stewardship Console
                   </button>
-                  <button onClick={() => setActiveTab('api-docs')} className="hover:text-[#D4AF37] transition-colors">
-                    REST API Sandbox
-                  </button>
                   <button
                     onClick={onEnterDonorPortal}
                     className="flex items-center gap-1 font-medium text-white/70 hover:text-[#D4AF37] transition-colors"
@@ -137,14 +132,25 @@ export const Footer: React.FC<FooterProps> = ({
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-3 text-[11px] text-white/45">
-          <div className="flex items-center gap-1.5">
-            <ShieldCheck className="h-3.5 w-3.5" style={{ color: '#D4AF37' }} />
-            <span>
-              Encrypted with Stripe Level 1 PCI-DSS · GDPR &amp; CCPA Privacy Compliant · IRS § 170(f)(8) Verified
-            </span>
+        <div className="flex flex-col gap-4 text-[11px] text-white/45">
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <ShieldCheck className="h-3.5 w-3.5 shrink-0" style={{ color: '#D4AF37' }} />
+              <span>Secure checkout via Stripe · Encrypted transport (TLS)</span>
+            </div>
+            <nav className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+              <Link to="/privacy" className="hover:text-[#D4AF37] transition-colors">
+                Privacy
+              </Link>
+              <Link to="/terms" className="hover:text-[#D4AF37] transition-colors">
+                Terms
+              </Link>
+              <Link to="/refund-policy" className="hover:text-[#D4AF37] transition-colors">
+                Refund Policy
+              </Link>
+            </nav>
           </div>
-          <p>
+          <p className="text-center sm:text-right">
             © {new Date().getFullYear()} {config.name}. Dedicated to kingdom stewardship.
           </p>
         </div>

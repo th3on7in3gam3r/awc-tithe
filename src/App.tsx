@@ -1,34 +1,64 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { BrowserRouter, Navigate, Route, Routes, useNavigate, useLocation } from 'react-router-dom';
 import { ChurchProvider, useChurch } from './context/ChurchContext';
 import { Navbar } from './components/Navbar';
 import { DonorPortal } from './components/DonorPortal';
 import { DonorSelfService } from './components/DonorSelfService';
-import { MinistriesView } from './components/MinistriesView';
 import { AdminDashboard } from './components/AdminDashboard';
-import { ApiDocumentation } from './components/ApiDocumentation';
 import { TaxReceiptModal } from './components/TaxReceiptModal';
 import { MfaModal } from './components/MfaModal';
 import { ToastContainer } from './components/ToastContainer';
 import { Footer } from './components/Footer';
 import { AppPortalMode } from './types';
+import PrivacyPage from './pages/PrivacyPage';
+import TermsPage from './pages/TermsPage';
+import RefundPolicyPage from './pages/RefundPolicyPage';
+
+/** Old Ministries & Goals URLs → Give home. */
+function LegacyMinistriesRedirect() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    navigate('/', { replace: true });
+  }, [navigate]);
+  return null;
+}
 
 function MainApp() {
+  const location = useLocation();
   const [portalMode, setPortalMode] = useState<AppPortalMode>('public');
   const [activeTab, setActiveTab] = useState<string>('give');
   const [isMfaModalOpen, setIsMfaModalOpen] = useState(false);
   const [donorPortalEmail, setDonorPortalEmail] = useState<string | undefined>(undefined);
-  const [preselectedFundId, setPreselectedFundId] = useState<string | undefined>(undefined);
   const { selectedReceipt, setSelectedReceipt, isMfaVerified, resetMfa } = useChurch();
 
-  const handleSelectFundToGive = (fundId: string) => {
-    setPreselectedFundId(fundId);
-    setPortalMode('public');
-    setActiveTab('give');
-  };
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.has('staffInvite')) {
+      setActiveTab('admin');
+      setIsMfaModalOpen(true);
+    }
+    const tab = params.get('tab');
+    if (
+      tab === 'funds' ||
+      tab === 'ministries' ||
+      tab === 'goals' ||
+      tab === 'api-docs' ||
+      tab === 'my-giving'
+    ) {
+      setActiveTab(tab === 'my-giving' ? 'my-giving' : 'give');
+      params.delete('tab');
+      const qs = params.toString();
+      window.history.replaceState(null, '', qs ? `/?${qs}` : '/');
+    }
+  }, [location.search]);
 
   const handleTabChange = (tab: string) => {
-    // Staff routes only when already unlocked — never bounce members into admin via tab id alone
-    if (tab === 'admin' || tab === 'api-docs') {
+    if (tab === 'funds' || tab === 'ministries' || tab === 'goals' || tab === 'api-docs') {
+      setPortalMode('public');
+      setActiveTab('give');
+      return;
+    }
+    if (tab === 'admin') {
       if (!isMfaVerified) {
         setIsMfaModalOpen(true);
         return;
@@ -85,27 +115,22 @@ function MainApp() {
       <main className="flex-1">
         {!staffUnlocked && (
           <>
-            {activeTab === 'give' && (
-              <DonorPortal
-                onViewMyGiving={handleViewMyGiving}
-                initialFundId={preselectedFundId}
-                onConsumedInitialFund={() => setPreselectedFundId(undefined)}
-              />
+            {(activeTab === 'give' || activeTab === 'funds') && (
+              <DonorPortal onViewMyGiving={handleViewMyGiving} />
             )}
-            {activeTab === 'funds' && <MinistriesView onSelectFundToGive={handleSelectFundToGive} />}
             {activeTab === 'my-giving' && (
               <DonorSelfService
                 initialEmail={donorPortalEmail}
                 onConsumedInitialEmail={() => setDonorPortalEmail(undefined)}
               />
             )}
-            {(activeTab === 'admin' || activeTab === 'api-docs') && (
+            {activeTab === 'admin' && (
               <div className="mx-auto max-w-lg px-4 py-16 text-center">
                 <p className="font-serif-display text-xl font-bold text-slate-900 dark:text-white">
                   Staff Portal is locked
                 </p>
                 <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-                  An invite or access code from church leadership is required. Members cannot enter.
+                  Staff sign in with their invited email address. Donor accounts do not grant staff access.
                 </p>
                 <button
                   type="button"
@@ -113,19 +138,14 @@ function MainApp() {
                   className="mt-6 rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider text-white"
                   style={{ backgroundColor: '#4A0404' }}
                 >
-                  Enter invite code
+                  Staff sign in
                 </button>
               </div>
             )}
           </>
         )}
 
-        {staffUnlocked && (
-          <>
-            {activeTab === 'admin' && <AdminDashboard />}
-            {activeTab === 'api-docs' && <ApiDocumentation />}
-          </>
-        )}
+        {staffUnlocked && activeTab === 'admin' && <AdminDashboard />}
       </main>
 
       <Footer
@@ -155,7 +175,18 @@ function MainApp() {
 export default function App() {
   return (
     <ChurchProvider>
-      <MainApp />
+      <BrowserRouter>
+        <Routes>
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/refund-policy" element={<RefundPolicyPage />} />
+          <Route path="/funds" element={<LegacyMinistriesRedirect />} />
+          <Route path="/ministries" element={<LegacyMinistriesRedirect />} />
+          <Route path="/goals" element={<LegacyMinistriesRedirect />} />
+          <Route path="/" element={<MainApp />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
     </ChurchProvider>
   );
 }
