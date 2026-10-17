@@ -9,7 +9,7 @@
  *    never process the same row simultaneously.
  *  - Exponential backoff: 1 m → 5 m → 30 m → 2 h → 12 h (max 8 attempts).
  *  - After 8 attempts the row is set to terminal 'failed'.
- *  - 'refund' rows are immediately set to 'needs_review' (no DCB endpoint yet).
+ *  - 'refund' rows call DCB's void endpoint; DCB opens a Finance review item.
  *  - If AWC_DCB_API_URL or AWC_DCB_KEY_TITHE are missing the row is left
  *    'pending' and the attempt counter is NOT incremented.
  */
@@ -19,11 +19,16 @@ import {
   claimPendingRows,
   markOutboxSent,
   markOutboxFailed,
-  setOutboxNeedsReview,
   nextAttemptMinutes,
   type DcbOutboxRow,
 } from './outbox';
-import { postContributionToDcb, DcbNotConfiguredError, type DcbContributionPayload } from './client';
+import {
+  postContributionToDcb,
+  voidContributionInDcb,
+  DcbNotConfiguredError,
+  type DcbContributionPayload,
+  type DcbRefundPayload,
+} from './client';
 
 const POLL_INTERVAL_MS = 30_000;   // 30 seconds
 const MAX_ATTEMPTS = 8;
@@ -34,21 +39,11 @@ function addMinutes(minutes: number): string {
 }
 
 async function processRow(row: DcbOutboxRow, client: import('pg').PoolClient): Promise<void> {
-  // Refund rows have no DCB endpoint yet — move straight to needs_review
-  if (row.eventType === 'refund') {
-    await setOutboxNeedsReview(
-      client,
-      row.id,
-      'No DCB refund endpoint configured. See docs/dcb-refund-endpoint.md'
-    );
-    return;
-  }
-
-  // Build a typed payload from the stored JSON
-  const payload = row.payload as DcbContributionPayload;
-
   try {
-    const result = await postContributionToDcb(payload);
+    const result =
+      row.eventType === 'refund'
+        ? await voidContributionInDcb(row.payload as unknown as DcbRefundPayload)
+        : await postContributionToDcb(row.payload as unknown as DcbContributionPayload);
     await markOutboxSent(client, row.id, result.voucherId);
   } catch (err) {
     if (err instanceof DcbNotConfiguredError) {

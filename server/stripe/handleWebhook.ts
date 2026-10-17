@@ -472,8 +472,10 @@ async function applyEvent(
           transactionId: donation.transactionId,
           refundedAt: new Date().toISOString(),
           refundAmount,
+          reason: 'stripe_refund',
         },
-        initialStatus: 'needs_review',
+        // DCB now has a void endpoint; the outbox worker delivers this.
+        initialStatus: 'pending',
       });
     }
     return result;

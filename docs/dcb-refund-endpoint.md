@@ -1,8 +1,13 @@
 # DCB Refund Endpoint — Required Specification
 
-**Status:** `needs_review` rows are written to `dcb_outbox` on every `charge.refunded`
-Stripe event but no DCB endpoint exists yet. This document describes what DCB must
-implement and what Tithe will wire up once it is available.
+**Status (Oct 2026): live.** DCB implements Option A
+(`POST /api/public/giving/contributions/:voucherId/void`). Refund rows are now
+written as `pending` and the outbox worker delivers them. DCB marks the gift
+refunded and opens a **refund** item in Online Giving → Review so Finance reverses
+the contribution through the normal batch flow (DCB never edits a closed batch on
+its own). If DCB has not received the original gift yet it answers 404 and the
+worker retries with backoff. Older `needs_review` refund rows can be re-sent with
+the Staff Portal retry button.
 
 ---
 

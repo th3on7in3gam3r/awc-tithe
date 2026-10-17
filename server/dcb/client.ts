@@ -191,3 +191,67 @@ export async function postContributionToDcb(
 
   return { ok: true, voucherId, syncedAt, posted, needsReview, duplicate };
 }
+
+// ---------------------------------------------------------------------------
+// Refunds — POST /api/public/giving/contributions/:voucherId/void
+// ---------------------------------------------------------------------------
+
+export interface DcbRefundPayload {
+  voucherNumber: string;
+  transactionId: string;
+  refundedAt: string;
+  refundAmount: number;
+  reason?: string;
+  source?: 'awc-tithe-bridge';
+}
+
+/** Thrown when DCB has no record of the gift yet (contribution not delivered). */
+export class DcbGiftNotFoundError extends Error {
+  constructor(voucher: string) {
+    super(`DCB has no gift for voucher ${voucher} yet`);
+    this.name = 'DcbGiftNotFoundError';
+  }
+}
+
+export async function voidContributionInDcb(payload: DcbRefundPayload): Promise<DcbSyncResult> {
+  const syncedAt = new Date().toISOString();
+  const url = env.awcDcbApiUrl?.trim();
+  if (!url) throw new DcbNotConfiguredError('AWC_DCB_API_URL');
+  if (!env.awcDcbKeyTithe?.trim()) throw new DcbNotConfiguredError('AWC_DCB_KEY_TITHE');
+
+  const ingestUrl = resolveDcbIngestUrl();
+  const voidUrl = `${ingestUrl}/${encodeURIComponent(payload.voucherNumber || payload.transactionId)}/void`;
+  const rawBody = JSON.stringify({ ...payload, source: 'awc-tithe-bridge' });
+  const headers = signRequest(rawBody, `refund:${payload.transactionId}`);
+
+  let response: Response;
+  try {
+    response = await fetch(voidUrl, {
+      method: 'POST',
+      headers,
+      body: rawBody,
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (err) {
+    throw new Error(`DCB fetch failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  if (response.status === 409) {
+    return { ok: true, voucherId: payload.voucherNumber, syncedAt, duplicate: true };
+  }
+  if (response.status === 404) {
+    throw new DcbGiftNotFoundError(payload.voucherNumber);
+  }
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`DCB API ${response.status}: ${text.slice(0, 400)}`);
+  }
+  let voucherId = payload.voucherNumber;
+  try {
+    const json = (await response.json()) as { voucherId?: string };
+    voucherId = json.voucherId || voucherId;
+  } catch {
+    // non-JSON success body is fine
+  }
+  return { ok: true, voucherId, syncedAt, needsReview: true };
+}
