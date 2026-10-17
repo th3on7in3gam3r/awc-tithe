@@ -1,0 +1,40 @@
+# Keeps AWC Tithe and the Contribution Book awake on service days so
+# nobody waits for Render's free plan to start up.
+#
+# Sunday, Wednesday and Friday, about 7 AM–10 PM Eastern (6 AM–9 PM in
+# winter, since GitHub schedules run on UTC). Roughly 195 Render hours a
+# month per service, well inside the free 750.
+#
+# GitHub can start scheduled runs a few minutes late; that's fine here.
+# Run it by hand from the Actions tab with "Run workflow".
+name: Keep awake on service days
+
+on:
+  schedule:
+    - cron: '*/10 11-23 * * 0,3,5' # 7:00 AM–7:59 PM EDT, Sun/Wed/Fri
+    - cron: '*/10 0-1 * * 1,4,6'   # 8:00 PM–9:59 PM EDT (next day in UTC)
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping Tithe and DCB
+        run: |
+          status=0
+          for url in \
+            https://awc-tithe.onrender.com/api/health \
+            https://awc-digital-contribution-book.onrender.com/api/health
+          do
+            # A sleeping service can take up to a minute to answer.
+            if curl -fsS --max-time 90 --retry 2 --retry-delay 10 -o /dev/null -w "%{http_code} %{time_total}s  $url\n" "$url"; then
+              :
+            else
+              echo "::warning::No answer from $url"
+              status=1
+            fi
+          done
+          exit $status
