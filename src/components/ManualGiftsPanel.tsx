@@ -73,7 +73,8 @@ function GiftRow({
   onChanged: (g: AdminManualGift, message: string) => void;
 }) {
   const [mode, setMode] = useState<'idle' | 'verify' | 'reject'>('idle');
-  const [reference, setReference] = useState(gift.donorReference || '');
+  // Finance types the ID from the church's own account record; the donor's number is shown only to compare.
+  const [reference, setReference] = useState('');
   const [amount, setAmount] = useState(String(gift.amount));
   const [date, setDate] = useState(todayLocal());
   const [reason, setReason] = useState('');
@@ -167,7 +168,39 @@ function GiftRow({
           </div>
           <div>
             <label className={label} htmlFor={`ref-${gift.id}`}>Transaction ID</label>
-            <input id={`ref-${gift.id}`} className={field} value={reference} onChange={(e) => setReference(e.target.value)} required />
+            <input
+              id={`ref-${gift.id}`}
+              className={field}
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+              placeholder="From the church's account"
+              autoComplete="off"
+              required
+            />
+            {gift.donorReference ? (
+              (() => {
+                const norm = (v: string) => v.replace(/[^a-z0-9]/gi, '').toLowerCase();
+                const typed = norm(reference);
+                const donor = norm(gift.donorReference);
+                const status = !typed ? 'idle' : typed === donor ? 'match' : 'differs';
+                return (
+                  <p
+                    className={`mt-1.5 text-xs leading-relaxed ${
+                      status === 'match'
+                        ? 'font-semibold text-emerald-700 dark:text-emerald-400'
+                        : status === 'differs'
+                          ? 'font-semibold text-amber-700 dark:text-amber-400'
+                          : 'text-slate-500 dark:text-slate-400'
+                    }`}
+                  >
+                    Donor entered: <span className="font-mono">{gift.donorReference}</span>
+                    {status === 'match' ? ' · ✓ matches' : status === 'differs' ? ' · doesn’t match — double-check' : ''}
+                  </p>
+                );
+              })()
+            ) : (
+              <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Donor didn’t enter a number.</p>
+            )}
           </div>
           <div>
             <label className={label} htmlFor={`amt-${gift.id}`}>Amount received</label>

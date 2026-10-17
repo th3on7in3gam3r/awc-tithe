@@ -235,6 +235,20 @@ export const ManualGiftHandoff: React.FC<ManualGiftHandoffProps> = ({
           placeholder="Helps Finance confirm it faster"
           className="w-full min-h-12 rounded-xl border-[1.5px] border-awc-line bg-awc-paper px-4 text-[15px] text-awc-ink outline-none placeholder:text-awc-muted/70 focus:border-awc-accent"
         />
+        <details className="group text-[13px] text-awc-muted">
+          <summary className="inline-flex min-h-10 cursor-pointer list-none items-center gap-1.5 font-semibold text-awc-primary">
+            <span aria-hidden="true" className="transition-transform group-open:rotate-90">›</span>
+            Where do I find this?
+          </summary>
+          <p className="mt-1 rounded-xl bg-awc-sand px-3.5 py-2.5 leading-relaxed text-awc-ink">
+            {isCashApp
+              ? 'In Cash App, open the Activity tab (the clock), tap this payment, and copy the Payment ID or Identifier shown near the bottom.'
+              : isZelle
+                ? 'It depends on your bank. Open your bank app’s Zelle activity, tap this payment, and look for “Confirmation number” or “Transaction ID”.'
+                : 'In Venmo, tap Me, open this payment, and copy the Payment ID or Transaction ID shown near the bottom.'}{' '}
+            It’s fine to skip this — Finance will still find your gift using the code above.
+          </p>
+        </details>
       </div>
 
       {error ? (
