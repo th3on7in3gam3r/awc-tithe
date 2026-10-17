@@ -103,29 +103,5 @@
     </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <script>
-      (function () {
-        var hide = function () {
-          var el = document.getElementById('awc-boot');
-          if (!el || el.classList.contains('awc-boot--hide')) return;
-          el.classList.add('awc-boot--hide');
-          el.setAttribute('aria-busy', 'false');
-          setTimeout(function () {
-            if (el && el.parentNode) el.parentNode.removeChild(el);
-          }, 400);
-        };
-        setTimeout(function () {
-          var el = document.getElementById('awc-boot');
-          if (el && !el.classList.contains('awc-boot--hide')) {
-            el.classList.add('awc-boot--slow');
-          }
-        }, 2500);
-        window.addEventListener('load', function () {
-          setTimeout(hide, 180);
-        });
-        // Fallback if module load is slow after HTML arrives
-        setTimeout(hide, 8000);
-      })();
-    </script>
   </body>
 </html>
