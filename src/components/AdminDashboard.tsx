@@ -1,9 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useChurch } from '../context/ChurchContext';
 import { DonationStatus, DonationFrequency, StaffContributionMethod } from '../types';
-import { RecurringTrendChart } from './RecurringTrendChart';
+import { GivingTrendChart } from './GivingTrendChart';
 import { DonorTenurePieChart } from './DonorTenurePieChart';
-import { DonorChurnAnalysis } from './DonorChurnAnalysis';
+import {
+  channelBreakdown,
+  completedGifts,
+  givingYearToDate,
+  recurringMonthlyRunRate as runRateOf,
+} from '../lib/givingAnalytics';
 import { ExportDataModal } from './ExportDataModal';
 import { IntegrationsSettingsPanel } from './IntegrationsSettingsPanel';
 import { GivingGoalsAdmin } from './GivingGoalsAdmin';
@@ -174,14 +179,15 @@ export const AdminDashboard: React.FC = () => {
   const [auditError, setAuditError] = useState<string | null>(null);
 
   // Financial Calculations
-  const completedDonations = donations.filter((d) => d.status === 'completed');
-  const totalGivingYTD = completedDonations.reduce((sum, d) => sum + d.amount, 0);
-  const totalFeesCovered = completedDonations.reduce((sum, d) => sum + d.feeAmount, 0);
+  const completedDonations = completedGifts(donations);
+  const totalGivingYTD = givingYearToDate(donations);
+  const totalGivingAll = completedDonations.reduce((sum, d) => sum + d.amount, 0);
+  const totalFeesCovered = completedDonations.reduce((sum, d) => sum + (d.feeCovered ? d.feeAmount : 0), 0);
+  const feeCoveredCount = completedDonations.filter((d) => d.feeCovered && d.feeAmount > 0).length;
   const recurringDonorsCount = donors.filter((d) => d.recurringActive).length;
-  const recurringMonthlyRunRate = donors
-    .filter((d) => d.recurringActive && d.recurringAmount)
-    .reduce((sum, d) => sum + (d.recurringAmount || 0), 0);
-  const averageGiftSize = completedDonations.length > 0 ? totalGivingYTD / completedDonations.length : 0;
+  const recurringMonthlyRunRate = runRateOf(donors);
+  const averageGiftSize = completedDonations.length > 0 ? totalGivingAll / completedDonations.length : 0;
+  const channels = channelBreakdown(donations);
 
   // Filtered transactions
   const filteredDonations = donations.filter((d) => {
@@ -393,7 +399,7 @@ export const AdminDashboard: React.FC = () => {
                 ${totalGivingYTD.toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </p>
               <p className="mt-auto pt-3 text-[11px] text-slate-500">
-                +18.4% compared to prior tax year
+                Completed gifts since January 1, {new Date().getFullYear()}
               </p>
             </div>
 
@@ -405,7 +411,7 @@ export const AdminDashboard: React.FC = () => {
                 ${recurringMonthlyRunRate.toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </p>
               <p className="mt-auto pt-3 text-[11px] text-slate-500">
-                From {recurringDonorsCount} active recurring givers
+                From {recurringDonorsCount} active recurring {recurringDonorsCount === 1 ? 'giver' : 'givers'}
               </p>
             </div>
 
@@ -429,18 +435,13 @@ export const AdminDashboard: React.FC = () => {
                 ${totalFeesCovered.toFixed(2)}
               </p>
               <p className="mt-auto pt-3 text-[11px] text-slate-500">
-                Saved 100% of processing overhead
+                {feeCoveredCount === 1 ? '1 gift' : `${feeCoveredCount} gifts`} where the donor chose to cover fees
               </p>
             </div>
           </div>
 
-          {/* Historical Trend of Recurring Monthly Donations (Recharts Line Graph) */}
-          <RecurringTrendChart />
+          <GivingTrendChart />
 
-          {/* Donor Churn & Retention Analysis Widget (Recharts Line Chart) */}
-          <DonorChurnAnalysis />
-
-          {/* Donor Giving Tenure Distribution (Recharts Pie Chart) */}
           <DonorTenurePieChart />
 
 
@@ -475,52 +476,64 @@ export const AdminDashboard: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 p-6 shadow-sm">
               <h3 className="font-serif-display text-lg font-semibold text-slate-900 dark:text-white mb-1">
-                Payment Channel Distribution
+                Giving by payment method
               </h3>
-              <p className="text-xs text-slate-500 mb-5">Breakdown by processing method in Stripe</p>
-              
-              <div className="divide-y divide-[#E8E2D9] dark:divide-slate-800 text-xs">
-                <div className="flex justify-between items-center py-3">
-                  <span className="text-slate-600 dark:text-slate-300">Credit / Debit Cards (Visa, MC, Amex)</span>
-                  <span className="font-mono font-semibold text-slate-900 dark:text-white">68.2%</span>
+              <p className="text-xs text-slate-500 mb-5">Share of completed giving, all time</p>
+
+              {channels.length === 0 ? (
+                <p className="py-6 text-center text-xs text-slate-500">No completed gifts yet.</p>
+              ) : (
+                <div className="divide-y divide-[#E8E2D9] dark:divide-slate-800 text-xs">
+                  {channels.map((c) => (
+                    <div key={c.method} className="flex justify-between items-center gap-3 py-3">
+                      <span className="text-slate-600 dark:text-slate-300">
+                        {c.label}
+                        <span className="ml-1.5 text-slate-400">
+                          {c.count} {c.count === 1 ? 'gift' : 'gifts'}
+                        </span>
+                      </span>
+                      <span className="font-mono tabular-nums text-right">
+                        <span className="font-semibold text-slate-900 dark:text-white">{c.percent}%</span>
+                        <span className="ml-2 text-slate-500">
+                          ${c.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </span>
+                      </span>
+                    </div>
+                  ))}
                 </div>
-                <div className="flex justify-between items-center py-3">
-                  <span className="text-slate-600 dark:text-slate-300">Bank ACH Direct Debit (Tithing)</span>
-                  <span className="font-mono font-semibold text-slate-900 dark:text-white">24.5%</span>
-                </div>
-                <div className="flex justify-between items-center py-3">
-                  <span className="text-slate-600 dark:text-slate-300">Digital Wallets (Apple Pay, Google Pay)</span>
-                  <span className="font-mono font-semibold text-slate-900 dark:text-white">7.3%</span>
-                </div>
-              </div>
+              )}
             </div>
 
             <div className="bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 p-6 shadow-sm">
               <h3 className="font-serif-display text-lg font-semibold text-slate-900 dark:text-white mb-1">
-                Stewardship Governance Status
+                Receipts &amp; records
               </h3>
-              <p className="text-xs text-slate-500 mb-5">Regulatory &amp; compliance health check</p>
-              
+              <p className="text-xs text-slate-500 mb-5">How this site handles giving records</p>
+
               <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
                 <div className="flex items-start gap-2">
-                  <CheckCircle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-church-burgundy dark:text-church-gold" />
+                  {config.ein?.trim() ? (
+                    <CheckCircle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-church-burgundy dark:text-church-gold" />
+                  ) : (
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-600" />
+                  )}
                   <span>
                     {config.ein?.trim()
-                      ? `IRS 501(c)(3) tax exemption active and verified (EIN: ${config.ein.trim()})`
-                      : 'IRS 501(c)(3) tax exemption active and verified'}
+                      ? `Receipts show the church EIN (${config.ein.trim()})`
+                      : 'No EIN set. Add CHURCH_EIN in Render so it prints on receipts.'}
                   </span>
                 </div>
                 <div className="flex items-start gap-2">
                   <CheckCircle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-slate-400" />
-                  <span>Stripe TLS 1.3 tokenization active (zero plain card data stored)</span>
+                  <span>Card and bank details are entered with Stripe and never stored on this site</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <CheckCircle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-slate-400" />
-                  <span>Staff session and gift actions are recorded in the audit trail</span>
+                  <span>Zelle, Venmo and Cash App gifts count only after Finance confirms them</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <CheckCircle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-slate-400" />
-                  <span>Continuous backup &amp; cryptographically linked audit ledger</span>
+                  <span>Staff sign-ins and gift actions are recorded in the Audit tab</span>
                 </div>
               </div>
             </div>
