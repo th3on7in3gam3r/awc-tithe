@@ -165,6 +165,10 @@ export function assertProductionEnv(): void {
     errors.push('  ✗ PUBLIC_APP_URL resolves to localhost — set it to the Render service URL');
   }
 
+  if (stripeKeyModeMismatch(env.stripeSecretKey, env.stripePublishableKey)) {
+    errors.push('  ✗ STRIPE_SECRET_KEY and STRIPE_PUBLISHABLE_KEY are from different modes (one live, one test)');
+  }
+
   if (errors.length > 0) {
     if (isProduction()) {
       console.error(
@@ -215,7 +219,18 @@ export function stripeStatus(): IntegrationStatus {
     present(env.stripeWebhookSecret);
   return {
     configured,
-    mode: configured ? (env.stripeSecretKey.startsWith('sk_live') ? 'live' : 'sandbox') : 'not_configured',
+    mode: configured ? (isLiveStripeKey(env.stripeSecretKey) ? 'live' : 'sandbox') : 'not_configured',
   };
+}
+
+/** Live secret (sk_live_) and restricted (rk_live_) keys both mean real money. */
+export function isLiveStripeKey(key: string): boolean {
+  return /^(sk|rk)_live_/.test(key.trim());
+}
+
+/** Publishable and secret keys must both be live or both be test. */
+export function stripeKeyModeMismatch(secretKey: string, publishableKey: string): boolean {
+  if (!present(secretKey) || !present(publishableKey)) return false;
+  return isLiveStripeKey(secretKey) !== publishableKey.trim().startsWith('pk_live_');
 }
 
