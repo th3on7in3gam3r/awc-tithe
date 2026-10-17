@@ -87,6 +87,8 @@ export const env = {
   zelleRecipientName: process.env.ZELLE_RECIPIENT_NAME?.trim() || '',
   /** Venmo username without the @ (e.g. anointedworshipcenter). */
   venmoHandle: (process.env.VENMO_HANDLE?.trim() || '').replace(/^@/, ''),
+  /** Cash App person-to-person: the church's $cashtag or phone number. */
+  cashAppRecipient: process.env.CASHAPP_RECIPIENT?.trim() || '',
   /**
    * Show the Cash App Pay tile (processed by Stripe, confirmed by webhook).
    * Turn on only after Cash App Pay is enabled in the Stripe Dashboard.
@@ -99,6 +101,7 @@ export function publicPaymentOptions(): {
   cashAppPay: boolean;
   zelle: { enabled: boolean; recipient: string; recipientName: string };
   venmo: { enabled: boolean; handle: string };
+  cashApp: { enabled: boolean; recipient: string; cashtag: string | null };
 } {
   return {
     cashAppPay: env.stripeCashAppPay,
@@ -108,6 +111,12 @@ export function publicPaymentOptions(): {
       recipientName: env.zelleRecipientName || env.churchLegalName || env.churchName,
     },
     venmo: { enabled: Boolean(env.venmoHandle), handle: env.venmoHandle },
+    cashApp: {
+      enabled: Boolean(env.cashAppRecipient),
+      recipient: env.cashAppRecipient,
+      // A $cashtag can be opened as a link; a phone number can only be copied.
+      cashtag: /^\$[A-Za-z][A-Za-z0-9_]{0,19}$/.test(env.cashAppRecipient) ? env.cashAppRecipient : null,
+    },
   };
 }
 

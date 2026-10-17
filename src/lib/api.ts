@@ -9,6 +9,7 @@ export interface PaymentOptions {
   cashAppPay: boolean;
   zelle: { enabled: boolean; recipient: string; recipientName: string };
   venmo: { enabled: boolean; handle: string };
+  cashApp?: { enabled: boolean; recipient: string; cashtag: string | null };
 }
 
 export interface ApiConfig {
@@ -722,7 +723,7 @@ export interface DonorManualGift {
 }
 
 export async function createManualGift(body: {
-  provider: 'zelle' | 'venmo';
+  provider: 'zelle' | 'venmo' | 'cash_app';
   amount: number;
   fundId: string;
   donorName: string;

@@ -39,5 +39,7 @@ services:
         sync: false
       - key: VENMO_HANDLE
         value: anointedworshipcenter
+      - key: CASHAPP_RECIPIENT
+        sync: false
       - key: STRIPE_CASHAPP_PAY_ENABLED
         value: "false"

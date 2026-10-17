@@ -20,7 +20,7 @@ import { StewardshipFaq } from './StewardshipFaq';
 import { TurnstileWidget, getTurnstileSiteKey } from './TurnstileWidget';
 import { ManualGiftHandoff } from './ManualGiftHandoff';
 
-type MethodId = 'card' | 'us_bank_account' | 'cashapp' | 'zelle' | 'venmo';
+type MethodId = 'card' | 'us_bank_account' | 'cashapp' | 'zelle' | 'venmo' | 'cash_app';
 type Step = 'details' | 'stripe' | 'manual' | 'done';
 
 interface MethodOption {
@@ -218,6 +218,9 @@ export const DonorPortal: React.FC<{
     if (paymentOptions?.venmo.enabled) {
       list.push({ id: 'venmo', label: 'Venmo', tag: 'Confirmed by Finance', instant: false, disabledReason: manualReason });
     }
+    if (paymentOptions?.cashApp?.enabled) {
+      list.push({ id: 'cash_app', label: 'Cash App', tag: 'Confirmed by Finance', instant: false, disabledReason: manualReason });
+    }
     return list;
   }, [stripeLive, paymentOptions, frequency]);
 
@@ -231,7 +234,7 @@ export const DonorPortal: React.FC<{
   }, [methods, method]);
 
   const currentMethod = methods.find((m) => m.id === method);
-  const isManual = method === 'zelle' || method === 'venmo';
+  const isManual = method === 'zelle' || method === 'venmo' || method === 'cash_app';
   const effectiveFeeMethod = step === 'stripe' ? feeMethod : method;
   const { feeAmount, totalCharged } = computeProcessingFee({
     principal: principalAmount,
@@ -294,7 +297,7 @@ export const DonorPortal: React.FC<{
     setStarting(true);
     try {
       const result = await createManualGift({
-        provider: method as 'zelle' | 'venmo',
+        provider: method as 'zelle' | 'venmo' | 'cash_app',
         amount: principalAmount,
         fundId: selectedFund.id,
         donorName: donorName.trim(),

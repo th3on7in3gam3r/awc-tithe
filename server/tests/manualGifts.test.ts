@@ -15,6 +15,7 @@ process.env.BETTER_AUTH_SECRET = process.env.BETTER_AUTH_SECRET || 'test-only-se
 process.env.TURNSTILE_SECRET_KEY = '';
 process.env.ZELLE_RECIPIENT = 'giving@example.org';
 process.env.VENMO_HANDLE = '@anointedworshipcenter';
+process.env.CASHAPP_RECIPIENT = '508-454-3599';
 process.env.RATE_LIMIT_PAY_IP_PER_10MIN = '1000';
 
 let failed = 0;
@@ -75,6 +76,8 @@ async function main() {
     const opts = publicPaymentOptions();
     check('venmo handle strips @', opts.venmo.handle === 'anointedworshipcenter' && opts.venmo.enabled);
     check('zelle enabled from env', opts.zelle.enabled && opts.zelle.recipient === 'giving@example.org');
+    check('cash app enabled from env', opts.cashApp.enabled && opts.cashApp.recipient === '508-454-3599');
+    check('phone number is not treated as a $cashtag link', opts.cashApp.cashtag === null);
 
     // --- donor create
     const bad = await call('/api/manual-gifts', { ...donor, provider: 'paypal', amount: 50 });
@@ -88,6 +91,9 @@ async function main() {
     check('donor can start a Zelle gift', created.status === 200 && created.json.gift?.memoCode, created);
     check('new gift is initiated, not verified', created.json.gift?.status === 'initiated', created.json);
     const giftId: string = created.json.gift.id;
+    const cashGift = await call('/api/manual-gifts', { ...donor, provider: 'cash_app', amount: 20 });
+    check('donor can start a Cash App gift', cashGift.status === 200 && cashGift.json.gift?.provider === 'cash_app', cashGift);
+
     const token: string = created.json.claimToken;
 
     // --- donor "I've sent it"
@@ -106,7 +112,7 @@ async function main() {
     const anonList = await call('/api/manual-gifts/admin', undefined, undefined, 'GET');
     check('anonymous cannot list', anonList.status === 401 || anonList.status === 403, anonList.status);
     const staffList = await call('/api/manual-gifts/admin', undefined, 'staff', 'GET');
-    check('staff can list open gifts', staffList.status === 200 && staffList.json.gifts?.length === 1, staffList);
+    check('staff can list open gifts', staffList.status === 200 && staffList.json.gifts?.length === 2, staffList);
     check('admin list masks email', !String(staffList.json.gifts?.[0]?.donorEmailMasked).includes('ruth@'), staffList.json);
     const staffVerify = await call(`/api/manual-gifts/admin/${giftId}/verify`, { providerTransactionId: 'ZL999', receivedAmount: 100, receivedOn: today }, 'staff');
     check('non-admin staff cannot verify', staffVerify.status === 403, staffVerify);

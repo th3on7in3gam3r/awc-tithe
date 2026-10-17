@@ -93,7 +93,9 @@ router.post('/', payRateLimitMiddleware, requireTurnstile, async (req: Request, 
     const provider = body.provider;
     const options = publicPaymentOptions();
     const enabled =
-      (provider === 'zelle' && options.zelle.enabled) || (provider === 'venmo' && options.venmo.enabled);
+      (provider === 'zelle' && options.zelle.enabled) ||
+      (provider === 'venmo' && options.venmo.enabled) ||
+      (provider === 'cash_app' && options.cashApp.enabled);
     if (!isManualProvider(provider) || !enabled) {
       return res.status(400).json({ ok: false, error: 'PROVIDER_UNAVAILABLE', message: 'That payment method is not available.' });
     }
