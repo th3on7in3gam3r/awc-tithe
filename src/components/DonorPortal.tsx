@@ -223,7 +223,7 @@ export const DonorPortal: React.FC<{
       if (paymentOptions?.cashAppPay) {
         list.push({
           id: 'cashapp',
-          label: 'Cash App Pay',
+          label: 'Cash App',
           tag: 'Confirmed instantly',
           instant: true,
           disabledReason: frequency !== 'one-time' ? 'One-time gifts only' : undefined,
@@ -237,7 +237,8 @@ export const DonorPortal: React.FC<{
     if (paymentOptions?.venmo.enabled) {
       list.push({ id: 'venmo', label: 'Venmo', tag: 'Confirmed by Finance', instant: false, disabledReason: manualReason });
     }
-    if (paymentOptions?.cashApp?.enabled) {
+    // One Cash App tile: Cash App Pay (Stripe, instant) wins over send-to-$cashtag.
+    if (paymentOptions?.cashApp?.enabled && !(stripeLive && paymentOptions?.cashAppPay)) {
       list.push({ id: 'cash_app', label: 'Cash App', tag: 'Confirmed by Finance', instant: false, disabledReason: manualReason });
     }
     return list;
@@ -246,6 +247,11 @@ export const DonorPortal: React.FC<{
   // Keep the chosen method valid as options/frequency change
   useEffect(() => {
     const current = methods.find((m) => m.id === method);
+    // A "Cash App" link means whichever Cash App option is offered.
+    if (!current && method === 'cash_app' && methods.some((m) => m.id === 'cashapp' && !m.disabledReason)) {
+      setMethod('cashapp');
+      return;
+    }
     if (!current || current.disabledReason) {
       const fallback = methods.find((m) => !m.disabledReason);
       if (fallback && fallback.id !== method) setMethod(fallback.id);
