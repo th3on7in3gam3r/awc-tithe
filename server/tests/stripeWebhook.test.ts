@@ -13,11 +13,15 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
+/** What the fake Stripe API returns on retrieve: the latest version of each object. */
+const stripeObjects: Record<string, Record<string, unknown>> = {};
+
 function makeEvent(
   id: string,
   type: string,
   object: Record<string, unknown>
 ): Stripe.Event {
+  if (typeof object.id === 'string') stripeObjects[object.id] = object;
   return {
     id,
     type,
@@ -37,6 +41,7 @@ async function main(): Promise<void> {
   const stripe = {
     paymentIntents: {
       retrieve: async (id: string) => ({
+        ...(stripeObjects[id] || {}),
         id,
         latest_charge: chargeMethod
           ? { payment_method_details: { type: chargeMethod } }
@@ -44,10 +49,13 @@ async function main(): Promise<void> {
       }),
     },
     invoices: {
-      retrieve: async (id: string, _opts?: unknown) => ({
+      retrieve: async (id: string, _opts?: unknown) => stripeObjects[id] || {
         id,
         payments: { data: [] },
-      }),
+      },
+    },
+    charges: {
+      retrieve: async (id: string) => stripeObjects[id] || { id },
     },
     subscriptions: {
       retrieve: async (id: string) => subscriptions[id] || { id, metadata: {}, items: { data: [] } },
@@ -261,6 +269,26 @@ async function main(): Promise<void> {
   );
   const full = await getGiftByTransactionId(refundPi.id);
   assert(full?.status === 'refunded', 'full refund must mark the gift refunded');
+
+  // Webhook endpoint on a newer API version: the payload shape differs, but the
+  // handler must use the object re-fetched at the pinned version.
+  const versionPi = {
+    ...pendingPi,
+    id: 'pi_other_api_version',
+    amount_received: 2500,
+    status: 'succeeded',
+    metadata: { ...pendingPi.metadata, principalAmount: '25', feeCovered: 'false', donorEmail: 'version-test@example.com' },
+  };
+  stripeObjects[versionPi.id] = versionPi;
+  await handleStripeEvent(stripe, {
+    id: 'evt_other_api_version',
+    type: 'payment_intent.succeeded',
+    api_version: '2026-09-30.endive',
+    data: { object: { id: versionPi.id, object: 'payment_intent', shape: 'unrecognised' } },
+  } as unknown as Stripe.Event);
+  const versionGift = await getGiftByTransactionId(versionPi.id);
+  assert(versionGift?.status === 'completed', 'handler must use the re-fetched PaymentIntent, not the payload shape');
+  assert(versionGift.donorEmail === 'version-test@example.com', 're-fetched PaymentIntent metadata must be used');
 
   const [{ stripeWebhookHandler }, expressModule, StripeModule] = await Promise.all([
     import('../routes/stripe'),

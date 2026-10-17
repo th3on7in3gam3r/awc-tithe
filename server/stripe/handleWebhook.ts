@@ -338,16 +338,42 @@ interface ApplyResult {
   afterCommit: Array<() => Promise<void>>;
 }
 
+/**
+ * Re-fetch the event's object from Stripe using this server's pinned API
+ * version (2025-08-27.basil). Webhook payloads are shaped by the endpoint's
+ * API version, which the Dashboard may not let us set to basil, so the
+ * handler never relies on the payload's shape for these events. If the
+ * fetch fails, the error propagates: the webhook returns 500 and Stripe
+ * retries, rather than processing a payload in an unexpected shape.
+ */
+export async function freshEventObject(stripe: Stripe, event: Stripe.Event): Promise<unknown> {
+  const obj = event.data.object as { id?: string };
+  const id = obj?.id;
+  if (!id) return event.data.object;
+  if (event.type.startsWith('payment_intent.')) {
+    return stripe.paymentIntents.retrieve(id);
+  }
+  if (event.type === 'invoice.paid' || event.type === 'invoice.payment_failed') {
+    return stripe.invoices.retrieve(id, { expand: ['payments.data.payment.payment_intent'] });
+  }
+  if (event.type === 'charge.refunded') {
+    return stripe.charges.retrieve(id);
+  }
+  // customer.subscription.deleted only needs the id, which is stable across versions.
+  return event.data.object;
+}
+
 async function applyEvent(
   stripe: Stripe,
   event: Stripe.Event,
   pgClient?: pg.PoolClient
 ): Promise<ApplyResult> {
   const result: ApplyResult = { outbox: [], afterCommit: [] };
+  const fresh = await freshEventObject(stripe, event);
 
   // ---- one-time card: processing (pending ACH) ----
   if (event.type === 'payment_intent.processing') {
-    const pi = event.data.object as Stripe.PaymentIntent;
+    const pi = fresh as Stripe.PaymentIntent;
     if (!isOneTimeTithePi(pi)) return result;
     await writeOneTimeGift(stripe, pi, 'pending', pgClient);
     return result;
@@ -355,7 +381,7 @@ async function applyEvent(
 
   // ---- one-time card: succeeded ----
   if (event.type === 'payment_intent.succeeded') {
-    const pi = event.data.object as Stripe.PaymentIntent;
+    const pi = fresh as Stripe.PaymentIntent;
     if (!isOneTimeTithePi(pi)) return result;
     const gift = await writeOneTimeGift(stripe, pi, 'completed', pgClient);
     if (gift?.becameCompleted) {
@@ -374,7 +400,7 @@ async function applyEvent(
     event.type === 'payment_intent.payment_failed' ||
     event.type === 'payment_intent.canceled'
   ) {
-    const pi = event.data.object as Stripe.PaymentIntent;
+    const pi = fresh as Stripe.PaymentIntent;
     if (!isOneTimeTithePi(pi)) return result;
     await writeOneTimeGift(stripe, pi, 'failed', pgClient);
     return result;
@@ -384,7 +410,7 @@ async function applyEvent(
   if (event.type === 'invoice.paid') {
     const gift = await writeInvoiceGift(
       stripe,
-      event.data.object as Stripe.Invoice,
+      fresh as Stripe.Invoice,
       'completed',
       pgClient
     );
@@ -403,7 +429,7 @@ async function applyEvent(
 
   // ---- subscription invoice: failed ----
   if (event.type === 'invoice.payment_failed') {
-    const invoice = event.data.object as Stripe.Invoice;
+    const invoice = fresh as Stripe.Invoice;
     const gift = await writeInvoiceGift(stripe, invoice, 'failed', pgClient);
     if (gift?.becameFailed) {
       result.afterCommit.push(() =>
@@ -425,7 +451,7 @@ async function applyEvent(
 
   // ---- refund ----
   if (event.type === 'charge.refunded') {
-    const charge = event.data.object as Stripe.Charge;
+    const charge = fresh as Stripe.Charge;
     const piRef = charge.payment_intent;
     const piId = typeof piRef === 'string' ? piRef : piRef?.id;
     const refundCents =
