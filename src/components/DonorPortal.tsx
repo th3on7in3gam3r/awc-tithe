@@ -19,6 +19,7 @@ import { StripeCheckout } from './StripeCheckout';
 import { StewardshipFaq } from './StewardshipFaq';
 import { TurnstileWidget, getTurnstileSiteKey } from './TurnstileWidget';
 import { ManualGiftHandoff } from './ManualGiftHandoff';
+import { parseGiveLink, stripGiveLink } from '../lib/giveLink';
 
 type MethodId = 'card' | 'us_bank_account' | 'cashapp' | 'zelle' | 'venmo' | 'cash_app';
 type Step = 'details' | 'stripe' | 'manual' | 'done';
@@ -149,6 +150,24 @@ export const DonorPortal: React.FC<{
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // Links from AWC Connect / the church website can pre-select method and amount.
+  useEffect(() => {
+    const link = parseGiveLink(window.location.search);
+    if (link.frequency) setFrequency(link.frequency);
+    if (link.method) setMethod(link.method);
+    if (link.amount) {
+      if ((PRESETS as number[]).includes(link.amount)) {
+        setPresetAmount(link.amount);
+      } else {
+        setPresetAmount('custom');
+        setCustomAmountStr(String(link.amount));
+      }
+    }
+    if (link.method || link.amount || link.frequency || new URLSearchParams(window.location.search).has('from')) {
+      window.history.replaceState(null, '', stripGiveLink(window.location.pathname, window.location.search));
+    }
   }, []);
 
   // Coming back from a redirect-based payment (e.g. Cash App Pay on a phone)
