@@ -22,5 +22,6 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 );
 
-// Let React paint the first frame, then fade the cover out.
-window.requestAnimationFrame(() => window.setTimeout(dismissBootCover, 120));
+// A plain timer, not requestAnimationFrame: rAF never fires in background or
+// hidden tabs, which left the cover up indefinitely.
+window.setTimeout(dismissBootCover, 150);
