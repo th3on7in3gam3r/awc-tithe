@@ -25,7 +25,8 @@ export async function sendDonorCode(email: string, code: string): Promise<void> 
     resend.emails.send({
       from,
       to: normalized,
-      subject: 'Your AWC Tithe sign-in code',
+      // Code in the subject so Gmail doesn't fold repeat requests into one thread.
+      subject: `Your AWC Tithe sign-in code: ${code}`,
       html,
     });
 
