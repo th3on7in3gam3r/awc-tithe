@@ -218,13 +218,13 @@ export const DonorPortal: React.FC<{
   const methods: MethodOption[] = useMemo(() => {
     const list: MethodOption[] = [];
     if (stripeLive) {
-      list.push({ id: 'card', label: 'Card or Apple Pay', tag: 'Confirmed instantly', instant: true });
-      list.push({ id: 'us_bank_account', label: 'Bank account', tag: 'Lowest fee', instant: true });
+      list.push({ id: 'card', label: 'Card or Apple Pay', tag: 'Pay here · instant receipt', instant: true });
+      list.push({ id: 'us_bank_account', label: 'Bank account', tag: 'Pay here · lowest fee', instant: true });
       if (paymentOptions?.cashAppPay) {
         list.push({
           id: 'cashapp',
           label: 'Cash App',
-          tag: 'Confirmed instantly',
+          tag: 'Pay here · instant receipt',
           instant: true,
           disabledReason: frequency !== 'one-time' ? 'One-time gifts only' : undefined,
         });
@@ -232,14 +232,26 @@ export const DonorPortal: React.FC<{
     }
     const manualReason = frequency !== 'one-time' ? 'One-time gifts only' : undefined;
     if (paymentOptions?.zelle.enabled) {
-      list.push({ id: 'zelle', label: 'Zelle', tag: 'Confirmed by Finance', instant: false, disabledReason: manualReason });
+      list.push({ id: 'zelle', label: 'Zelle', tag: 'Send from your bank app', instant: false, disabledReason: manualReason });
     }
     if (paymentOptions?.venmo.enabled) {
-      list.push({ id: 'venmo', label: 'Venmo', tag: 'Confirmed by Finance', instant: false, disabledReason: manualReason });
+      list.push({
+        id: 'venmo',
+        label: 'Venmo',
+        tag: `Send to @${paymentOptions.venmo.handle}`,
+        instant: false,
+        disabledReason: manualReason,
+      });
     }
     // One Cash App tile: Cash App Pay (Stripe, instant) wins over send-to-$cashtag.
     if (paymentOptions?.cashApp?.enabled && !(stripeLive && paymentOptions?.cashAppPay)) {
-      list.push({ id: 'cash_app', label: 'Cash App', tag: 'Confirmed by Finance', instant: false, disabledReason: manualReason });
+      list.push({
+        id: 'cash_app',
+        label: 'Cash App',
+        tag: paymentOptions.cashApp.cashtag ? `Send to ${paymentOptions.cashApp.cashtag}` : 'Send from your Cash App',
+        instant: false,
+        disabledReason: manualReason,
+      });
     }
     return list;
   }, [stripeLive, paymentOptions, frequency]);
