@@ -98,6 +98,9 @@ async function main() {
     check('no donation exists before Finance verifies', !(await getGiftByTransactionId('zelle_ZL12345')));
     const donorList = await listManualGiftsForDonor('ruth@example.org');
     check('donor history shows the pending gift', donorList.length === 1 && donorList[0].status === 'submitted', donorList);
+    const { emailHasPriorGifts } = await import('../gifts/privacy');
+    check('Zelle-only donor can get a My giving sign-in code', await emailHasPriorGifts('RUTH@example.org'));
+    check('unknown email still gets no code', !(await emailHasPriorGifts('stranger@example.org')));
 
     // --- access control
     const anonList = await call('/api/manual-gifts/admin', undefined, undefined, 'GET');
