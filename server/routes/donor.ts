@@ -107,7 +107,33 @@ router.get('/me/gifts', async (req: Request, res: Response) => {
       awcSynced: false,
       encryptedToken: '',
     }));
-    const donations = [...result.donations, ...offlineAsDonations].sort((a, b) =>
+    const { listManualGiftsForDonor } = await import('../manualGifts/store');
+    const manual = await listManualGiftsForDonor(email);
+    const manualAsDonations = manual.map((g) => ({
+      id: g.id,
+      transactionId: g.id,
+      receiptNumber: g.memoCode,
+      donorId: result.donor?.id || '',
+      donorName: g.donorName,
+      donorEmail: email,
+      amount: g.amount,
+      feeCovered: false,
+      feeAmount: 0,
+      totalCharged: g.amount,
+      frequency: 'one-time' as const,
+      fundId: g.fundId,
+      fundName: g.fundName,
+      fundCode: g.fundCode,
+      paymentMethod: g.provider,
+      status: g.status === 'rejected' ? ('failed' as const) : ('pending' as const),
+      /** Pending Finance confirmation, or Finance could not find the payment. */
+      manualReview: g.status === 'rejected' ? ('not_found' as const) : ('pending' as const),
+      isAnonymous: g.isAnonymous,
+      timestamp: g.submittedAt || g.createdAt,
+      awcSynced: false,
+      encryptedToken: '',
+    }));
+    const donations = [...result.donations, ...offlineAsDonations, ...manualAsDonations].sort((a, b) =>
       b.timestamp.localeCompare(a.timestamp)
     );
     return res.json({

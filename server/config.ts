@@ -78,7 +78,38 @@ export const env = {
    * Always rejected when NODE_ENV=production (see assertProductionEnv).
    */
   devMemoryStore: process.env.DEV_MEMORY_STORE?.trim() === 'true',
+
+  /**
+   * Person-to-person giving (verified by Finance, never automatically).
+   * A method is offered to donors only when its recipient is set.
+   */
+  zelleRecipient: process.env.ZELLE_RECIPIENT?.trim() || '',
+  zelleRecipientName: process.env.ZELLE_RECIPIENT_NAME?.trim() || '',
+  /** Venmo username without the @ (e.g. anointedworshipcenter). */
+  venmoHandle: (process.env.VENMO_HANDLE?.trim() || '').replace(/^@/, ''),
+  /**
+   * Show the Cash App Pay tile (processed by Stripe, confirmed by webhook).
+   * Turn on only after Cash App Pay is enabled in the Stripe Dashboard.
+   */
+  stripeCashAppPay: process.env.STRIPE_CASHAPP_PAY_ENABLED?.trim() === 'true',
 };
+
+/** Public payment options for the giving page (no secrets). */
+export function publicPaymentOptions(): {
+  cashAppPay: boolean;
+  zelle: { enabled: boolean; recipient: string; recipientName: string };
+  venmo: { enabled: boolean; handle: string };
+} {
+  return {
+    cashAppPay: env.stripeCashAppPay,
+    zelle: {
+      enabled: Boolean(env.zelleRecipient),
+      recipient: env.zelleRecipient,
+      recipientName: env.zelleRecipientName || env.churchLegalName || env.churchName,
+    },
+    venmo: { enabled: Boolean(env.venmoHandle), handle: env.venmoHandle },
+  };
+}
 
 /** In-memory gifts/auth/audit/rate-limit only when opted in and not production. */
 export function memoryStoreAllowed(): boolean {

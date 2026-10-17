@@ -5,6 +5,12 @@ export interface IntegrationStatus {
   mode: IntegrationMode;
 }
 
+export interface PaymentOptions {
+  cashAppPay: boolean;
+  zelle: { enabled: boolean; recipient: string; recipientName: string };
+  venmo: { enabled: boolean; handle: string };
+}
+
 export interface ApiConfig {
   product: string;
   stripePublishableKey: string | null;
@@ -13,6 +19,8 @@ export interface ApiConfig {
     database?: IntegrationStatus;
   };
   giftStore?: 'neon' | 'memory';
+  minGiftCents?: number;
+  paymentOptions?: PaymentOptions;
   church?: {
     name?: string;
     legalEntityName?: string;
@@ -64,6 +72,8 @@ export interface ServerDonation {
   cardBrand?: string;
   cardLast4?: string;
   status: string;
+  /** Zelle/Venmo gift awaiting Finance, or one Finance could not find. */
+  manualReview?: 'pending' | 'not_found';
   refundedAmount?: number;
   dedication?: string;
   isAnonymous: boolean;
@@ -693,4 +703,121 @@ export async function retryDcbOutboxRow(id: string): Promise<{ ok: boolean }> {
     throw new Error(data.message || data.error || `Retry failed (${res.status})`);
   }
   return (await res.json()) as { ok: boolean };
+}
+
+// ---------------------------------------------------------------------------
+// Zelle / Venmo / Cash App gifts (confirmed by Finance)
+// ---------------------------------------------------------------------------
+
+export type ManualProvider = 'zelle' | 'venmo' | 'cash_app';
+export type ManualGiftStatus = 'initiated' | 'submitted' | 'verified' | 'rejected';
+
+export interface DonorManualGift {
+  id: string;
+  memoCode: string;
+  provider: ManualProvider;
+  status: ManualGiftStatus;
+  amount: number;
+  fundName: string;
+}
+
+export async function createManualGift(body: {
+  provider: 'zelle' | 'venmo';
+  amount: number;
+  fundId: string;
+  donorName: string;
+  donorEmail: string;
+  isAnonymous: boolean;
+  turnstileToken?: string | null;
+}): Promise<{ gift: DonorManualGift; claimToken: string }> {
+  const res = await fetch('/api/manual-gifts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+  return parseJson<{ ok: boolean; gift: DonorManualGift; claimToken: string }>(res);
+}
+
+export async function markManualGiftSent(input: {
+  id: string;
+  claimToken: string;
+  donorReference?: string;
+}): Promise<DonorManualGift> {
+  const res = await fetch(`/api/manual-gifts/${encodeURIComponent(input.id)}/sent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ claimToken: input.claimToken, donorReference: input.donorReference || '' }),
+  });
+  const data = await parseJson<{ ok: boolean; gift: DonorManualGift }>(res);
+  return data.gift;
+}
+
+export interface AdminManualGift {
+  id: string;
+  memoCode: string;
+  provider: ManualProvider;
+  status: ManualGiftStatus;
+  amount: number;
+  fundName: string;
+  donorName: string;
+  donorEmailMasked: string;
+  isAnonymous: boolean;
+  donorReference: string;
+  providerTransactionId: string | null;
+  receivedAmount: number | null;
+  receivedOn: string | null;
+  verifiedBy: string | null;
+  verifiedAt: string | null;
+  rejectionReason: string | null;
+  createdAt: string;
+  submittedAt: string | null;
+}
+
+export async function fetchAdminManualGifts(filter: 'open' | 'closed' | 'all' = 'open'): Promise<AdminManualGift[]> {
+  const res = await fetch(`/api/manual-gifts/admin?filter=${filter}`, { credentials: 'include' });
+  const data = await parseJson<{ ok: boolean; gifts: AdminManualGift[] }>(res);
+  return data.gifts || [];
+}
+
+export async function verifyAdminManualGift(
+  id: string,
+  body: { providerTransactionId: string; receivedAmount: number; receivedOn: string }
+): Promise<AdminManualGift> {
+  const res = await fetch(`/api/manual-gifts/admin/${encodeURIComponent(id)}/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+  return (await parseJson<{ ok: boolean; gift: AdminManualGift }>(res)).gift;
+}
+
+export async function rejectAdminManualGift(id: string, reason: string): Promise<AdminManualGift> {
+  const res = await fetch(`/api/manual-gifts/admin/${encodeURIComponent(id)}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ reason }),
+  });
+  return (await parseJson<{ ok: boolean; gift: AdminManualGift }>(res)).gift;
+}
+
+export async function recordAdminManualGift(body: {
+  provider: ManualProvider;
+  fundId: string;
+  donorName: string;
+  donorEmail: string;
+  providerTransactionId: string;
+  receivedAmount: number;
+  receivedOn: string;
+}): Promise<AdminManualGift> {
+  const res = await fetch('/api/manual-gifts/admin/record', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+  return (await parseJson<{ ok: boolean; gift: AdminManualGift }>(res)).gift;
 }

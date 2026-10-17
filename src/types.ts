@@ -61,6 +61,8 @@ export interface Donation {
   cardBrand?: string;
   cardLast4?: string;
   status: DonationStatus;
+  /** Zelle/Venmo gift awaiting Finance, or one Finance could not find. */
+  manualReview?: 'pending' | 'not_found';
   dedication?: string;
   isAnonymous: boolean;
   timestamp: string;

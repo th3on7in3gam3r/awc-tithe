@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { loadStripe, type Stripe } from '@stripe/stripe-js';
+import { loadStripe, type Appearance, type Stripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
 import { Lock } from 'lucide-react';
 import { createStripePaymentIntent, pollStripePaymentStatus, updateStripePaymentIntent } from '../lib/api';
@@ -19,6 +19,40 @@ interface StripeCheckoutProps {
   onProcessing: (result: { paymentIntentId: string; status: string; receiptNumber?: string }) => void;
   onError: (message: string) => void;
   onMethodChange?: (method: string) => void;
+  /** Tab to open first in the Payment Element (card, us_bank_account, cashapp). */
+  preferredMethod?: string;
+  /** Where redirect-based methods (Cash App Pay on a phone, some bank flows) come back to. */
+  returnUrl: string;
+  /** Button text, e.g. "Give $103.20 monthly". */
+  submitLabel: string;
+}
+
+const METHOD_ORDER = ['card', 'apple_pay', 'google_pay', 'us_bank_account', 'cashapp'];
+
+function stripeAppearance(): Appearance {
+  const dark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
+  return {
+    theme: dark ? 'night' : 'stripe',
+    variables: dark
+      ? {
+          colorPrimary: '#E9C979',
+          colorBackground: '#1E1412',
+          colorText: '#F4ECE2',
+          colorTextSecondary: '#BCA99F',
+          colorDanger: '#F2A99E',
+          borderRadius: '12px',
+          fontFamily: '"Instrument Sans", system-ui, sans-serif',
+        }
+      : {
+          colorPrimary: '#5A1218',
+          colorBackground: '#FFFDF8',
+          colorText: '#1F1412',
+          colorTextSecondary: '#6B5A55',
+          colorDanger: '#7A1E14',
+          borderRadius: '12px',
+          fontFamily: '"Instrument Sans", system-ui, sans-serif',
+        },
+  };
 }
 
 function StripePaymentForm({
@@ -27,18 +61,24 @@ function StripePaymentForm({
   onProcessing,
   onError,
   onMethodChange,
+  preferredMethod,
+  returnUrl,
+  submitLabel,
 }: {
   paymentIntentId: string;
   coverFees: boolean;
   onProcessing: StripeCheckoutProps['onProcessing'];
   onError: StripeCheckoutProps['onError'];
   onMethodChange?: (method: string) => void;
+  preferredMethod?: string;
+  returnUrl: string;
+  submitLabel: string;
 }) {
   const stripe = useStripe();
   const elements = useElements();
   const [submitting, setSubmitting] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
-  const [methodType, setMethodType] = useState('card');
+  const [methodType, setMethodType] = useState(preferredMethod || 'card');
 
   useEffect(() => {
     let cancelled = false;
@@ -70,6 +110,7 @@ function StripePaymentForm({
       const { error, paymentIntent } = await stripe.confirmPayment({
         elements,
         redirect: 'if_required',
+        confirmParams: { return_url: returnUrl },
       });
       if (error) {
         onError(error.message || 'Payment failed.');
@@ -96,10 +137,14 @@ function StripePaymentForm({
     }
   };
 
+  const order = preferredMethod
+    ? [preferredMethod, ...METHOD_ORDER.filter((m) => m !== preferredMethod)]
+    : METHOD_ORDER;
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <PaymentElement
-        options={{ layout: 'tabs' }}
+        options={{ layout: 'tabs', paymentMethodOrder: order }}
         onChange={(event) => {
           const type = event.value?.type;
           if (type && type !== methodType) {
@@ -112,10 +157,10 @@ function StripePaymentForm({
         type="button"
         disabled={!stripe || submitting || confirmed}
         onClick={handlePay}
-        className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-church-burgundy hover:bg-church-burgundy-light disabled:opacity-60 text-white font-semibold py-3 px-4 transition-colors"
+        className="w-full min-h-[60px] inline-flex items-center justify-center gap-2.5 rounded-full bg-awc-primary text-awc-on-primary text-[17px] font-semibold tracking-[0.01em] transition-[transform,box-shadow,opacity] hover:-translate-y-px hover:shadow-[0_10px_28px_rgba(59,10,13,0.28)] disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-awc-gold-soft"
       >
-        <Lock className="h-4 w-4" />
-        {submitting ? 'Processing…' : confirmed ? 'Gift submitted' : 'Give now'}
+        <Lock className="h-4 w-4" aria-hidden="true" />
+        {submitting ? 'Processing…' : confirmed ? 'Gift submitted' : submitLabel}
       </button>
     </div>
   );
@@ -136,6 +181,9 @@ export const StripeCheckout: React.FC<StripeCheckoutProps> = ({
   onProcessing,
   onError,
   onMethodChange,
+  preferredMethod,
+  returnUrl,
+  submitLabel,
 }) => {
   const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
@@ -180,17 +228,31 @@ export const StripeCheckout: React.FC<StripeCheckoutProps> = ({
   }, [amount, donorEmail, donorName, fundCode, fundId, fundName, frequency, isAnonymous, turnstileToken, onError]);
 
   if (loading || !clientSecret || !paymentIntentId || !stripePromise) {
-    return <p className="text-sm text-slate-600">Preparing secure checkout…</p>;
+    return (
+      <div className="flex min-h-[120px] items-center justify-center rounded-2xl border border-dashed border-awc-line text-sm text-awc-muted" role="status">
+        Preparing secure checkout…
+      </div>
+    );
   }
 
   return (
-    <Elements stripe={stripePromise} options={{ clientSecret }}>
+    <Elements
+      stripe={stripePromise}
+      options={{
+        clientSecret,
+        appearance: stripeAppearance(),
+        fonts: [{ cssSrc: 'https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&display=swap' }],
+      }}
+    >
       <StripePaymentForm
         paymentIntentId={paymentIntentId}
         coverFees={coverFees}
         onProcessing={onProcessing}
         onError={onError}
         onMethodChange={onMethodChange}
+        preferredMethod={preferredMethod}
+        returnUrl={returnUrl}
+        submitLabel={submitLabel}
       />
     </Elements>
   );

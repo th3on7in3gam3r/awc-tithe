@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Follow the app's dark-mode toggle (.dark on <html>), not only the OS setting. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-church-burgundy: #4a0404;
   --color-church-burgundy-light: #7a1414;
@@ -7,8 +10,89 @@
   --color-church-gold: #d4af37;
   --color-church-gold-light: #f4cf67;
   --color-church-gold-dark: #b4942e;
-  --font-sans: 'Source Sans 3', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Instrument Sans', 'Source Sans 3', ui-sans-serif, system-ui, sans-serif;
   --font-serif: 'Cormorant Garamond', Georgia, serif;
+}
+
+/*
+ * 2026 giving redesign tokens. Components use bg-awc-*, text-awc-*, border-awc-*.
+ * Values flip under .dark so the existing dark-mode toggle keeps working.
+ */
+@theme inline {
+  --color-awc-cream: var(--awc-cream);
+  --color-awc-paper: var(--awc-paper);
+  --color-awc-sand: var(--awc-sand);
+  --color-awc-line: var(--awc-line);
+  --color-awc-ink: var(--awc-ink);
+  --color-awc-muted: var(--awc-muted);
+  --color-awc-wine: var(--awc-wine);
+  --color-awc-wine-deep: var(--awc-wine-deep);
+  --color-awc-on-wine: var(--awc-on-wine);
+  --color-awc-on-wine-muted: var(--awc-on-wine-muted);
+  --color-awc-gold: var(--awc-gold);
+  --color-awc-gold-soft: var(--awc-gold-soft);
+  --color-awc-accent: var(--awc-accent);
+  --color-awc-primary: var(--awc-primary);
+  --color-awc-on-primary: var(--awc-on-primary);
+  --color-awc-selected: var(--awc-selected);
+  --color-awc-on-selected: var(--awc-on-selected);
+  --color-awc-ok: var(--awc-ok);
+  --color-awc-ok-bg: var(--awc-ok-bg);
+  --color-awc-warn: var(--awc-warn);
+  --color-awc-warn-bg: var(--awc-warn-bg);
+  --color-awc-warn-line: var(--awc-warn-line);
+  --color-awc-bad: var(--awc-bad);
+  --color-awc-bad-bg: var(--awc-bad-bg);
+}
+
+:root {
+  --awc-cream: #F7F1E7;
+  --awc-paper: #FFFDF8;
+  --awc-sand: #EDE4D4;
+  --awc-line: #E6DCCB;
+  --awc-ink: #1F1412;
+  --awc-muted: #6B5A55;
+  --awc-wine: #3B0A0D;
+  --awc-wine-deep: #2A0709;
+  --awc-on-wine: #F7F1E7;
+  --awc-on-wine-muted: #E2D2C5;
+  --awc-gold: #E9C979;
+  --awc-gold-soft: #C99A3E;
+  --awc-accent: #9A6F22;
+  --awc-primary: #5A1218;
+  --awc-on-primary: #FFFDF8;
+  --awc-selected: #3B0A0D;
+  --awc-on-selected: #FFFDF8;
+  --awc-ok: #24502E;
+  --awc-ok-bg: #E3EFE3;
+  --awc-warn: #6E4708;
+  --awc-warn-bg: #FBF0D6;
+  --awc-warn-line: #E8D29E;
+  --awc-bad: #7A1E14;
+  --awc-bad-bg: #F6E1DE;
+}
+
+.dark {
+  --awc-cream: #140C0B;
+  --awc-paper: #1E1412;
+  --awc-sand: #2A1D1A;
+  --awc-line: #3A2A26;
+  --awc-ink: #F4ECE2;
+  --awc-muted: #BCA99F;
+  --awc-wine: #2A0709;
+  --awc-wine-deep: #1A0405;
+  --awc-accent: #E9C979;
+  --awc-primary: #E9C979;
+  --awc-on-primary: #2A0709;
+  --awc-selected: #E9C979;
+  --awc-on-selected: #2A0709;
+  --awc-ok: #A8D5B0;
+  --awc-ok-bg: #1E3324;
+  --awc-warn: #F2CF86;
+  --awc-warn-bg: #3A2A0C;
+  --awc-warn-line: #6B5220;
+  --awc-bad: #F2A99E;
+  --awc-bad-bg: #3D1712;
 }
 
 /* Explicit Vault utilities — guaranteed even if @theme utilities fail to cascade */
@@ -74,7 +158,7 @@
 
 @layer base {
   body {
-    font-family: 'Source Sans 3', ui-sans-serif, system-ui, sans-serif;
+    font-family: 'Instrument Sans', 'Source Sans 3', ui-sans-serif, system-ui, sans-serif;
     background-color: #F7F4EF;
     color: #0f172a;
   }
@@ -87,10 +171,12 @@
 
 .font-serif-display {
   font-family: 'Cormorant Garamond', Georgia, serif;
+  /* Cormorant defaults to old-style figures ("100" reads as "I OO") */
+  font-variant-numeric: lining-nums;
 }
 
 .tabular-nums {
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: lining-nums tabular-nums;
 }
 
 @keyframes give-hero-rise {
@@ -225,5 +311,25 @@ body {
   .print-only {
     display: block !important;
     visibility: visible !important;
+  }
+}
+
+/* Number input without spinners for the big gift amount */
+.awc-amount-input::-webkit-outer-spin-button,
+.awc-amount-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.awc-amount-input {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .give-hero-rise,
+  .give-hero-rise-delay,
+  .give-hero-media,
+  .give-form-enter {
+    animation: none;
   }
 }

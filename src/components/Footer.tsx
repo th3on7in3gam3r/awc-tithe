@@ -27,7 +27,7 @@ export const Footer: React.FC<FooterProps> = ({
   const ein = config.ein?.trim() || '';
 
   return (
-    <footer className="mt-20 text-white py-16 no-print" style={{ backgroundColor: '#4A0404' }}>
+    <footer className="no-print bg-awc-wine-deep py-14 text-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div
           className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 pb-12 mb-8"
@@ -42,28 +42,23 @@ export const Footer: React.FC<FooterProps> = ({
                 style={{ border: '1px solid rgba(212,175,55,0.35)' }}
               />
               <div>
-                <h3 className="text-xl font-extrabold tracking-tight text-white">AWC Tithe</h3>
-                <p
-                  className="text-[10px] uppercase tracking-[0.2em] font-semibold"
-                  style={{ color: 'rgba(212,175,55,0.85)' }}
-                >
-                  {config.name}
-                </p>
+                <h3 className="font-serif-display text-2xl font-semibold text-white">{config.name}</h3>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-awc-gold">Online Giving</p>
               </div>
             </div>
             <div className="space-y-1 max-w-md">
               {legalName ? (
-                <p className="text-[11px] text-white/55 leading-relaxed">{legalName}</p>
+                <p className="text-[13px] text-white/75 leading-relaxed">{legalName}</p>
               ) : null}
               {locationLine ? (
-                <p className="text-[11px] text-white/45 leading-relaxed">{locationLine}</p>
+                <p className="text-[13px] text-white/70 leading-relaxed">{locationLine}</p>
               ) : null}
-              <p className="text-[11px] text-white/40 leading-relaxed">
+              <p className="text-[13px] text-white/65 leading-relaxed">
                 Federal Tax-Exempt Status 501(c)(3) Public Charity
                 {ein ? ` · EIN: ${ein}` : ''}
               </p>
             </div>
-            <div className="flex flex-col gap-1.5 pt-1 text-[11px] text-white/55">
+            <div className="flex flex-col gap-1.5 pt-1 text-[13px] text-white/75">
               {config.email?.trim() ? (
                 <a
                   href={`mailto:${config.email}`}
@@ -87,12 +82,11 @@ export const Footer: React.FC<FooterProps> = ({
 
           <div>
             <h4
-              className="text-[10px] font-black uppercase tracking-[0.4em] mb-3"
-              style={{ color: 'rgba(212,175,55,0.65)' }}
+              className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-awc-gold"
             >
               {portalMode === 'public' ? 'Navigation' : 'Console'}
             </h4>
-            <div className="flex flex-wrap items-center gap-5 text-xs text-white/55">
+            <div className="flex flex-wrap items-center gap-5 text-sm text-white/75">
               {portalMode === 'public' ? (
                 <>
                   <button onClick={() => setActiveTab('give')} className="hover:text-[#D4AF37] transition-colors">
@@ -132,7 +126,7 @@ export const Footer: React.FC<FooterProps> = ({
           </div>
         </div>
 
-        <div className="flex flex-col gap-4 text-[11px] text-white/45">
+        <div className="flex flex-col gap-4 text-[13px] text-white/65">
           <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
             <div className="flex items-center gap-1.5">
               <ShieldCheck className="h-3.5 w-3.5 shrink-0" style={{ color: '#D4AF37' }} />

@@ -8,6 +8,7 @@ import { ExportDataModal } from './ExportDataModal';
 import { IntegrationsSettingsPanel } from './IntegrationsSettingsPanel';
 import { GivingGoalsAdmin } from './GivingGoalsAdmin';
 import { YearEndStatementsAdmin } from './YearEndStatementsAdmin';
+import { ManualGiftsPanel } from './ManualGiftsPanel';
 import { DcbSyncStatusPanel } from './DcbSyncStatusPanel';
 import { auditStaffTwoFactor, fetchActivityAudit, fetchStaffSession, recordOfflineGift } from '../lib/api';
 import { staffAuthClient } from '../lib/authClient';
@@ -143,6 +144,7 @@ export const AdminDashboard: React.FC = () => {
     | 'giving-goals'
     | 'year-end'
     | 'dcb-sync'
+    | 'verify-payments'
   >('analytics');
 
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -354,6 +356,7 @@ export const AdminDashboard: React.FC = () => {
             { id: 'transactions', label: 'Transactions', count: donations.length },
             { id: 'donors', label: 'Donor CRM', count: donors.length },
             { id: 'audit', label: 'Audit', count: null as number | null },
+            { id: 'verify-payments', label: 'Verify Zelle & Venmo', count: null as number | null },
             { id: 'offline', label: 'Contribution Log', count: null as number | null },
             { id: 'integrations', label: 'Integrations & Settings', count: null },
             ...(isPortalAdmin ? [{ id: 'dcb-sync' as const, label: 'DCB Sync', count: null as number | null }] : []),
@@ -737,8 +740,8 @@ export const AdminDashboard: React.FC = () => {
               </h3>
             </div>
             <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-              Record gifts received through Cash App, Zelle, Venmo, check, or cash.
-              Sync pushes them into the master ledger.
+              Record checks and cash. Zelle, Venmo, and Cash App payments go through
+              Verify Zelle &amp; Venmo so each transaction ID can only be counted once.
             </p>
 
             <form onSubmit={(e) => void handleQueueOffline(e)} className="space-y-4 text-xs">
@@ -785,9 +788,6 @@ export const AdminDashboard: React.FC = () => {
                     onChange={(e) => setOfflineMethod(e.target.value as StaffContributionMethod)}
                     className="w-full px-3 py-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                   >
-                    <option value="cash_app">Cash App</option>
-                    <option value="zelle">Zelle</option>
-                    <option value="venmo">Venmo</option>
                     <option value="check">Physical Check</option>
                     <option value="cash">Cash Envelope</option>
                   </select>
@@ -948,6 +948,8 @@ export const AdminDashboard: React.FC = () => {
           <IntegrationsSettingsPanel />
         </div>
       )}
+
+      {activeAdminSubTab === 'verify-payments' && <ManualGiftsPanel isAdmin={isPortalAdmin} />}
 
       {activeAdminSubTab === 'dcb-sync' && isPortalAdmin && (
         <div className="mt-6">

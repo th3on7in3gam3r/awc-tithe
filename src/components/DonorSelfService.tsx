@@ -16,8 +16,12 @@ import {
 import { TurnstileWidget } from './TurnstileWidget';
 import { AnnualGivingSummaryCard } from './AnnualGivingSummaryCard';
 import {
+  AlertCircle,
+  CheckCircle2,
+  Clock,
   Download,
   FileText,
+  RotateCcw,
   ExternalLink,
   Lock,
   LogOut,
@@ -34,6 +38,60 @@ interface DonorSelfServiceProps {
   /** Prefill from a just-completed gift (session handoff). */
   initialEmail?: string;
   onConsumedInitialEmail?: () => void;
+}
+
+const METHOD_LABEL: Record<string, string> = { zelle: 'Zelle', venmo: 'Venmo', cash_app: 'Cash App' };
+
+/** Text + icon, never color alone. */
+function GiftStatusBadge({ gift }: { gift: Donation }) {
+  const base = 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[12px] font-semibold';
+  if (gift.manualReview === 'pending') {
+    return (
+      <span className={`${base} bg-awc-warn-bg text-awc-warn`} title={`Memo code ${gift.receiptNumber}`}>
+        <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+        Pending · Finance is confirming
+      </span>
+    );
+  }
+  if (gift.manualReview === 'not_found') {
+    return (
+      <span className={`${base} bg-awc-bad-bg text-awc-bad`}>
+        <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />
+        Not found · contact Finance
+      </span>
+    );
+  }
+  if (gift.status === 'completed') {
+    const manual = METHOD_LABEL[gift.paymentMethod];
+    return (
+      <span className={`${base} bg-awc-ok-bg text-awc-ok`}>
+        <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+        {manual ? 'Confirmed by Finance' : 'Confirmed'}
+      </span>
+    );
+  }
+  if (gift.status === 'pending') {
+    return (
+      <span className={`${base} bg-awc-warn-bg text-awc-warn`}>
+        <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+        Processing
+      </span>
+    );
+  }
+  if (gift.status === 'refunded') {
+    return (
+      <span className={`${base} bg-awc-sand text-awc-muted`}>
+        <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+        Refunded
+      </span>
+    );
+  }
+  return (
+    <span className={`${base} bg-awc-bad-bg text-awc-bad`}>
+      <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />
+      Didn't go through
+    </span>
+  );
 }
 
 export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
@@ -83,6 +141,7 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
       cardBrand: sd.cardBrand,
       cardLast4: sd.cardLast4,
       status: sd.status as Donation['status'],
+      manualReview: sd.manualReview,
       dedication: sd.dedication,
       isAnonymous: sd.isAnonymous,
       timestamp: sd.timestamp,
@@ -743,6 +802,7 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
                           <th className="px-6 py-3 font-medium">Fund</th>
                           <th className="px-6 py-3 font-medium">Frequency</th>
                           <th className="px-6 py-3 font-medium text-right">Amount</th>
+                          <th className="px-6 py-3 font-medium">Status</th>
                           <th className="px-6 py-3 font-medium text-center">Receipt</th>
                         </tr>
                       </thead>
@@ -750,8 +810,14 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
                         {donorGifts.map((gift) => (
                           <tr
                             key={gift.id}
-                            className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
-                            onClick={() => setSelectedReceipt(gift)}
+                            className={`transition-colors ${
+                              gift.status === 'completed'
+                                ? 'hover:bg-slate-50/80 dark:hover:bg-slate-800/50 cursor-pointer'
+                                : ''
+                            }`}
+                            onClick={() => {
+                              if (gift.status === 'completed') setSelectedReceipt(gift);
+                            }}
                           >
                             <td className="px-6 py-3.5 font-mono text-slate-600 dark:text-slate-400 whitespace-nowrap">
                               {new Date(gift.timestamp).toLocaleDateString('en-US', {
@@ -772,11 +838,25 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
                             <td className="px-6 py-3.5 text-right font-mono font-bold text-slate-900 dark:text-white tabular-nums">
                               ${gift.amount.toFixed(2)}
                             </td>
+                            <td className="px-6 py-3.5">
+                              <GiftStatusBadge gift={gift} />
+                            </td>
                             <td className="px-6 py-3.5 text-center">
-                              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-church-burgundy hover:text-church-burgundy dark:text-church-gold">
-                                <span>View</span>
-                                <ExternalLink className="h-3 w-3" />
-                              </span>
+                              {gift.status === 'completed' ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedReceipt(gift);
+                                  }}
+                                  className="inline-flex min-h-9 items-center gap-1 text-[12px] font-semibold text-church-burgundy hover:underline dark:text-church-gold"
+                                >
+                                  <span>View</span>
+                                  <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                                </button>
+                              ) : (
+                                <span className="text-[12px] text-slate-400" aria-label="No receipt yet">—</span>
+                              )}
                             </td>
                           </tr>
                         ))}

@@ -10,6 +10,7 @@ import {
   databaseStatus,
   env,
   isProduction,
+  publicPaymentOptions,
   stripeStatus,
 } from './config';
 import { initGiftStore, giftStoreMode } from './gifts/store';
@@ -24,6 +25,8 @@ import fundsRoutes from './routes/funds';
 import churchRoutes from './routes/church';
 import auditRoutes from './routes/audit';
 import statementsRoutes from './routes/statements';
+import manualGiftsRoutes from './routes/manualGifts';
+import { ensureManualGiftsSchema } from './manualGifts/store';
 import { seedDefaultFund } from './funds/store';
 import { ensureChurchSettings, getChurchSettings } from './church/settings';
 import { startDcbOutboxWorker } from './dcb/worker';
@@ -165,6 +168,7 @@ app.get('/api/config', async (_req, res) => {
     minGiftCents: env.minGiftCents,
     integrations: { stripe, database },
     giftStore: giftStoreMode(),
+    paymentOptions: publicPaymentOptions(),
     church: church
       ? {
           name: church.name,
@@ -198,6 +202,7 @@ app.use('/api/funds', fundsRoutes);
 app.use('/api/church', churchRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/statements', statementsRoutes);
+app.use('/api/manual-gifts', manualGiftsRoutes);
 
 // Serve Vite production build (Render single-service deploy)
 app.use(express.static(distPath));
@@ -242,6 +247,7 @@ async function boot() {
   const store = await initGiftStore();
   await seedDefaultFund();
   await ensureChurchSettings();
+  await ensureManualGiftsSchema();
 
   // Start DCB outbox delivery worker (no-ops if no DATABASE_URL)
   startDcbOutboxWorker();

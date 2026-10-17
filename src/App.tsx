@@ -102,7 +102,7 @@ function MainApp() {
   const staffUnlocked = portalMode === 'admin' && isMfaVerified;
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#F7F4EF] dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
+    <div className="min-h-screen flex flex-col bg-awc-cream text-slate-900 dark:text-slate-100 transition-colors">
       <Navbar
         portalMode={portalMode}
         setPortalMode={setPortalMode}

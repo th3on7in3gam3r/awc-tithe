@@ -17,6 +17,9 @@ import { auth } from '../auth/betterAuth';
 
 const router = Router();
 
+/** Payment Element method types we price. Everything but bank uses card-style fees. */
+const FEE_METHOD_TYPES = new Set(['card', 'us_bank_account', 'cashapp', 'apple_pay', 'google_pay', 'link']);
+
 function getStripe(): Stripe | null {
   if (!stripeStatus().configured) return null;
   return createStripeClient(env.stripeSecretKey);
@@ -255,7 +258,7 @@ router.post('/update-payment-intent', async (req: Request, res: Response) => {
     return res.status(404).json({ error: 'NOT_FOUND' });
   }
   const methodType = String(paymentMethodType || 'card');
-  if (methodType !== 'card' && methodType !== 'us_bank_account') {
+  if (!FEE_METHOD_TYPES.has(methodType)) {
     return res.status(400).json({ error: 'UNSUPPORTED_PAYMENT_METHOD' });
   }
   try {

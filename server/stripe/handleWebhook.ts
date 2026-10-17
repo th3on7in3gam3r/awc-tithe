@@ -67,6 +67,7 @@ function frequencyOf(value: string | undefined): GiftFrequency {
 
 function methodOf(type: string | undefined): GiftPaymentMethod {
   if (type === 'us_bank_account' || type === 'ach') return 'us_bank_account';
+  if (type === 'cashapp') return 'cash_app';
   if (
     type === 'card' ||
     type === 'apple_pay' ||

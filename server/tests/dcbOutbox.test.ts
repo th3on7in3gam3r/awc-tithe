@@ -20,7 +20,6 @@ process.env.DATABASE_URL = ''; // force memory mode
 process.env.DEV_MEMORY_STORE = 'true';
 
 import { randomBytes } from 'crypto';
-import { nextAttemptMinutes } from '../dcb/outbox';
 
 // ---------------------------------------------------------------------------
 // Minimal fakes
@@ -113,6 +112,9 @@ function makeFakeClient(): { query: FakeClientQuery; release: () => void } {
 // ---------------------------------------------------------------------------
 
 async function main() {
+  // Loaded here, not with a static import: static imports run before the
+  // process.env assignments above, so config would miss DEV_MEMORY_STORE.
+  const { nextAttemptMinutes } = await import('../dcb/outbox');
   const express = (await import('express')).default;
   const dcbRoutes = (await import('../routes/dcb')).default;
   const staffRoutes = (await import('../routes/staff')).default;

@@ -80,3 +80,25 @@ Public `GET /api/gifts/by-email` was removed (donor privacy). See `docs/privacy-
 Stripe fee/webhook checks: [`docs/stripe-webhook-test-plan.md`](docs/stripe-webhook-test-plan.md).
 
 Set church legal/support fields in Render env (`CHURCH_LEGAL_NAME`, `CHURCH_ADDRESS`, `CHURCH_CITY_STATE_ZIP`, `CHURCH_EIN`, `CHURCH_PHONE`, `CHURCH_SUPPORT_EMAIL`, etc.) — see `.env.example`. Address for AWC: `4 School St` / `Acton, MA 01720`. Leave `CHURCH_EIN` blank until the Pastor provides it; blank values are omitted from the footer and receipts (no fake EIN).
+
+## Zelle, Venmo, and Cash App
+
+Card, bank, and Cash App Pay gifts go through Stripe and are confirmed by the Stripe webhook.
+
+Zelle and Venmo have no webhook the church can use, so they are confirmed by Finance:
+
+1. The donor picks Zelle or Venmo and gets a memo code such as `AWC-7K3Q`.
+2. Tapping "I've sent it" only marks the gift **pending**. It is never counted as received.
+3. In the Staff Portal, under **Verify Zelle & Venmo**, an administrator (with 2FA) matches the memo code to the church's Zelle or Venmo history and enters the payment's transaction ID.
+4. Verifying writes the completed gift, sends the receipt, and queues it for AWC DCB in one transaction. Each transaction ID can be verified once per provider.
+
+Payments that arrived without the giving page are entered with **Record a payment** and follow the same duplicate check. Checks and cash stay in the Contribution Log.
+
+Settings (see `.env.example`):
+
+| Variable | What it does |
+| --- | --- |
+| `ZELLE_RECIPIENT` | Church's Zelle email or phone. Zelle appears only when set. |
+| `ZELLE_RECIPIENT_NAME` | Name donors see in Zelle (defaults to `CHURCH_LEGAL_NAME`). |
+| `VENMO_HANDLE` | Venmo business profile username, without `@`. |
+| `STRIPE_CASHAPP_PAY_ENABLED` | `true` after Cash App Pay is turned on in the Stripe Dashboard. |
