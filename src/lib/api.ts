@@ -9,7 +9,7 @@ export interface PaymentOptions {
   cashAppPay: boolean;
   zelle: { enabled: boolean; recipient: string; recipientName: string };
   venmo: { enabled: boolean; handle: string };
-  cashApp?: { enabled: boolean; recipient: string; cashtag: string | null };
+  cashApp?: { enabled: boolean; recipient: string; recipientName?: string; cashtag: string | null };
 }
 
 export interface ApiConfig {

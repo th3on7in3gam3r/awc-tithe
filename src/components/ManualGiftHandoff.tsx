@@ -90,7 +90,7 @@ export const ManualGiftHandoff: React.FC<ManualGiftHandoffProps> = ({
   const providerName = isZelle ? 'Zelle' : isCashApp ? 'Cash App' : 'Venmo';
   const cashApp = paymentOptions.cashApp;
   const cashAppLink = cashApp?.cashtag
-    ? `https://cash.app/${encodeURIComponent(cashApp.cashtag)}/${gift.amount.toFixed(2)}`
+    ? `https://cash.app/${cashApp.cashtag}/${gift.amount.toFixed(2)}`
     : null;
   const venmoHandle = paymentOptions.venmo.handle;
   const venmoLink = `https://venmo.com/${encodeURIComponent(venmoHandle)}?txn=pay&amount=${gift.amount.toFixed(2)}&note=${encodeURIComponent(gift.memoCode)}`;
@@ -190,7 +190,11 @@ export const ManualGiftHandoff: React.FC<ManualGiftHandoffProps> = ({
               )}
             </Step>
             <Step n={2} title="Send to the church">
-              <CopyRow label="Cash App recipient" value={cashApp.recipient} hint="Enter this in the To field" />
+              <CopyRow
+                label="Cash App recipient"
+                value={cashApp.recipient}
+                hint={cashApp.recipientName ? `Shows as ${cashApp.recipientName}` : 'Enter this in the To field'}
+              />
             </Step>
           </>
         ) : (

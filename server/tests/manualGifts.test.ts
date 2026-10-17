@@ -78,6 +78,17 @@ async function main() {
     check('zelle enabled from env', opts.zelle.enabled && opts.zelle.recipient === 'giving@example.org');
     check('cash app enabled from env', opts.cashApp.enabled && opts.cashApp.recipient === '508-454-3599');
     check('phone number is not treated as a $cashtag link', opts.cashApp.cashtag === null);
+    {
+      const { env } = await import('../config');
+      const saved = env.cashAppRecipient;
+      env.cashAppRecipient = '$awcgiveplus';
+      env.cashAppRecipientName = 'Anointed Worship Center';
+      const tagged = publicPaymentOptions().cashApp;
+      check('$cashtag enables the Open Cash App link', tagged.cashtag === '$awcgiveplus', tagged);
+      check('Cash App account name is passed to donors', tagged.recipientName === 'Anointed Worship Center', tagged);
+      env.cashAppRecipient = saved;
+      env.cashAppRecipientName = '';
+    }
 
     // --- donor create
     const bad = await call('/api/manual-gifts', { ...donor, provider: 'paypal', amount: 50 });
