@@ -407,6 +407,12 @@ export const DonorPortal: React.FC<{
         {/* ---------------------------------------------------------------- */}
         <section aria-label="Your gift" className="w-full min-w-0 px-4 py-12 sm:px-8 sm:py-16 lg:w-[58%] lg:px-12 lg:py-16">
           <div id="give-form" className="give-form-enter mx-auto w-full max-w-[600px] scroll-mt-24">
+            {apiConfig?.integrations.stripe.mode === 'sandbox' ? (
+              <div className="mb-8 rounded-xl border border-awc-warn-line bg-awc-warn-bg px-4 py-3 text-sm leading-relaxed text-awc-warn" role="note">
+                <strong className="font-semibold">Test mode.</strong> Card and bank payments are not real yet and no money
+                will be taken. Use Stripe test card 4242 4242 4242 4242 to try it.
+              </div>
+            ) : null}
             {errorMessage && step !== 'done' ? (
               <div className="mb-8 flex items-start gap-2.5 rounded-xl bg-awc-bad-bg px-4 py-3 text-sm text-awc-bad" role="alert">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
