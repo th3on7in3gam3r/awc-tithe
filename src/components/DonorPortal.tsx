@@ -72,7 +72,7 @@ export const DonorPortal: React.FC<{
   /** Turnstile tokens are single-use: remount the widget whenever we return to the form. */
   const [turnstileKey, setTurnstileKey] = useState(0);
 
-  const [frequency, setFrequency] = useState<DonationFrequency>('monthly');
+  const [frequency, setFrequency] = useState<DonationFrequency>('one-time');
   const [selectedFundId, setSelectedFundId] = useState<string>(
     () => (initialFundId && funds.some((f) => f.id === initialFundId) ? initialFundId : funds[0]?.id) || 'fund-tithes'
   );
