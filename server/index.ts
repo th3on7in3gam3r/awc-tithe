@@ -27,6 +27,7 @@ import auditRoutes from './routes/audit';
 import statementsRoutes from './routes/statements';
 import manualGiftsRoutes from './routes/manualGifts';
 import { ensureManualGiftsSchema } from './manualGifts/store';
+import { maybeBootstrapAdminInvite } from './auth/bootstrapAdmin';
 import { seedDefaultFund } from './funds/store';
 import { ensureChurchSettings, getChurchSettings } from './church/settings';
 import { startDcbOutboxWorker } from './dcb/worker';
@@ -248,6 +249,9 @@ async function boot() {
   await seedDefaultFund();
   await ensureChurchSettings();
   await ensureManualGiftsSchema();
+  await maybeBootstrapAdminInvite().catch((err) =>
+    console.error('[bootstrap] admin invite failed', err instanceof Error ? err.message : err)
+  );
 
   // Start DCB outbox delivery worker (no-ops if no DATABASE_URL)
   startDcbOutboxWorker();
