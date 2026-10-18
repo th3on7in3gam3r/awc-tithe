@@ -115,6 +115,7 @@ router.post('/', payRateLimitMiddleware, requireTurnstile, async (req: Request, 
       donorName: String(body.donorName || ''),
       donorEmail: String(body.donorEmail || ''),
       isAnonymous: body.isAnonymous === true,
+      externalRef: body.externalRef == null ? null : String(body.externalRef),
     });
     return sendResult(res, result, (v) => ({ gift: donorView(v.gift), claimToken: v.claimToken }));
   } catch (err) {

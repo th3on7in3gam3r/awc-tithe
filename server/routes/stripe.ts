@@ -14,6 +14,8 @@ import { requireTurnstile, validateMinGiftAmount } from '../middleware/turnstile
 import { computeProcessingFee } from '../../shared/fees';
 import { fromNodeHeaders } from 'better-auth/node';
 import { auth } from '../auth/betterAuth';
+import { linkTransactionToRef } from '../externalRefs/store';
+import { normalizeExternalRef } from '../../shared/externalRef';
 
 const router = Router();
 
@@ -122,7 +124,9 @@ router.post(
       isAnonymous = false,
       coverFees = false,
       paymentMethodType,
+      externalRef: rawExternalRef,
     } = req.body as Record<string, unknown>;
+    const externalRef = normalizeExternalRef(rawExternalRef);
 
     const requestedMethod = String(paymentMethodType || '');
     const methodTypes = checkoutMethodTypes(requestedMethod);
@@ -157,6 +161,9 @@ router.post(
       const customerId = email ? await ensureStripeCustomer(stripe, email, name) : undefined;
 
       const frequencyName = String(frequency || 'one-time');
+      if (externalRef && frequencyName !== 'one-time') {
+        return res.status(400).json({ error: 'ONE_TIME_ONLY', message: 'An event gift is a one-time gift.' });
+      }
       if (frequencyName !== 'one-time') {
         if (!customerId) {
           return res.status(400).json({ error: 'EMAIL_REQUIRED', message: 'A valid email is required for recurring gifts.' });
@@ -255,10 +262,12 @@ router.post(
           frequency: String(frequency || 'one-time'),
           isAnonymous: String(parseBoolean(isAnonymous)),
           stripeCustomerId: customerId || '',
+          externalRef: externalRef || '',
         },
         statement_descriptor_suffix: 'AWC TITHE',
       });
 
+      if (externalRef) await linkTransactionToRef(paymentIntent.id, externalRef);
       rememberPaymentIntent(req, res, paymentIntent.id);
       return res.json({
         clientSecret: paymentIntent.client_secret,

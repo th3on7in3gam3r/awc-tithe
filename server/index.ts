@@ -26,6 +26,8 @@ import churchRoutes from './routes/church';
 import auditRoutes from './routes/audit';
 import statementsRoutes from './routes/statements';
 import manualGiftsRoutes from './routes/manualGifts';
+import vaultIntegrationRoutes from './routes/vaultIntegration';
+import { ensureExternalRefsSchema } from './externalRefs/store';
 import { ensureManualGiftsSchema } from './manualGifts/store';
 import { maybeBootstrapAdminInvite } from './auth/bootstrapAdmin';
 import { seedDefaultFund } from './funds/store';
@@ -143,6 +145,9 @@ app.all('/api/staff-auth/*', staffAuthHandler);
  */
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), stripeWebhookHandler);
 
+/** AWC Vault RSVP payment status — HMAC over the raw body, so also before express.json(). */
+app.use('/api/integrations/vault', vaultIntegrationRoutes);
+
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/api/health', (_req, res) => {
@@ -249,6 +254,7 @@ async function boot() {
   await seedDefaultFund();
   await ensureChurchSettings();
   await ensureManualGiftsSchema();
+  await ensureExternalRefsSchema();
   await maybeBootstrapAdminInvite().catch((err) =>
     console.error('[bootstrap] admin invite failed', err instanceof Error ? err.message : err)
   );

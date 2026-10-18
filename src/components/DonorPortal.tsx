@@ -115,6 +115,9 @@ export const DonorPortal: React.FC<{
   const [isAnonymous, setIsAnonymous] = useState<boolean>(false);
   const [profilePrefillApplied, setProfilePrefillApplied] = useState(false);
 
+  /** Set when the donor came from an AWC Vault event RSVP ("Pay Now"). */
+  const [eventGift, setEventGift] = useState<{ ref: string; label: string | null } | null>(null);
+  const [linkFund, setLinkFund] = useState<string | null>(null);
   const [manualGift, setManualGift] = useState<{ gift: DonorManualGift; claimToken: string } | null>(null);
   const [doneState, setDoneState] = useState<{ status: 'processing' | 'completed'; receiptNumber?: string } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -165,10 +168,28 @@ export const DonorPortal: React.FC<{
         setCustomAmountStr(String(link.amount));
       }
     }
-    if (link.method || link.amount || link.frequency || new URLSearchParams(window.location.search).has('from')) {
+    if (link.ref) setEventGift({ ref: link.ref, label: link.refLabel || null });
+    if (link.fund) setLinkFund(link.fund);
+    if (
+      link.method ||
+      link.amount ||
+      link.frequency ||
+      link.ref ||
+      link.fund ||
+      new URLSearchParams(window.location.search).has('from')
+    ) {
       window.history.replaceState(null, '', stripGiveLink(window.location.pathname, window.location.search));
     }
   }, []);
+
+  // A give link can name the fund by id or name (e.g. fund=Special Offerings).
+  useEffect(() => {
+    if (!linkFund || !funds.length) return;
+    const wanted = linkFund.trim().toLowerCase();
+    const match = funds.find((f) => f.active && (f.id.toLowerCase() === wanted || f.name.trim().toLowerCase() === wanted));
+    if (match) setSelectedFundId(match.id);
+    setLinkFund(null);
+  }, [linkFund, funds]);
 
   // Coming back from a redirect-based payment (e.g. Cash App Pay on a phone)
   useEffect(() => {
@@ -341,6 +362,7 @@ export const DonorPortal: React.FC<{
         donorEmail: donorEmail.trim(),
         isAnonymous,
         turnstileToken,
+        externalRef: eventGift?.ref ?? null,
       });
       rememberEmail();
       setManualGift(result);
@@ -480,6 +502,12 @@ export const DonorPortal: React.FC<{
                           : 'Your receipt is on its way to your inbox.'
                         : 'Bank payments can take a few business days to clear. We will email your receipt as soon as the payment is confirmed.'}
                     </p>
+                    {eventGift ? (
+                      <p className="text-[15px] leading-relaxed text-awc-muted">
+                        {eventGift.label ? `Your ${eventGift.label}` : 'Your event signup'} will show as paid once this
+                        payment is confirmed.
+                      </p>
+                    ) : null}
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-3">
@@ -563,7 +591,8 @@ export const DonorPortal: React.FC<{
                   fundId={selectedFund.id}
                   fundCode={selectedFund.code}
                   fundName={selectedFund.name}
-                  frequency={frequency}
+                  frequency={eventGift ? 'one-time' : frequency}
+                  externalRef={eventGift?.ref ?? null}
                   isAnonymous={isAnonymous}
                   turnstileToken={turnstileToken}
                   publishableKey={apiConfig.stripePublishableKey}
@@ -586,6 +615,17 @@ export const DonorPortal: React.FC<{
             {step === 'details' ? (
               <form onSubmit={(e) => void handleContinue(e)} className="space-y-11" noValidate>
                 {/* 01 Amount */}
+                {eventGift ? (
+                  <div className="rounded-2xl border border-awc-line bg-awc-sand px-4 py-3.5" role="note">
+                    <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-awc-muted">Paying for</p>
+                    <p className="mt-0.5 text-[15px] font-semibold text-awc-ink">
+                      {eventGift.label || 'Your event signup'}
+                    </p>
+                    <p className="mt-1 text-[13px] leading-snug text-awc-muted">
+                      A one-time gift. Your signup is marked paid after the payment is confirmed.
+                    </p>
+                  </div>
+                ) : null}
                 <fieldset aria-labelledby="amount-label">
                   <SectionLabel n="01" id="amount-label">Amount</SectionLabel>
                   <div className="mb-4 flex items-baseline gap-1.5 border-b-[1.5px] border-awc-ink pb-3">
@@ -651,6 +691,7 @@ export const DonorPortal: React.FC<{
                 </fieldset>
 
                 {/* 02 Frequency */}
+                {eventGift ? null : (
                 <fieldset aria-labelledby="freq-label">
                   <SectionLabel n="02" id="freq-label">How often</SectionLabel>
                   <div className="flex flex-wrap gap-1 rounded-[14px] bg-awc-sand p-1">
@@ -679,6 +720,7 @@ export const DonorPortal: React.FC<{
                     </p>
                   ) : null}
                 </fieldset>
+                )}
 
                 {/* 03 Fund — only when there's a choice */}
                 {activeFunds.length > 1 ? (

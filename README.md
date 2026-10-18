@@ -28,6 +28,7 @@ Set these on the **awc-tithe** Web Service:
 | `AWC_DCB_KEY_TITHE` | Per-app HMAC key DCB issues for Tithe (`X-AWC-Key-Id: tithe`) |
 | `DCB_REQUIRED` | Set `true` in production to refuse boot if DCB vars are missing |
 | `BETTER_AUTH_SECRET` | Signs donor and staff sessions. Required in production. |
+| `AWC_VAULT_KEY` | Shared HMAC key AWC Vault uses to check event RSVP payments (same value as Vault's `AWC_TITHE_VAULT_KEY`) |
 
 Without Stripe keys the Give page shows “Online giving is temporarily unavailable.” Without `DATABASE_URL`, gifts persist in API memory until restart. `npm run recompute-donor-totals` prints a dry-run diff of donor lifetime totals; add `--apply` to write them.
 
@@ -46,6 +47,18 @@ Completed gifts are queued in `dcb_outbox` inside the same Stripe webhook transa
 3. The payload includes `source: "awc-tithe-bridge"`, `amount`, `donorName` (`Anonymous` when the donor opts in), and `voucherNumber` from the receipt number.
 4. If those env vars are missing, outbox rows stay pending and boot logs a warning. With `DCB_REQUIRED=true`, the process refuses to start.
 5. Refunds write a `needs_review` outbox row until DCB has a refund endpoint. See [`docs/dcb-refund-endpoint.md`](docs/dcb-refund-endpoint.md). Admins retry failed contribution rows from Staff Portal → DCB Sync. Schema: [`server/sql/dcb_outbox.sql`](server/sql/dcb_outbox.sql).
+
+### AWC Vault event RSVPs (Pay Now)
+
+When someone picks **Pay Now** on a Vault event RSVP (e.g. Thanksgiving 2026), the Vault sends them here with
+`/?method=card|zelle|cashapp|venmo&amount=40&ref=rsvp:<registration id>&for=Thanksgiving%202026%20RSVP`.
+The Give page shows what the gift is for and makes it one-time. The reference rides on the Stripe PaymentIntent
+(`gift_external_refs` table) or on the manual gift (`manual_gifts.external_ref`).
+
+The Vault then calls `POST /api/integrations/vault/ref-status` (HMAC, `X-AWC-Key-Id: vault`, key `AWC_VAULT_KEY`)
+with `{ "refs": ["rsvp:…"] }`. A reference is reported `paid` only after the Stripe webhook completed the
+donation or Finance verified the Zelle / Venmo / Cash App gift — never on a link click or "I've sent it".
+Tithe already sends these gifts to DCB, so the Vault does not post them to DCB again.
 
 ### Free-tier cold start (Render sleep)
 

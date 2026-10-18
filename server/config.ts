@@ -38,6 +38,11 @@ export const env = {
    * Defaults to false so dev/staging can run without DCB configured.
    */
   dcbRequired: process.env.DCB_REQUIRED?.trim() === 'true',
+  /**
+   * Shared HMAC key AWC Vault uses to ask which event RSVP gifts were paid
+   * (POST /api/integrations/vault/ref-status). Same value as Vault's AWC_TITHE_VAULT_KEY.
+   */
+  awcVaultKey: process.env.AWC_VAULT_KEY?.trim() || '',
   /** Resend — contribution receipts (server-only) */
   resendApiKey: process.env.RESEND_API_KEY?.trim() || '',
   receiptFromEmail:

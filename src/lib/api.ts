@@ -134,6 +134,8 @@ export async function createStripePaymentIntent(body: {
   turnstileToken?: string | null;
   /** Method chosen on the Give page (card, us_bank_account, cashapp); checkout shows only that one. */
   paymentMethodType?: string;
+  /** AWC Vault RSVP reference (rsvp:<uuid>); one-time gifts only. */
+  externalRef?: string | null;
 }): Promise<{
   clientSecret: string;
   paymentIntentId: string;
@@ -732,6 +734,7 @@ export async function createManualGift(body: {
   donorEmail: string;
   isAnonymous: boolean;
   turnstileToken?: string | null;
+  externalRef?: string | null;
 }): Promise<{ gift: DonorManualGift; claimToken: string }> {
   const res = await fetch('/api/manual-gifts', {
     method: 'POST',

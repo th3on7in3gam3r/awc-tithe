@@ -31,6 +31,7 @@ import { buildVoucherNumber } from '../dcb/client';
 import { dcbDonorDisplayName } from '../dcb/displayName';
 import { writeActivityAudit } from '../audit/activity';
 import { sendGiftReceiptEmail } from '../email/sendReceipt';
+import { normalizeExternalRef } from '../../shared/externalRef';
 
 export type ManualProvider = 'zelle' | 'venmo' | 'cash_app';
 export type ManualGiftStatus = 'initiated' | 'submitted' | 'verified' | 'rejected';
@@ -65,6 +66,8 @@ export interface ManualGift {
   donationId: string | null;
   createdAt: string;
   submittedAt: string | null;
+  /** Another AWC app's reference (rsvp:<uuid>), when the donor came from one. */
+  externalRef: string | null;
 }
 
 export interface Actor {
@@ -116,6 +119,8 @@ export const MANUAL_GIFTS_DDL = [
      WHERE provider_transaction_id IS NOT NULL`,
   `CREATE INDEX IF NOT EXISTS manual_gifts_status_idx ON manual_gifts (status, created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS manual_gifts_email_idx ON manual_gifts (donor_email)`,
+  `ALTER TABLE manual_gifts ADD COLUMN IF NOT EXISTS external_ref TEXT`,
+  `CREATE INDEX IF NOT EXISTS manual_gifts_external_ref_idx ON manual_gifts (external_ref) WHERE external_ref IS NOT NULL`,
 ];
 
 let schemaPromise: Promise<void> | null = null;
@@ -224,6 +229,7 @@ function mapRow(row: Record<string, unknown>): ManualGift {
     donationId: row.donation_id ? String(row.donation_id) : null,
     createdAt: isoOrNull(row.created_at) || new Date().toISOString(),
     submittedAt: isoOrNull(row.submitted_at),
+    externalRef: row.external_ref ? String(row.external_ref) : null,
   };
 }
 
@@ -321,7 +327,9 @@ export async function createManualGift(input: {
   donorName: string;
   donorEmail: string;
   isAnonymous: boolean;
+  externalRef?: string | null;
 }): Promise<Result<{ gift: ManualGift; claimToken: string }>> {
+  const externalRef = normalizeExternalRef(input.externalRef);
   const amount = roundMoney(Number(input.amount));
   if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) {
     return fail(400, 'INVALID_AMOUNT', 'Enter a valid gift amount.');
@@ -364,6 +372,7 @@ export async function createManualGift(input: {
         donationId: null,
         createdAt: new Date().toISOString(),
         submittedAt: null,
+        externalRef,
         claimTokenHash,
       };
       memoryRows.set(id, row);
@@ -374,10 +383,10 @@ export async function createManualGift(input: {
       const result = await pool.query(
         `INSERT INTO manual_gifts (
            id, memo_code, provider, amount, fund_id, fund_name, fund_code,
-           donor_name, donor_email, is_anonymous, claim_token_hash
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+           donor_name, donor_email, is_anonymous, claim_token_hash, external_ref
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING *`,
-        [id, memoCode, input.provider, amount, fund.id, fund.name, fund.glCode || '', name, email, Boolean(input.isAnonymous), claimTokenHash]
+        [id, memoCode, input.provider, amount, fund.id, fund.name, fund.glCode || '', name, email, Boolean(input.isAnonymous), claimTokenHash, externalRef]
       );
       return { ok: true, value: { gift: mapRow(result.rows[0]), claimToken } };
     } catch (err) {
@@ -794,4 +803,26 @@ async function discardInitiated(id: string): Promise<void> {
     return;
   }
   await pool.query(`DELETE FROM manual_gifts WHERE id = $1 AND status = 'initiated'`, [id]);
+}
+
+// ---------------------------------------------------------------------------
+// External references (AWC Vault RSVPs)
+// ---------------------------------------------------------------------------
+
+/** Manual gifts started for any of these references, newest first. */
+export async function listManualGiftsByExternalRefs(refs: string[]): Promise<ManualGift[]> {
+  if (!refs.length) return [];
+  const pool = getPgPool();
+  if (!pool) {
+    return [...memoryRows.values()]
+      .filter((r) => r.externalRef && refs.includes(r.externalRef))
+      .map(stripSecret)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  await ensureManualGiftsSchema();
+  const result = await pool.query(
+    `SELECT * FROM manual_gifts WHERE external_ref = ANY($1::text[]) ORDER BY created_at DESC`,
+    [refs]
+  );
+  return result.rows.map((r) => mapRow(r as Record<string, unknown>));
 }

@@ -5,6 +5,7 @@
  * Only pre-fills choices; the donor still reviews and confirms everything.
  */
 import type { DonationFrequency } from '../types';
+import { normalizeExternalRef, normalizeRefLabel } from '../../shared/externalRef';
 
 export type GiveLinkMethod = 'card' | 'us_bank_account' | 'zelle' | 'venmo' | 'cash_app';
 
@@ -12,6 +13,12 @@ export interface GiveLink {
   method?: GiveLinkMethod;
   amount?: number;
   frequency?: DonationFrequency;
+  /** Fund id or name to pre-select (e.g. "Special Offerings"). */
+  fund?: string;
+  /** Another AWC app's reference, e.g. rsvp:<uuid> from an AWC Vault event RSVP. */
+  ref?: string;
+  /** What the gift is for, shown above the form ("Thanksgiving 2026 RSVP"). */
+  refLabel?: string;
 }
 
 const METHOD_ALIASES: Record<string, GiveLinkMethod> = {
@@ -27,7 +34,7 @@ const METHOD_ALIASES: Record<string, GiveLinkMethod> = {
 const FREQUENCIES: DonationFrequency[] = ['one-time', 'weekly', 'bi-weekly', 'monthly', 'annually'];
 
 /** Query keys this module reads, so the page can tidy the address bar afterwards. */
-export const GIVE_LINK_KEYS = ['method', 'amount', 'frequency', 'from'];
+export const GIVE_LINK_KEYS = ['method', 'amount', 'frequency', 'from', 'fund', 'ref', 'for'];
 
 export function parseGiveLink(search: string): GiveLink {
   const params = new URLSearchParams(search);
@@ -40,6 +47,16 @@ export function parseGiveLink(search: string): GiveLink {
   }
   const frequency = (params.get('frequency') || '').trim().toLowerCase() as DonationFrequency;
   if (FREQUENCIES.includes(frequency)) out.frequency = frequency;
+  const fund = (params.get('fund') || '').trim().slice(0, 80);
+  if (fund) out.fund = fund;
+  const ref = normalizeExternalRef(params.get('ref'));
+  if (ref) {
+    out.ref = ref;
+    // A gift for an event RSVP is always a single gift.
+    out.frequency = 'one-time';
+    const label = normalizeRefLabel(params.get('for'));
+    if (label) out.refLabel = label;
+  }
   return out;
 }
 

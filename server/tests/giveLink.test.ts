@@ -26,6 +26,17 @@ check('frequency', parseGiveLink('?frequency=monthly').frequency === 'monthly');
 check('bad frequency ignored', parseGiveLink('?frequency=hourly').frequency === undefined);
 check('no params → empty', Object.keys(parseGiveLink('')).length === 0);
 check('strip keeps other params', stripGiveLink('/', '?method=zelle&from=connect&staffInvite=abc') === '/?staffInvite=abc');
+const RSVP = 'rsvp:a1b2c3d4-e5f6-4789-a012-202611221400';
+const withRef = parseGiveLink(`?method=card&amount=40&ref=${RSVP}&for=Thanksgiving%202026%20RSVP&frequency=monthly`);
+check('rsvp ref kept', withRef.ref === RSVP);
+check('rsvp label kept', withRef.refLabel === 'Thanksgiving 2026 RSVP');
+check('rsvp ref forces one-time', withRef.frequency === 'one-time');
+check('bad ref ignored', parseGiveLink('?ref=donation:123').ref === undefined);
+check('ref with script ignored', parseGiveLink('?ref=rsvp:<script>').ref === undefined);
+check('label without ref ignored', parseGiveLink('?for=Hello').refLabel === undefined);
+check('label strips markup', !/[<>/]/.test(parseGiveLink(`?ref=${RSVP}&for=%3Cb%3EHi%3C%2Fb%3E`).refLabel || ''));
+check('fund kept', parseGiveLink('?fund=Special%20Offerings').fund === 'Special Offerings');
+check('strip removes ref keys', stripGiveLink('/', `?ref=${RSVP}&for=x&fund=y&staffInvite=abc`) === '/?staffInvite=abc');
 check('strip to bare path', stripGiveLink('/', '?amount=5&from=website') === '/');
 
 if (failed > 0) {

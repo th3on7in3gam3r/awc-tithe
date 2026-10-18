@@ -31,6 +31,8 @@ services:
         sync: false
       - key: AWC_DCB_KEY_TITHE
         sync: false
+      - key: AWC_VAULT_KEY
+        sync: false
       - key: DCB_REQUIRED
         sync: false
       - key: ZELLE_RECIPIENT

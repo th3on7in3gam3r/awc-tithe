@@ -25,6 +25,8 @@ interface StripeCheckoutProps {
   returnUrl: string;
   /** Button text, e.g. "Give $103.20 monthly". */
   submitLabel: string;
+  /** AWC Vault RSVP reference (rsvp:<uuid>) when the donor came from an event signup. */
+  externalRef?: string | null;
 }
 
 const METHOD_ORDER = ['card', 'apple_pay', 'google_pay', 'us_bank_account', 'cashapp'];
@@ -184,6 +186,7 @@ export const StripeCheckout: React.FC<StripeCheckoutProps> = ({
   preferredMethod,
   returnUrl,
   submitLabel,
+  externalRef = null,
 }) => {
   const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
@@ -212,6 +215,7 @@ export const StripeCheckout: React.FC<StripeCheckoutProps> = ({
           isAnonymous,
           turnstileToken,
           paymentMethodType: preferredMethod,
+          externalRef,
         });
         if (!cancelled) {
           setClientSecret(intent.clientSecret);
@@ -226,7 +230,7 @@ export const StripeCheckout: React.FC<StripeCheckoutProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [amount, donorEmail, donorName, fundCode, fundId, fundName, frequency, isAnonymous, turnstileToken, preferredMethod, onError]);
+  }, [amount, donorEmail, donorName, fundCode, fundId, fundName, frequency, isAnonymous, turnstileToken, preferredMethod, externalRef, onError]);
 
   if (loading || !clientSecret || !paymentIntentId || !stripePromise) {
     return (
