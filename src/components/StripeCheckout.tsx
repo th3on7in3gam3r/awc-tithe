@@ -211,6 +211,7 @@ export const StripeCheckout: React.FC<StripeCheckoutProps> = ({
           frequency,
           isAnonymous,
           turnstileToken,
+          paymentMethodType: preferredMethod,
         });
         if (!cancelled) {
           setClientSecret(intent.clientSecret);
@@ -225,7 +226,7 @@ export const StripeCheckout: React.FC<StripeCheckoutProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [amount, donorEmail, donorName, fundCode, fundId, fundName, frequency, isAnonymous, turnstileToken, onError]);
+  }, [amount, donorEmail, donorName, fundCode, fundId, fundName, frequency, isAnonymous, turnstileToken, preferredMethod, onError]);
 
   if (loading || !clientSecret || !paymentIntentId || !stripePromise) {
     return (

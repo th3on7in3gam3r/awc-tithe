@@ -132,6 +132,8 @@ export async function createStripePaymentIntent(body: {
   frequency: string;
   isAnonymous?: boolean;
   turnstileToken?: string | null;
+  /** Method chosen on the Give page (card, us_bank_account, cashapp); checkout shows only that one. */
+  paymentMethodType?: string;
 }): Promise<{
   clientSecret: string;
   paymentIntentId: string;

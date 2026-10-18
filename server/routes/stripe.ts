@@ -17,6 +17,24 @@ import { auth } from '../auth/betterAuth';
 
 const router = Router();
 
+/**
+ * Checkout shows only the method the donor picked on the Give page. Without this,
+ * Stripe offers every method enabled in the Dashboard (Klarna, Affirm, Link's saved
+ * card first), so a donor who chose Cash App never saw Cash App Pay.
+ * Buy-now-pay-later is never offered for tithes.
+ */
+const CHECKOUT_METHOD_TYPES: Record<string, string[]> = {
+  card: ['card', 'link'],
+  us_bank_account: ['us_bank_account'],
+  cashapp: ['cashapp'],
+};
+
+export function checkoutMethodTypes(requested: string): string[] | null {
+  if (requested === 'cashapp' && !env.stripeCashAppPay) return null;
+  if (CHECKOUT_METHOD_TYPES[requested]) return CHECKOUT_METHOD_TYPES[requested];
+  return ['card', 'link', 'us_bank_account', ...(env.stripeCashAppPay ? ['cashapp'] : [])];
+}
+
 /** Payment Element method types we price. Everything but bank uses card-style fees. */
 const FEE_METHOD_TYPES = new Set(['card', 'us_bank_account', 'cashapp', 'apple_pay', 'google_pay', 'link']);
 
@@ -103,7 +121,17 @@ router.post(
       frequency = 'one-time',
       isAnonymous = false,
       coverFees = false,
+      paymentMethodType,
     } = req.body as Record<string, unknown>;
+
+    const requestedMethod = String(paymentMethodType || '');
+    const methodTypes = checkoutMethodTypes(requestedMethod);
+    if (!methodTypes) {
+      return res.status(400).json({
+        error: 'METHOD_UNAVAILABLE',
+        message: 'Cash App Pay is not available right now. Please choose Card or Bank account.',
+      });
+    }
 
     const principal = Number(amount);
     const minGift = validateMinGiftAmount(principal);
@@ -201,12 +229,16 @@ router.post(
         amount: amountCents,
         currency: 'usd',
         customer: customerId,
-        automatic_payment_methods: { enabled: true },
-        payment_method_options: {
-          us_bank_account: {
-            financial_connections: { permissions: ['payment_method'] },
-          },
-        },
+        payment_method_types: methodTypes,
+        ...(methodTypes.includes('us_bank_account')
+          ? {
+              payment_method_options: {
+                us_bank_account: {
+                  financial_connections: { permissions: ['payment_method'] },
+                },
+              },
+            }
+          : {}),
         receipt_email: email || undefined,
         metadata: {
           product: 'awc_tithe',
@@ -238,6 +270,14 @@ router.post(
       });
     } catch (err) {
       console.error('[stripe] create-payment-intent', err);
+      // Stripe rejects a method type the account hasn't activated (e.g. Cash App Pay).
+      if (requestedMethod === 'cashapp' && (err as { type?: string })?.type === 'StripeInvalidRequestError') {
+        return res.status(400).json({
+          error: 'METHOD_UNAVAILABLE',
+          message:
+            "Cash App Pay isn't turned on for the church's Stripe account yet. Please choose Card or Bank account.",
+        });
+      }
       return res.status(500).json({
         error: 'STRIPE_ERROR',
         message: 'Failed to create PaymentIntent',
