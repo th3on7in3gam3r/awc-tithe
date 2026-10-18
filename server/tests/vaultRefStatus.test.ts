@@ -55,6 +55,21 @@ async function main() {
   if (!addr || typeof addr === 'string') throw new Error('no port');
   const base = `http://127.0.0.1:${addr.port}`;
 
+  async function signedPost(path: string, payload: unknown, key = 'vault-test-key') {
+    const body = JSON.stringify(payload);
+    const ts = String(Date.now());
+    const res = await fetch(`${base}/api/integrations/vault/${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-AWC-Key-Id': 'vault',
+        'X-AWC-Timestamp': ts,
+        'X-AWC-Signature': signVaultRequest(key, ts, body),
+      },
+      body,
+    });
+    return { status: res.status, json: (await res.json()) as any };
+  }
   async function status(refs: string[], opts: { key?: string; keyId?: string; ts?: string } = {}) {
     const body = JSON.stringify({ refs });
     const ts = opts.ts ?? String(Date.now());
@@ -124,6 +139,19 @@ async function main() {
     check('verified reports paid', paid[0].status === 'paid' && paid[0].amount === 40, paid);
     check('other ref untouched', paid[1].status === 'none', paid);
     check('no donor details leak', !JSON.stringify(paid).includes('grace@example.org'));
+
+    // Funds list + confirmed gifts to a fund (for Vault fundraisers)
+    const funds = await signedPost('funds', {});
+    check('funds listed', funds.status === 200 && funds.json.funds?.some((f: any) => f.id === 'fund-tithes'), funds.json);
+    check('funds refuse a bad key', (await signedPost('funds', {}, 'nope')).status === 401);
+    const fundGifts = await signedPost('fund-gifts', { fundId: 'fund-tithes' });
+    const zelle = fundGifts.json.gifts?.find((g: any) => g.amount === 40);
+    check('verified gift appears for its fund', fundGifts.status === 200 && zelle?.donorName === 'Grace Test', fundGifts.json);
+    check('fund gifts have a receipt number', Boolean(zelle?.receiptNumber));
+    check('fund gifts send no emails', !JSON.stringify(fundGifts.json).includes('@'));
+    check('other fund is empty', (await signedPost('fund-gifts', { fundId: 'fund-none' })).json.gifts?.length === 0);
+    check('fund required', (await signedPost('fund-gifts', {})).status === 400);
+    check('fund gifts refuse a bad key', (await signedPost('fund-gifts', { fundId: 'fund-tithes' }, 'nope')).status === 401);
   } finally {
     server.close();
   }

@@ -851,6 +851,31 @@ export async function listAllGifts(limit = 500): Promise<{
   return { donations, donors, mode: 'memory' };
 }
 
+/**
+ * Confirmed gifts to one fund (completed or later refunded), newest first.
+ * Used by AWC Vault to show online gifts inside a fundraiser. Pending/failed gifts are never returned.
+ */
+export async function listConfirmedGiftsForFund(fundId: string, limit = 2000): Promise<StoredDonation[]> {
+  const id = String(fundId || '').trim();
+  if (!id) return [];
+  const safeLimit = Math.min(Math.max(Number(limit) || 2000, 1), 5000);
+  const client = getSql();
+  if (client) {
+    const rows = await client`
+      SELECT * FROM donations
+      WHERE fund_id = ${id} AND status IN ('completed', 'refunded')
+      ORDER BY contributed_at DESC
+      LIMIT ${safeLimit}
+    `;
+    return rows.map((r) => mapDonationRow(r as Record<string, unknown>));
+  }
+  requireMemoryGifts();
+  return memoryDonations
+    .filter((d) => d.fundId === id && (d.status === 'completed' || d.status === 'refunded'))
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+    .slice(0, safeLimit);
+}
+
 export async function applyGiftRefund(input: {
   stripePaymentIntentId?: string | null;
   invoiceId?: string | null;
