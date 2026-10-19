@@ -152,6 +152,22 @@ async function main() {
     check('other fund is empty', (await signedPost('fund-gifts', { fundId: 'fund-none' })).json.gifts?.length === 0);
     check('fund required', (await signedPost('fund-gifts', {})).status === 400);
     check('fund gifts refuse a bad key', (await signedPost('fund-gifts', { fundId: 'fund-tithes' }, 'nope')).status === 401);
+
+    // A "Pay my balance" gift from a Vault fundraiser carries its reference back
+    const FRM = 'frm:11111111-2222-4333-8444-555555555555.66666666-7777-4888-9999-aaaaaaaaaaaa';
+    const bal = await call('/api/manual-gifts', {
+      provider: 'zelle',
+      amount: 300,
+      fundId: 'fund-tithes',
+      donorName: 'Grace Okello',
+      donorEmail: 'grace.o@example.org',
+      isAnonymous: false,
+      externalRef: FRM,
+    });
+    await call(`/api/manual-gifts/admin/${bal.json.gift.id}/verify`, { providerTransactionId: 'ZLBAL300', receivedAmount: 300, receivedOn: today }, true);
+    const withRef = (await signedPost('fund-gifts', { fundId: 'fund-tithes' })).json.gifts?.find((g: any) => g.amount === 300);
+    check('balance payment returns its fundraiser ref', withRef?.externalRef === FRM, withRef);
+    check('earlier gift without a ref returns null', zelle?.externalRef === null || zelle?.externalRef === 'rsvp:a1b2c3d4-e5f6-4789-a012-0000000000aa', zelle);
   } finally {
     server.close();
   }

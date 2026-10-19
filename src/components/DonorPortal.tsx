@@ -504,8 +504,8 @@ export const DonorPortal: React.FC<{
                     </p>
                     {eventGift ? (
                       <p className="text-[15px] leading-relaxed text-awc-muted">
-                        {eventGift.label ? `Your ${eventGift.label}` : 'Your event signup'} will show as paid once this
-                        payment is confirmed.
+                        {eventGift.label ? `Your ${eventGift.label}` : 'Your balance'} will show as paid once this payment
+                        is confirmed.
                       </p>
                     ) : null}
                   </div>
@@ -619,10 +619,10 @@ export const DonorPortal: React.FC<{
                   <div className="rounded-2xl border border-awc-line bg-awc-sand px-4 py-3.5" role="note">
                     <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-awc-muted">Paying for</p>
                     <p className="mt-0.5 text-[15px] font-semibold text-awc-ink">
-                      {eventGift.label || 'Your event signup'}
+                      {eventGift.label || 'Your balance'}
                     </p>
                     <p className="mt-1 text-[13px] leading-snug text-awc-muted">
-                      A one-time gift. Your signup is marked paid after the payment is confirmed.
+                      A one-time gift. It is marked paid after the payment is confirmed.
                     </p>
                   </div>
                 ) : null}

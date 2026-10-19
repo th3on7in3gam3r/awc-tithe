@@ -12,7 +12,7 @@
 
 import { getPgPool } from '../auth/pgPool';
 import { getGiftByTransactionId, type StoredDonation } from '../gifts/store';
-import { listManualGiftsByExternalRefs, type ManualGift } from '../manualGifts/store';
+import { listManualGiftsByExternalRefs, listManualGiftsWithDonation, type ManualGift } from '../manualGifts/store';
 import { normalizeExternalRef } from '../../shared/externalRef';
 
 export const EXTERNAL_REFS_DDL = [
@@ -173,4 +173,40 @@ export async function statusForRefs(rawRefs: unknown[]): Promise<RefStatus[]> {
     byRef.set(gift.externalRef, better(byRef.get(gift.externalRef)!, next));
   }
   return refs.map((r) => byRef.get(r)!);
+}
+
+/**
+ * External reference for each donation (by donation id), from the Stripe link table or the
+ * manual (Cash App / Zelle / Venmo) gift it was verified from. Donations without one are left out.
+ */
+export async function externalRefsForDonations(
+  donations: Array<{ id: string; transactionId: string }>
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (!donations.length) return out;
+  const byTx = new Map(donations.map((d) => [d.transactionId, d.id]));
+  const pool = getPgPool();
+  if (!pool) {
+    for (const [txId, ref] of memoryLinks) {
+      const id = byTx.get(txId);
+      if (id) out.set(id, ref);
+    }
+    const ids = new Set(donations.map((d) => d.id));
+    const manual = await listManualGiftsWithDonation([...ids]);
+    for (const g of manual) if (g.donationId && g.externalRef) out.set(g.donationId, g.externalRef);
+    return out;
+  }
+  await ensureExternalRefsSchema();
+  const txIds = [...byTx.keys()];
+  const linked = await pool.query(
+    'SELECT transaction_id, external_ref FROM gift_external_refs WHERE transaction_id = ANY($1::text[])',
+    [txIds]
+  );
+  for (const row of linked.rows) {
+    const id = byTx.get(String(row.transaction_id));
+    if (id) out.set(id, String(row.external_ref));
+  }
+  const manual = await listManualGiftsWithDonation(donations.map((d) => d.id));
+  for (const g of manual) if (g.donationId && g.externalRef) out.set(g.donationId, g.externalRef);
+  return out;
 }

@@ -826,3 +826,15 @@ export async function listManualGiftsByExternalRefs(refs: string[]): Promise<Man
   );
   return result.rows.map((r) => mapRow(r as Record<string, unknown>));
 }
+
+/** Verified manual gifts that produced one of these donations (with their external ref). */
+export async function listManualGiftsWithDonation(donationIds: string[]): Promise<ManualGift[]> {
+  if (!donationIds.length) return [];
+  const pool = getPgPool();
+  if (!pool) {
+    return [...memoryRows.values()].filter((r) => r.donationId && donationIds.includes(r.donationId)).map(stripSecret);
+  }
+  await ensureManualGiftsSchema();
+  const result = await pool.query('SELECT * FROM manual_gifts WHERE donation_id = ANY($1::text[])', [donationIds]);
+  return result.rows.map((r) => mapRow(r as Record<string, unknown>));
+}

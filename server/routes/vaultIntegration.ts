@@ -16,7 +16,7 @@
 import crypto from 'crypto';
 import express, { Router, type Request, type Response } from 'express';
 import { env } from '../config';
-import { statusForRefs } from '../externalRefs/store';
+import { externalRefsForDonations, statusForRefs } from '../externalRefs/store';
 import { listAllFunds } from '../funds/store';
 import { listConfirmedGiftsForFund } from '../gifts/store';
 
@@ -95,9 +95,12 @@ router.post('/fund-gifts', express.raw({ type: '*/*', limit: '16kb' }), async (r
   if (!fundId || fundId.length > 100) return res.status(400).json({ ok: false, error: 'FUND_REQUIRED' });
   try {
     const gifts = await listConfirmedGiftsForFund(fundId);
+    const refs = await externalRefsForDonations(gifts.map((d) => ({ id: d.id, transactionId: d.transactionId })));
     return res.json({
       ok: true,
       gifts: gifts.map((d) => ({
+        // frm:/fre: when the donor used a Vault "Pay my balance" link; null otherwise
+        externalRef: refs.get(d.id) || null,
         transactionId: d.transactionId,
         receiptNumber: d.receiptNumber,
         donorName: d.isAnonymous ? 'Anonymous' : d.donorName || 'Donor',
