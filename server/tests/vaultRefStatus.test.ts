@@ -168,6 +168,27 @@ async function main() {
     const withRef = (await signedPost('fund-gifts', { fundId: 'fund-tithes' })).json.gifts?.find((g: any) => g.amount === 300);
     check('balance payment returns its fundraiser ref', withRef?.externalRef === FRM, withRef);
     check('earlier gift without a ref returns null', zelle?.externalRef === null || zelle?.externalRef === 'rsvp:a1b2c3d4-e5f6-4789-a012-0000000000aa', zelle);
+
+    // Event RSVP funds: the Vault sets up "Thanksgiving Dinner 2026" before sending guests here
+    const made = await signedPost('event-fund', { name: '  Thanksgiving   Dinner 2026 ' });
+    check('event fund created', made.status === 200 && made.json.created === true && made.json.fund?.name === 'Thanksgiving Dinner 2026', made.json);
+    const again = await signedPost('event-fund', { name: 'thanksgiving dinner 2026' });
+    check('event fund reused (no duplicate)', again.json.created === false && again.json.fund?.id === made.json.fund?.id, again.json);
+    const listed = (await signedPost('funds', {})).json.funds || [];
+    check('event fund is active in the funds list', listed.filter((f: any) => f.name === 'Thanksgiving Dinner 2026' && f.active).length === 1, listed);
+    check('event fund needs a name', (await signedPost('event-fund', { name: ' ' })).status === 400);
+    check('event fund strips markup', (await signedPost('event-fund', { name: '<b>Marrieds Dinner 2026</b>' })).json.fund?.name === 'bMarrieds Dinner 2026b');
+    check('event fund refuses a bad key', (await signedPost('event-fund', { name: 'X Event' }, 'nope')).status === 401);
+
+    const { withEventFund } = await import('../dcb/eventFund');
+    const gift = {
+      voucherNumber: 'REC-1', donorName: 'Grace', donorEmail: '', amount: 40, feeAmount: 0, netAmount: 40,
+      fundCode: '', fundName: 'Thanksgiving Dinner 2026', paymentMethod: 'zelle', transactionId: 'tx1',
+      contributedAt: new Date().toISOString(), source: 'awc-tithe-bridge' as const,
+    };
+    const ev = withEventFund(gift, REF);
+    check('RSVP gift goes to DCB as an event fund', ev.eventFund === true && ev.memo === 'Thanksgiving Dinner 2026 RSVP', ev);
+    check('regular gift unchanged', withEventFund(gift, null) === gift && withEventFund(gift, FRM) === gift);
   } finally {
     server.close();
   }

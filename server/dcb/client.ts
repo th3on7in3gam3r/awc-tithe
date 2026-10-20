@@ -36,6 +36,13 @@ export interface DcbContributionPayload {
   contributedAt: string;
   /** Lets DCB label Tithe deliveries in its audit log. */
   source: 'awc-tithe-bridge';
+  /**
+   * Event RSVP payment (AWC Vault rsvp: reference). DCB creates the event's fund
+   * (fundName, e.g. "Thanksgiving Dinner 2026") if it does not have it yet.
+   */
+  eventFund?: boolean;
+  /** Short note shown on the DCB contribution ("Thanksgiving Dinner 2026 RSVP"). */
+  memo?: string;
 }
 
 export interface DcbSyncResult {

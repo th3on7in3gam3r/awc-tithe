@@ -165,6 +165,39 @@ export async function createFund(input: {
   return record;
 }
 
+/** Clean event fund name: one line, 2–60 characters, plain text (same rule as give-link labels). */
+export function cleanEventFundName(raw: unknown): string | null {
+  const name = String(raw ?? '')
+    .replace(/[^\p{L}\p{N} '&.,:()\-]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60)
+    .trim();
+  return name.length >= 2 ? name : null;
+}
+
+/**
+ * Make sure an event RSVP fund exists and is active (e.g. "Thanksgiving Dinner 2026").
+ * Matches an existing fund by name, ignoring case; creates it otherwise.
+ */
+export async function ensureEventFund(rawName: unknown): Promise<{ fund: FundRecord; created: boolean } | null> {
+  const name = cleanEventFundName(rawName);
+  if (!name) return null;
+  const all = await listAllFunds();
+  const existing = all.find((f) => f.name.trim().toLowerCase() === name.toLowerCase());
+  if (existing) {
+    if (existing.active) return { fund: existing, created: false };
+    const reactivated = await updateFund(existing.id, { active: true });
+    return { fund: reactivated || { ...existing, active: true }, created: false };
+  }
+  const fund = await createFund({
+    name,
+    description: 'Event RSVP payments (set up automatically by AWC Vault).',
+    sortOrder: 100,
+  });
+  return { fund, created: true };
+}
+
 export async function updateFund(
   id: string,
   patch: Partial<Pick<FundRecord, 'name' | 'description' | 'active' | 'sortOrder' | 'glCode'>>

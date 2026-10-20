@@ -17,7 +17,7 @@ import crypto from 'crypto';
 import express, { Router, type Request, type Response } from 'express';
 import { env } from '../config';
 import { externalRefsForDonations, statusForRefs } from '../externalRefs/store';
-import { listAllFunds } from '../funds/store';
+import { ensureEventFund, listAllFunds } from '../funds/store';
 import { listConfirmedGiftsForFund } from '../gifts/store';
 
 const MAX_SKEW_MS = 5 * 60 * 1000;
@@ -80,6 +80,27 @@ router.post('/funds', express.raw({ type: '*/*', limit: '16kb' }), async (req: R
   } catch (err) {
     console.error('[vault-integration] funds', err);
     return res.status(500).json({ ok: false, error: 'LOOKUP_FAILED' });
+  }
+});
+
+/**
+ * Event RSVP fund (e.g. "Thanksgiving Dinner 2026"): the Vault asks Tithe to make sure it
+ * exists before a guest is sent here to pay, so the gift lands in that event's fund.
+ */
+router.post('/event-fund', express.raw({ type: '*/*', limit: '4kb' }), async (req: Request, res: Response) => {
+  const body = readSignedBody(req, res);
+  if (!body) return;
+  try {
+    const result = await ensureEventFund(body.name);
+    if (!result) return res.status(400).json({ ok: false, error: 'NAME_REQUIRED' });
+    return res.json({
+      ok: true,
+      created: result.created,
+      fund: { id: result.fund.id, name: result.fund.name, active: result.fund.active },
+    });
+  } catch (err) {
+    console.error('[vault-integration] event-fund', err);
+    return res.status(500).json({ ok: false, error: 'FUND_SETUP_FAILED' });
   }
 });
 

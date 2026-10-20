@@ -29,6 +29,22 @@ import {
   type DcbContributionPayload,
   type DcbRefundPayload,
 } from './client';
+import { externalRefsForDonations } from '../externalRefs/store';
+import { withEventFund } from './eventFund';
+
+/** Event RSVP gifts carry the event's fund to DCB. A lookup failure never blocks delivery. */
+async function contributionPayloadFor(row: DcbOutboxRow): Promise<DcbContributionPayload> {
+  const payload = row.payload as unknown as DcbContributionPayload;
+  try {
+    const refs = await externalRefsForDonations([
+      { id: row.donationId, transactionId: String(payload.transactionId || '') },
+    ]);
+    return withEventFund(payload, refs.get(row.donationId));
+  } catch (err) {
+    console.warn('[dcb-worker] event ref lookup failed:', err instanceof Error ? err.message : err);
+    return payload;
+  }
+}
 
 const POLL_INTERVAL_MS = 30_000;   // 30 seconds
 const MAX_ATTEMPTS = 8;
@@ -43,7 +59,7 @@ async function processRow(row: DcbOutboxRow, client: import('pg').PoolClient): P
     const result =
       row.eventType === 'refund'
         ? await voidContributionInDcb(row.payload as unknown as DcbRefundPayload)
-        : await postContributionToDcb(row.payload as unknown as DcbContributionPayload);
+        : await postContributionToDcb(await contributionPayloadFor(row));
     await markOutboxSent(client, row.id, result.voucherId);
   } catch (err) {
     if (err instanceof DcbNotConfiguredError) {
