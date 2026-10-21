@@ -176,6 +176,14 @@ async function main() {
     check('event fund reused (no duplicate)', again.json.created === false && again.json.fund?.id === made.json.fund?.id, again.json);
     const listed = (await signedPost('funds', {})).json.funds || [];
     check('event fund is active in the funds list', listed.filter((f: any) => f.name === 'Thanksgiving Dinner 2026' && f.active).length === 1, listed);
+    const { listActiveFunds, createFund, ensureEventFund } = await import('../funds/store');
+    const publicFunds = await listActiveFunds();
+    check('event fund is flagged as an event fund', publicFunds.find((f) => f.name === 'Thanksgiving Dinner 2026')?.isEvent === true, publicFunds);
+    check('Tithes & Offerings is not an event fund', publicFunds.find((f) => f.id === 'fund-tithes')?.isEvent === false, publicFunds);
+    const plain = await createFund({ name: 'Marrieds Dinner 2026' });
+    check('a fund made by hand starts as a regular fund', plain.isEvent === false);
+    await ensureEventFund('Marrieds Dinner 2026');
+    check('an existing fund the Vault claims becomes an event fund', (await listActiveFunds()).find((f) => f.id === plain.id)?.isEvent === true);
     check('event fund needs a name', (await signedPost('event-fund', { name: ' ' })).status === 400);
     check('event fund strips markup', (await signedPost('event-fund', { name: '<b>Marrieds Dinner 2026</b>' })).json.fund?.name === 'bMarrieds Dinner 2026b');
     check('event fund refuses a bad key', (await signedPost('event-fund', { name: 'X Event' }, 'nope')).status === 401);

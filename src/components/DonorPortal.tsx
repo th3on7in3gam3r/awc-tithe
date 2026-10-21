@@ -21,6 +21,48 @@ import { TurnstileWidget, getTurnstileSiteKey } from './TurnstileWidget';
 import { ManualGiftHandoff } from './ManualGiftHandoff';
 import { parseGiveLink, stripGiveLink } from '../lib/giveLink';
 
+/** A gift that pays for something in another AWC app (an AWC Vault event RSVP, a fundraiser balance). */
+type EventGift = {
+  ref: string;
+  label: string | null;
+  /** "Jerless M. · 3 adults, 2 children · Sun, Nov 22" */
+  detail: string | null;
+  /** The amount from the RSVP; when set it can't be changed here, so both apps agree. */
+  amount: number | null;
+  /** "Back to my RSVP" */
+  returnUrl: string | null;
+};
+
+const EVENT_GIFT_KEY = 'awc.tithe.eventGift';
+
+/** Kept for the tab's session so a bank / Cash App redirect comes back to the same RSVP. */
+function rememberEventGift(gift: EventGift | null): void {
+  try {
+    if (gift) sessionStorage.setItem(EVENT_GIFT_KEY, JSON.stringify(gift));
+    else sessionStorage.removeItem(EVENT_GIFT_KEY);
+  } catch {
+    /* private mode */
+  }
+}
+
+function recallEventGift(): EventGift | null {
+  try {
+    const raw = sessionStorage.getItem(EVENT_GIFT_KEY);
+    if (!raw) return null;
+    const g = JSON.parse(raw) as Partial<EventGift>;
+    if (typeof g.ref !== 'string') return null;
+    return {
+      ref: g.ref,
+      label: typeof g.label === 'string' ? g.label : null,
+      detail: typeof g.detail === 'string' ? g.detail : null,
+      amount: typeof g.amount === 'number' ? g.amount : null,
+      returnUrl: typeof g.returnUrl === 'string' ? g.returnUrl : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 type MethodId = 'card' | 'us_bank_account' | 'cashapp' | 'zelle' | 'venmo' | 'cash_app';
 type Step = 'details' | 'stripe' | 'manual' | 'done';
 
@@ -90,10 +132,13 @@ export const DonorPortal: React.FC<{
   // Keep selection on the sole active fund when designation UI is hidden
   useEffect(() => {
     const active = funds.filter((f) => f.active);
-    if (active.length === 1 && selectedFundId !== active[0].id) {
-      setSelectedFundId(active[0].id);
-    } else if (active.length > 0 && !active.some((f) => f.id === selectedFundId)) {
-      setSelectedFundId(active[0].id);
+    const general = active.filter((f) => !f.isEvent);
+    const fallback = (general[0] || active[0])?.id;
+    if (!fallback) return;
+    if (general.length === 1 && active.length === 1 && selectedFundId !== fallback) {
+      setSelectedFundId(fallback);
+    } else if (!active.some((f) => f.id === selectedFundId)) {
+      setSelectedFundId(fallback);
     }
   }, [funds, selectedFundId]);
 
@@ -116,7 +161,9 @@ export const DonorPortal: React.FC<{
   const [profilePrefillApplied, setProfilePrefillApplied] = useState(false);
 
   /** Set when the donor came from an AWC Vault event RSVP ("Pay Now"). */
-  const [eventGift, setEventGift] = useState<{ ref: string; label: string | null } | null>(null);
+  const [eventGift, setEventGift] = useState<EventGift | null>(null);
+  /** Name / email handed over from an RSVP (shown as "From your RSVP"). */
+  const [rsvpPrefill, setRsvpPrefill] = useState(false);
   const [linkFund, setLinkFund] = useState<string | null>(null);
   const [manualGift, setManualGift] = useState<{ gift: DonorManualGift; claimToken: string } | null>(null);
   const [doneState, setDoneState] = useState<{ status: 'processing' | 'completed'; receiptNumber?: string } | null>(null);
@@ -168,7 +215,28 @@ export const DonorPortal: React.FC<{
         setCustomAmountStr(String(link.amount));
       }
     }
-    if (link.ref) setEventGift({ ref: link.ref, label: link.refLabel || null });
+    if (link.ref) {
+      const gift: EventGift = {
+        ref: link.ref,
+        label: link.refLabel || null,
+        detail: link.refDetail || null,
+        amount: link.amount ?? null,
+        returnUrl: link.returnUrl || null,
+      };
+      setEventGift(gift);
+      rememberEventGift(gift);
+    } else if (new URLSearchParams(window.location.search).has(RETURN_FLAG)) {
+      // Back from a bank / Cash App redirect: keep the RSVP it was paying for.
+      const kept = recallEventGift();
+      if (kept) setEventGift(kept);
+    } else {
+      rememberEventGift(null);
+    }
+    if (link.ref && (link.name || link.email)) {
+      if (link.name) setDonorName(link.name);
+      if (link.email) setDonorEmail(link.email);
+      setRsvpPrefill(true);
+    }
     if (link.fund) setLinkFund(link.fund);
     if (
       link.method ||
@@ -231,7 +299,21 @@ export const DonorPortal: React.FC<{
     }
   }, [step]);
 
-  const activeFunds = funds.filter((f) => f.active);
+  // Event RSVP funds are paid only from their RSVP link, so the Give list leaves them out.
+  const activeFunds = funds.filter((f) => f.active && !f.isEvent);
+  /** Paying for an RSVP / balance: amount and fund come from the other app and stay fixed. */
+  const lockedAmount = eventGift?.amount ?? null;
+  const showFundChoice = !eventGift && activeFunds.length > 1;
+  /** Section numbers follow whichever sections are showing. */
+  const sectionNo = (which: 'details' | 'method'): string => {
+    const shown = [
+      lockedAmount == null, // amount
+      !eventGift, // how often
+      showFundChoice,
+      true, // details
+    ].filter(Boolean).length;
+    return String(which === 'details' ? shown : shown + 1).padStart(2, '0');
+  };
   const selectedFund = funds.find((f) => f.id === selectedFundId) || funds[0];
 
   const principalAmount = presetAmount === 'custom' ? parseFloat(customAmountStr) || 0 : Number(presetAmount);
@@ -511,7 +593,16 @@ export const DonorPortal: React.FC<{
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-3">
-                  {onViewMyGiving ? (
+                  {eventGift?.returnUrl ? (
+                    <a
+                      href={eventGift.returnUrl}
+                      className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-awc-primary px-6 text-[15px] font-semibold text-awc-on-primary"
+                    >
+                      Back to my RSVP
+                      <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                    </a>
+                  ) : null}
+                  {onViewMyGiving && !eventGift?.returnUrl ? (
                     <button
                       type="button"
                       onClick={() => onViewMyGiving(normalizeDonorEmail(donorEmail) || '')}
@@ -520,6 +611,7 @@ export const DonorPortal: React.FC<{
                       View My giving
                     </button>
                   ) : null}
+                  {eventGift?.returnUrl ? null : (
                   <button
                     type="button"
                     onClick={() => {
@@ -530,6 +622,7 @@ export const DonorPortal: React.FC<{
                   >
                     Give another gift
                   </button>
+                  )}
                 </div>
               </div>
             ) : null}
@@ -544,6 +637,15 @@ export const DonorPortal: React.FC<{
                 onBack={backToDetails}
                 onViewMyGiving={onViewMyGiving ? () => onViewMyGiving(normalizeDonorEmail(donorEmail) || '') : undefined}
               />
+            ) : null}
+            {step === 'manual' && manualGift && eventGift?.returnUrl ? (
+              <a
+                href={eventGift.returnUrl}
+                className="mt-6 flex min-h-12 w-full items-center justify-center gap-2 rounded-full border-[1.5px] border-awc-line text-[15px] font-semibold text-awc-ink hover:border-awc-accent"
+              >
+                I've sent it. Back to my RSVP
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </a>
             ) : null}
 
             {/* ---------- Stripe payment ---------- */}
@@ -616,16 +718,34 @@ export const DonorPortal: React.FC<{
               <form onSubmit={(e) => void handleContinue(e)} className="space-y-11" noValidate>
                 {/* 01 Amount */}
                 {eventGift ? (
-                  <div className="rounded-2xl border border-awc-line bg-awc-sand px-4 py-3.5" role="note">
-                    <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-awc-muted">Paying for</p>
-                    <p className="mt-0.5 text-[15px] font-semibold text-awc-ink">
-                      {eventGift.label || 'Your balance'}
+                  <div className="rounded-2xl border-[1.5px] border-awc-accent bg-awc-paper px-5 py-4" role="note">
+                    <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-awc-muted">
+                      {eventGift.ref.startsWith('rsvp:') ? 'Paying for your RSVP' : 'Paying for'}
                     </p>
-                    <p className="mt-1 text-[13px] leading-snug text-awc-muted">
-                      A one-time gift. It is marked paid after the payment is confirmed.
+                    <div className="mt-1.5 flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="font-serif-display text-[28px] font-medium leading-tight text-awc-ink">
+                          {selectedFund && selectedFund.isEvent ? selectedFund.name : eventGift.label || 'Your balance'}
+                        </p>
+                        {eventGift.detail ? (
+                          <p className="mt-1 text-[14px] leading-snug text-awc-muted">{eventGift.detail}</p>
+                        ) : null}
+                      </div>
+                      {lockedAmount != null ? (
+                        <p className="shrink-0 font-serif-display text-4xl leading-none text-awc-ink tabular-nums">
+                          {money(lockedAmount)}
+                        </p>
+                      ) : null}
+                    </div>
+                    <p className="mt-3 border-t border-awc-line pt-3 text-[13px] leading-snug text-awc-muted">
+                      One-time payment.{' '}
+                      {eventGift.ref.startsWith('rsvp:')
+                        ? 'Your RSVP is marked paid as soon as this payment is confirmed.'
+                        : 'It is marked paid after the payment is confirmed.'}
                     </p>
                   </div>
                 ) : null}
+                {lockedAmount != null ? null : (
                 <fieldset aria-labelledby="amount-label">
                   <SectionLabel n="01" id="amount-label">Amount</SectionLabel>
                   <div className="mb-4 flex items-baseline gap-1.5 border-b-[1.5px] border-awc-ink pb-3">
@@ -689,6 +809,7 @@ export const DonorPortal: React.FC<{
                     </button>
                   </div>
                 </fieldset>
+                )}
 
                 {/* 02 Frequency */}
                 {eventGift ? null : (
@@ -722,8 +843,8 @@ export const DonorPortal: React.FC<{
                 </fieldset>
                 )}
 
-                {/* 03 Fund — only when there's a choice */}
-                {activeFunds.length > 1 ? (
+                {/* 03 Fund — only when there's a choice (never for an RSVP payment) */}
+                {showFundChoice ? (
                   <fieldset aria-labelledby="fund-label">
                     <SectionLabel n="03" id="fund-label">Give to</SectionLabel>
                     <div className="space-y-2.5">
@@ -752,7 +873,7 @@ export const DonorPortal: React.FC<{
 
                 {/* Your details */}
                 <fieldset aria-labelledby="details-label">
-                  <SectionLabel n={activeFunds.length > 1 ? '04' : '03'} id="details-label">Your details</SectionLabel>
+                  <SectionLabel n={sectionNo('details')} id="details-label">Your details</SectionLabel>
                   <div className="space-y-4">
                     <div>
                       <label htmlFor="donor-email" className="mb-1.5 block text-sm font-semibold text-awc-ink">
@@ -768,7 +889,9 @@ export const DonorPortal: React.FC<{
                         autoComplete="email"
                         className={inputClass}
                       />
-                      {profilePrefillApplied ? (
+                      {rsvpPrefill && !profilePrefillApplied ? (
+                        <p className="mt-1.5 text-[13px] text-awc-ok">Filled in from your RSVP. Change it if you need to.</p>
+                      ) : profilePrefillApplied ? (
                         <p className="mt-1.5 text-[13px] text-awc-accent">
                           Welcome back{donorName ? `, ${donorName.split(' ')[0]}` : ''}. Your details are filled in from My
                           giving.
@@ -854,7 +977,7 @@ export const DonorPortal: React.FC<{
 
                 {/* Pay with */}
                 <fieldset aria-labelledby="method-label">
-                  <SectionLabel n={activeFunds.length > 1 ? '05' : '04'} id="method-label">Pay with</SectionLabel>
+                  <SectionLabel n={sectionNo('method')} id="method-label">Pay with</SectionLabel>
                   {apiConfigLoading ? (
                     <div className="rounded-xl border border-dashed border-awc-line px-4 py-4 text-sm text-awc-muted" role="status">
                       Checking payment options…
@@ -941,6 +1064,15 @@ export const DonorPortal: React.FC<{
                   <p className="text-center text-[13px] text-awc-muted">
                     Your details are used only for your receipt and My giving. They're never shown publicly.
                   </p>
+                  {eventGift?.returnUrl ? (
+                    <a
+                      href={eventGift.returnUrl}
+                      className="mx-auto flex min-h-11 w-fit items-center gap-1.5 text-[15px] font-semibold text-awc-accent hover:underline"
+                    >
+                      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                      Back to my RSVP
+                    </a>
+                  ) : null}
                 </div>
               </form>
             ) : null}

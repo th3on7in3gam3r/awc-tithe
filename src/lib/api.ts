@@ -302,10 +302,10 @@ export async function resetStaffAuthenticator(id: string): Promise<void> {
 }
 
 export async function fetchPublicFunds(): Promise<
-  Array<{ id: string; name: string; description: string; sortOrder: number }>
+  Array<{ id: string; name: string; description: string; sortOrder: number; isEvent?: boolean }>
 > {
   const res = await fetch('/api/funds');
-  const data = await parseJson<{ ok: boolean; funds: Array<{ id: string; name: string; description: string; sortOrder: number }> }>(res);
+  const data = await parseJson<{ ok: boolean; funds: Array<{ id: string; name: string; description: string; sortOrder: number; isEvent?: boolean }> }>(res);
   return data.funds || [];
 }
 

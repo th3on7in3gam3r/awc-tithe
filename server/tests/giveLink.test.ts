@@ -45,6 +45,23 @@ check('fund kept', parseGiveLink('?fund=Special%20Offerings').fund === 'Special 
 check('strip removes ref keys', stripGiveLink('/', `?ref=${RSVP}&for=x&fund=y&staffInvite=abc`) === '/?staffInvite=abc');
 check('strip to bare path', stripGiveLink('/', '?amount=5&from=website') === '/');
 
+// RSVP hand-off: donor details, "Paying for" detail line, safe return address
+const VAULT_BACK = 'https://awc-vault.vercel.app/#/events/a1b2c3d4-e5f6-4789-a012-202611221400/rsvp?r=x';
+const handoff = parseGiveLink(
+  `?ref=${RSVP}&amount=40&name=Jerless%20M.&email=Me%40Example.com&who=3%20adults%20%C2%B7%20Sun%2C%20Nov%2022&return=${encodeURIComponent(VAULT_BACK)}`
+);
+check('rsvp name prefilled', handoff.name === 'Jerless M.', handoff);
+check('rsvp email prefilled, lower-cased', handoff.email === 'me@example.com', handoff);
+check('rsvp detail line kept', handoff.refDetail === '3 adults · Sun, Nov 22', handoff);
+check('vault return kept', handoff.returnUrl === VAULT_BACK, handoff);
+check('outside return refused', parseGiveLink(`?ref=${RSVP}&return=${encodeURIComponent('https://evil.example.com/')}`).returnUrl === undefined);
+check('lookalike return refused', parseGiveLink(`?ref=${RSVP}&return=${encodeURIComponent('https://awc-vault.vercel.app.evil.com/')}`).returnUrl === undefined);
+check('javascript return refused', parseGiveLink(`?ref=${RSVP}&return=javascript:alert(1)`).returnUrl === undefined);
+check('return ignored without a ref', parseGiveLink(`?return=${encodeURIComponent(VAULT_BACK)}`).returnUrl === undefined);
+check('bad email ignored', parseGiveLink('?email=not-an-email').email === undefined);
+check('markup stripped from name', parseGiveLink('?name=%3Cb%3EAnn%3C%2Fb%3E').name === 'bAnnb');
+check('strip removes hand-off keys', stripGiveLink('/', `?ref=${RSVP}&name=a&email=b&who=c&return=d&staffInvite=abc`) === '/?staffInvite=abc');
+
 if (failed > 0) {
   console.error(`\n${failed} give link check(s) failed.`);
   process.exit(1);

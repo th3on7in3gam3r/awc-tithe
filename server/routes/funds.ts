@@ -29,6 +29,8 @@ router.get('/', async (_req, res) => {
         name: f.name,
         description: f.description,
         sortOrder: f.sortOrder,
+        // Event RSVP funds stay out of the Give page list; an RSVP link still selects them.
+        isEvent: Boolean(f.isEvent),
       })),
     });
   } catch (err) {

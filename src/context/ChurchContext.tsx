@@ -215,6 +215,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
               category: 'General' as const,
               active: true,
               sortOrder: f.sortOrder,
+              isEvent: Boolean(f.isEvent),
             }))
           );
         }

@@ -19,6 +19,41 @@ export interface GiveLink {
   ref?: string;
   /** What the gift is for, shown above the form ("Thanksgiving 2026 RSVP"). */
   refLabel?: string;
+  /** Second line on the "Paying for" card ("Jerless M. · 3 adults, 2 children · Sun, Nov 22"). */
+  refDetail?: string;
+  /** Donor details handed over from the RSVP so they don't type them twice. */
+  name?: string;
+  email?: string;
+  /** Where "Back to my RSVP" goes. Only AWC Vault / AWC Connect addresses are accepted. */
+  returnUrl?: string;
+}
+
+/** Apps allowed to receive donors back after an RSVP payment. */
+const RETURN_ORIGINS = ['https://awc-vault.vercel.app', 'https://awc-connect.vercel.app'];
+
+/** A safe "Back to my RSVP" address, or null. Never sends donors to an outside site. */
+export function normalizeReturnUrl(raw: unknown): string | null {
+  const value = String(raw ?? '').trim();
+  if (!value || value.length > 500) return null;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  const local = url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1');
+  if (!RETURN_ORIGINS.includes(url.origin) && !local) return null;
+  return url.toString();
+}
+
+function plainLine(raw: unknown, max: number): string | null {
+  const text = String(raw ?? '')
+    .replace(/[^\p{L}\p{N} '&.,:()·+\-]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max)
+    .trim();
+  return text.length >= 2 ? text : null;
 }
 
 const METHOD_ALIASES: Record<string, GiveLinkMethod> = {
@@ -34,7 +69,7 @@ const METHOD_ALIASES: Record<string, GiveLinkMethod> = {
 const FREQUENCIES: DonationFrequency[] = ['one-time', 'weekly', 'bi-weekly', 'monthly', 'annually'];
 
 /** Query keys this module reads, so the page can tidy the address bar afterwards. */
-export const GIVE_LINK_KEYS = ['method', 'amount', 'frequency', 'from', 'fund', 'ref', 'for'];
+export const GIVE_LINK_KEYS = ['method', 'amount', 'frequency', 'from', 'fund', 'ref', 'for', 'who', 'name', 'email', 'return'];
 
 export function parseGiveLink(search: string): GiveLink {
   const params = new URLSearchParams(search);
@@ -56,7 +91,15 @@ export function parseGiveLink(search: string): GiveLink {
     out.frequency = 'one-time';
     const label = normalizeRefLabel(params.get('for'));
     if (label) out.refLabel = label;
+    const detail = plainLine(params.get('who'), 120);
+    if (detail) out.refDetail = detail;
+    const returnUrl = normalizeReturnUrl(params.get('return'));
+    if (returnUrl) out.returnUrl = returnUrl;
   }
+  const name = plainLine(params.get('name'), 80);
+  if (name) out.name = name;
+  const email = (params.get('email') || '').trim().toLowerCase();
+  if (email.length <= 120 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) out.email = email;
   return out;
 }
 

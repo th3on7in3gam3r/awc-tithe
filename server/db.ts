@@ -201,6 +201,13 @@ export async function ensureSchema(): Promise<{ ok: boolean; mode: 'neon' | 'mem
       )
     `;
     await client`ALTER TABLE funds ADD COLUMN IF NOT EXISTS gl_code TEXT NOT NULL DEFAULT ''`;
+    // Event RSVP funds (e.g. "Thanksgiving Dinner 2026") are paid only from an AWC Vault RSVP
+    // link, so the public Give page leaves them out of its fund list.
+    await client`ALTER TABLE funds ADD COLUMN IF NOT EXISTS is_event BOOLEAN NOT NULL DEFAULT FALSE`;
+    await client`
+      UPDATE funds SET is_event = TRUE
+      WHERE is_event = FALSE AND description LIKE 'Event RSVP payments%'
+    `;
     await client`
       CREATE TABLE IF NOT EXISTS giving_goals (
         fund_id TEXT NOT NULL REFERENCES funds(id) ON DELETE CASCADE,

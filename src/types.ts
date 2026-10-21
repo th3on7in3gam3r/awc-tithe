@@ -33,6 +33,8 @@ export interface Fund {
   /** Optional admin-assigned general-ledger code; empty by default. */
   glCode?: string;
   description: string;
+  /** Event RSVP fund: reached only from an AWC Vault RSVP link, left out of the Give list. */
+  isEvent?: boolean;
   /** Admin-only annual goals live on the server; kept optional for local compatibility. */
   goalAmount: number;
   currentAmount: number;

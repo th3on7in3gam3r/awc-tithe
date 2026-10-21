@@ -14,6 +14,8 @@ export type FundRecord = {
   active: boolean;
   sortOrder: number;
   glCode: string;
+  /** Event RSVP fund: paid only from an AWC Vault RSVP link, hidden from the public fund list. */
+  isEvent?: boolean;
 };
 
 export type GivingGoalProgress = {
@@ -45,6 +47,7 @@ const DEFAULT_FUND: FundRecord = {
   active: true,
   sortOrder: 0,
   glCode: '',
+  isEvent: false,
 };
 
 const memoryFunds = new Map<string, FundRecord>([[DEFAULT_FUND.id, { ...DEFAULT_FUND }]]);
@@ -85,6 +88,7 @@ function mapFund(row: Record<string, unknown>): FundRecord {
     active: Boolean(row.active),
     sortOrder: Number(row.sort_order ?? 0),
     glCode: String(row.gl_code || row.code || ''),
+    isEvent: Boolean(row.is_event),
   };
 }
 
@@ -98,7 +102,7 @@ export async function listActiveFunds(): Promise<FundRecord[]> {
       .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
   }
   const rows = await client`
-    SELECT id, name, description, active, sort_order, gl_code
+    SELECT id, name, description, active, sort_order, gl_code, is_event
     FROM funds
     WHERE active = TRUE
     ORDER BY sort_order ASC, name ASC
@@ -116,7 +120,7 @@ export async function listAllFunds(): Promise<FundRecord[]> {
     );
   }
   const rows = await client`
-    SELECT id, name, description, active, sort_order, gl_code
+    SELECT id, name, description, active, sort_order, gl_code, is_event
     FROM funds
     ORDER BY sort_order ASC, name ASC
   `;
@@ -130,7 +134,7 @@ export async function getFundById(id: string): Promise<FundRecord | null> {
     return memoryFunds.get(id) || null;
   }
   const rows = await client`
-    SELECT id, name, description, active, sort_order, gl_code FROM funds WHERE id = ${id} LIMIT 1
+    SELECT id, name, description, active, sort_order, gl_code, is_event FROM funds WHERE id = ${id} LIMIT 1
   `;
   const row = rows[0];
   return row ? mapFund(row as Record<string, unknown>) : null;
@@ -142,6 +146,7 @@ export async function createFund(input: {
   active?: boolean;
   sortOrder?: number;
   glCode?: string;
+  isEvent?: boolean;
 }): Promise<FundRecord> {
   const id = `fund-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
   const record: FundRecord = {
@@ -151,6 +156,7 @@ export async function createFund(input: {
     active: input.active !== false,
     sortOrder: Number(input.sortOrder ?? 0),
     glCode: (input.glCode || '').trim(),
+    isEvent: Boolean(input.isEvent),
   };
   const client = getSql();
   if (!client) {
@@ -159,8 +165,8 @@ export async function createFund(input: {
     return record;
   }
   await client`
-    INSERT INTO funds (id, name, description, active, sort_order, gl_code)
-    VALUES (${record.id}, ${record.name}, ${record.description}, ${record.active}, ${record.sortOrder}, ${record.glCode})
+    INSERT INTO funds (id, name, description, active, sort_order, gl_code, is_event)
+    VALUES (${record.id}, ${record.name}, ${record.description}, ${record.active}, ${record.sortOrder}, ${record.glCode}, ${Boolean(record.isEvent)})
   `;
   return record;
 }
@@ -186,16 +192,29 @@ export async function ensureEventFund(rawName: unknown): Promise<{ fund: FundRec
   const all = await listAllFunds();
   const existing = all.find((f) => f.name.trim().toLowerCase() === name.toLowerCase());
   if (existing) {
-    if (existing.active) return { fund: existing, created: false };
+    if (!existing.isEvent) await markEventFund(existing.id);
+    if (existing.active) return { fund: { ...existing, isEvent: true }, created: false };
     const reactivated = await updateFund(existing.id, { active: true });
-    return { fund: reactivated || { ...existing, active: true }, created: false };
+    return { fund: { ...(reactivated || existing), active: true, isEvent: true }, created: false };
   }
   const fund = await createFund({
     name,
-    description: 'Event RSVP payments (set up automatically by AWC Vault).',
+    description: 'Event RSVP payments.',
     sortOrder: 100,
+    isEvent: true,
   });
   return { fund, created: true };
+}
+
+/** Flag a fund as an event RSVP fund (hidden from the public Give list). */
+async function markEventFund(id: string): Promise<void> {
+  const client = getSql();
+  if (!client) {
+    const f = memoryFunds.get(id);
+    if (f) memoryFunds.set(id, { ...f, isEvent: true });
+    return;
+  }
+  await client`UPDATE funds SET is_event = TRUE, updated_at = NOW() WHERE id = ${id}`;
 }
 
 export async function updateFund(
