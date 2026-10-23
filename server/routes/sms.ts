@@ -22,6 +22,18 @@ export function smsWebhookUrl(): string {
   return new URL('/api/sms/incoming', env.publicAppUrl).toString();
 }
 
+/**
+ * URLs the signature may have been computed over: the configured one, plus the
+ * address this request actually arrived at (Render terminates TLS; trust proxy
+ * gives us https). Every candidate still requires the secret auth token.
+ */
+export function signatureUrlCandidates(req: Request): string[] {
+  const urls = [smsWebhookUrl()];
+  const host = req.get('host');
+  if (host) urls.push(`${req.protocol}://${host}${req.originalUrl}`);
+  return [...new Set(urls)];
+}
+
 router.post(
   '/incoming',
   express.urlencoded({ extended: false, limit: '64kb' }),
@@ -35,8 +47,13 @@ router.post(
       }
     } else {
       const signature = req.get('X-Twilio-Signature');
-      if (!isValidTwilioSignature(env.twilioAuthToken, signature, smsWebhookUrl(), params)) {
-        console.warn('[sms] rejected request with an invalid Twilio signature');
+      const urls = signatureUrlCandidates(req);
+      if (!urls.some((url) => isValidTwilioSignature(env.twilioAuthToken, signature, url, params))) {
+        console.warn(
+          `[sms] rejected request: Twilio signature ${signature ? 'did not match' : 'missing'} ` +
+            `(checked ${urls.join(', ')}). If the URL is right, TWILIO_AUTH_TOKEN does not match ` +
+            'the Auth Token of the Twilio account that owns the number.'
+        );
         return res.status(403).type('text/plain').send('Forbidden');
       }
     }

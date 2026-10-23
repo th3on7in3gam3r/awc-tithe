@@ -114,6 +114,13 @@ try {
   const stopRes = await post(stop, twilioSignature('test_auth_token_123', webhookUrl, stop));
   check('STOP → empty response', stopRes.text.endsWith('<Response></Response>'), stopRes.text);
 
+  // Signed for the address the request actually reached (PUBLIC_APP_URL differs)
+  const localUrl = `http://127.0.0.1:${port}/api/sms/incoming`;
+  const viaHost = await post(params, twilioSignature('test_auth_token_123', localUrl, params));
+  check('signature over actual request URL accepted', viaHost.status === 200, viaHost);
+  const wrongToken = await post(params, twilioSignature('some_other_token', webhookUrl, params));
+  check('wrong token → 403', wrongToken.status === 403, wrongToken);
+
   const bad = await post(params, 'not-a-real-signature');
   check('bad signature → 403', bad.status === 403, bad);
   const none = await post(params);
