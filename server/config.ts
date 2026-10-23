@@ -74,6 +74,15 @@ export const env = {
   twilioWebhookUrl: process.env.TWILIO_WEBHOOK_URL?.trim() || '',
   /** Giving page texted back to members (defaults to PUBLIC_APP_URL). */
   smsGivingUrl: process.env.SMS_GIVING_URL?.trim() || '',
+  /** My Giving phone sign-in (Twilio Verify). Off unless all three are set. */
+  twilioAccountSid: process.env.TWILIO_ACCOUNT_SID?.trim() || '',
+  twilioVerifyServiceSid: process.env.TWILIO_VERIFY_SERVICE_SID?.trim() || '',
+  /** Hard cap on sign-in texts per day across everyone — protects the Twilio balance. */
+  smsCodeDailyCap: Math.max(1, Number(process.env.SMS_CODE_DAILY_CAP || 60) || 60),
+  /** Sign-in texts allowed per phone number per hour. */
+  rateLimitSmsPhonePerHour: Math.max(1, Number(process.env.RATE_LIMIT_SMS_PHONE_PER_HOUR || 3) || 3),
+  /** Sign-in texts allowed per device/IP per hour. */
+  rateLimitSmsIpPerHour: Math.max(1, Number(process.env.RATE_LIMIT_SMS_IP_PER_HOUR || 5) || 5),
   /** Better Auth (donor My Giving email OTP) */
   betterAuthSecret: process.env.BETTER_AUTH_SECRET?.trim() || '',
   betterAuthUrl: process.env.BETTER_AUTH_URL?.trim() || '',

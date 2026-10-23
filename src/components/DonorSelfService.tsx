@@ -4,10 +4,14 @@ import { Donor, Donation, DonationFrequency } from '../types';
 import {
   fetchDonorBillingProfile,
   fetchMyGifts,
+  fetchPhoneSignIn,
   openStripeCustomerPortal,
   requestDonorCode,
+  requestPhoneCode,
+  toUsE164,
 } from '../lib/api';
-import { signInWithEmailOtp, signOutDonor } from '../lib/authClient';
+import { signInWithEmailOtp, signInWithPhoneOtp, signOutDonor } from '../lib/authClient';
+import { PhoneSignInCard } from './PhoneSignInCard';
 import {
   clearDonorSessionEmail,
   getDonorSessionEmail,
@@ -26,6 +30,7 @@ import {
   Lock,
   LogOut,
   Mail,
+  MessageSquare,
   RefreshCw,
 } from 'lucide-react';
 
@@ -33,6 +38,9 @@ const normalizeEmail = (value: string) => normalizeDonorEmail(value);
 
 const CODE_SENT_MESSAGE =
   'If we have gifts for this email, a sign-in code is on its way. Check your inbox (and spam).';
+
+const PHONE_CODE_SENT_MESSAGE =
+  'If this phone is set up for My Giving, a 6-digit code is on its way by text. Not set up yet? Sign in by email once and add your phone.';
 
 interface DonorSelfServiceProps {
   /** Prefill from a just-completed gift (session handoff). */
@@ -106,6 +114,9 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
   } = useChurch();
 
   const [emailInput, setEmailInput] = useState('');
+  const [signInMode, setSignInMode] = useState<'email' | 'phone'>('email');
+  const [phoneInput, setPhoneInput] = useState('');
+  const [phoneSignInOn, setPhoneSignInOn] = useState(false);
   const [otpInput, setOtpInput] = useState('');
   const [codeSent, setCodeSent] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -200,8 +211,47 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
     }
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    void fetchPhoneSignIn().then((s) => {
+      if (!cancelled) setPhoneSignInOn(s.enabled);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const switchSignInMode = (mode: 'email' | 'phone') => {
+    setSignInMode(mode);
+    setCodeSent(false);
+    setOtpInput('');
+    setStatusMessage(null);
+    setLookupError(null);
+  };
+
   const handleRequestCode = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (signInMode === 'phone') {
+      const phone = toUsE164(phoneInput);
+      if (!phone) {
+        setLookupError('Enter a 10-digit US mobile number.');
+        return;
+      }
+      setLookingUp(true);
+      setLookupError(null);
+      setStatusMessage(null);
+      try {
+        await requestPhoneCode(phone, 'sign-in', turnstileToken);
+        setCodeSent(true);
+        setStatusMessage(PHONE_CODE_SENT_MESSAGE);
+        setOtpInput('');
+      } catch (err) {
+        setLookupError(err instanceof Error ? err.message : 'Could not request a code.');
+      } finally {
+        setLookingUp(false);
+      }
+      return;
+    }
     const normalized = normalizeEmail(emailInput);
     if (!normalized || !normalized.includes('@')) {
       setLookupError('Enter a valid email address used on your gift receipt.');
@@ -224,6 +274,37 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
 
   const handleVerifyCode = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (signInMode === 'phone') {
+      const phone = toUsE164(phoneInput);
+      if (!phone || otpInput.trim().length !== 6) {
+        setLookupError('Enter the 6-digit code from your text.');
+        return;
+      }
+      setLookingUp(true);
+      setLookupError(null);
+      try {
+        const result = await signInWithPhoneOtp(phone, otpInput);
+        if (result.error) {
+          setLookupError('That code did not work. Check it, or request a new one.');
+          return;
+        }
+        const me = (await fetch('/api/donor/me', { credentials: 'include' }).then((r) => r.json())) as {
+          user?: { email?: string } | null;
+        };
+        const email = me.user?.email;
+        if (!email) {
+          setLookupError('Signed in, but we could not load your account. Please try again.');
+          return;
+        }
+        const ok = await loadGiftsForSession(email);
+        if (!ok) setCodeSent(true);
+      } catch (err) {
+        setLookupError(err instanceof Error ? err.message : 'Could not verify code.');
+      } finally {
+        setLookingUp(false);
+      }
+      return;
+    }
     const normalized = normalizeEmail(emailInput);
     if (otpInput.trim().length !== 6) {
       setLookupError('Enter the 6-digit code from your email.');
@@ -325,6 +406,7 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
     clearSensitiveCaches();
     setUnlockedEmail(null);
     setEmailInput('');
+    setPhoneInput('');
     setOtpInput('');
     setCodeSent(false);
     setStatusMessage(null);
@@ -386,31 +468,57 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
             Sign in to My Giving
           </h1>
           <p className="mt-2 text-center text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-            Enter the email on your gift receipt. We will send a one-time 6-digit code to verify it is
-            you—then you can view receipts and yearly giving summaries.
+            {signInMode === 'phone'
+              ? 'Enter the mobile number you added to My Giving. We will text a one-time 6-digit code'
+              : 'Enter the email on your gift receipt. We will send a one-time 6-digit code'}{' '}
+            to verify it is you—then you can view receipts and yearly giving summaries.
           </p>
 
           <form onSubmit={codeSent ? handleVerifyCode : handleRequestCode} className="mt-8 space-y-4">
-            <div>
-              <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-slate-500">
-                Email on your gift receipt
-              </label>
-              <div className="relative">
-                <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="email"
-                  value={emailInput}
-                  onChange={(e) => {
-                    setEmailInput(e.target.value);
-                    setLookupError(null);
-                  }}
-                  required
-                  autoComplete="email"
-                  placeholder="you@example.com"
-                  className="w-full rounded-xl border border-[#E8E2D9] bg-white py-2.5 pl-10 pr-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
+            {signInMode === 'phone' ? (
+              <div>
+                <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                  Mobile number
+                </label>
+                <div className="relative">
+                  <MessageSquare className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="tel"
+                    inputMode="tel"
+                    value={phoneInput}
+                    onChange={(e) => {
+                      setPhoneInput(e.target.value);
+                      setLookupError(null);
+                    }}
+                    required
+                    autoComplete="tel-national"
+                    placeholder="(508) 555-1234"
+                    className="w-full rounded-xl border border-[#E8E2D9] bg-white py-2.5 pl-10 pr-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
               </div>
-            </div>
+            ) : (
+              <div>
+                <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                  Email on your gift receipt
+                </label>
+                <div className="relative">
+                  <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="email"
+                    value={emailInput}
+                    onChange={(e) => {
+                      setEmailInput(e.target.value);
+                      setLookupError(null);
+                    }}
+                    required
+                    autoComplete="email"
+                    placeholder="you@example.com"
+                    className="w-full rounded-xl border border-[#E8E2D9] bg-white py-2.5 pl-10 pr-3 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+              </div>
+            )}
 
             <TurnstileWidget onToken={setTurnstileToken} />
 
@@ -455,9 +563,25 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
               className="w-full rounded-xl py-2.5 text-sm font-semibold text-white shadow-sm transition-colors disabled:opacity-60"
               style={{ backgroundColor: '#4A0404' }}
             >
-              {lookingUp ? 'Please wait…' : codeSent ? 'Verify code' : 'Email me a code'}
+              {lookingUp
+                ? 'Please wait…'
+                : codeSent
+                  ? 'Verify code'
+                  : signInMode === 'phone'
+                    ? 'Text me a code'
+                    : 'Email me a code'}
             </button>
           </form>
+
+          {phoneSignInOn ? (
+            <button
+              type="button"
+              onClick={() => switchSignInMode(signInMode === 'phone' ? 'email' : 'phone')}
+              className="mt-4 w-full text-center text-xs font-medium text-slate-600 underline hover:text-[#4A0404] dark:text-slate-300"
+            >
+              {signInMode === 'phone' ? 'Use my email instead' : 'Text me a code instead'}
+            </button>
+          ) : null}
 
           <p className="mt-6 text-center text-[11px] text-slate-500 leading-relaxed">
             Only your gifts appear here. Staff tools stay in Staff Portal (invite required).
@@ -531,6 +655,8 @@ export const DonorSelfService: React.FC<DonorSelfServiceProps> = ({
               </div>
             </div>
           </div>
+
+          <PhoneSignInCard />
 
           <div className="bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 p-6 shadow-sm">
             <h3 className="font-serif-display text-base font-semibold text-slate-900 dark:text-white mb-2">

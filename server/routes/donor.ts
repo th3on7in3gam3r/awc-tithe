@@ -11,7 +11,11 @@ import {
   otpIpWindow,
   rateLimitOtpEmailKey,
   rateLimitOtpIpKey,
+  sha256Hex,
 } from '../middleware/rateLimit';
+import { env } from '../config';
+import { maskE164, normalizeUsPhone, phoneSignInEnabled, sendPhoneCode } from '../sms/verify';
+import { findUserByPhone, getUserPhone, phoneTakenByOther, removeUserPhone } from '../auth/donorPhone';
 
 const router = Router();
 
@@ -69,6 +73,105 @@ router.post('/request-code', requireTurnstile, async (req: Request, res: Respons
   }
 
   return res.json(UNIFORM_REQUEST_CODE);
+});
+
+// ---------------------------------------------------------------------------
+// Phone sign-in (Twilio Verify). Codes go out only from here.
+// ---------------------------------------------------------------------------
+
+const UNIFORM_PHONE_CODE = {
+  ok: true as const,
+  message: 'If this phone is set up for My Giving, a 6-digit code is on its way by text.',
+};
+
+const HOUR = 60 * 60 * 1000;
+const smsPhoneWindow = { windowMs: HOUR, max: env.rateLimitSmsPhonePerHour };
+const smsIpWindow = { windowMs: HOUR, max: env.rateLimitSmsIpPerHour };
+const smsDayWindow = { windowMs: 24 * HOUR, max: env.smsCodeDailyCap };
+
+/** Is phone sign-in on, and which phone (masked) is linked to the signed-in donor? */
+router.get('/phone', async (req: Request, res: Response) => {
+  const enabled = phoneSignInEnabled();
+  let phone: string | null = null;
+  try {
+    const session = await getDonorSession(req);
+    if (enabled && session?.user?.id) phone = await getUserPhone(session.user.id);
+  } catch {
+    // signed out
+  }
+  return res.json({ ok: true, enabled, linkedPhone: maskE164(phone) });
+});
+
+/**
+ * purpose "sign-in": anyone; texts a code only to a phone already linked to an
+ * account, and answers the same either way.
+ * purpose "link": signed-in donor adding their phone to My Giving.
+ */
+router.post('/phone/request-code', requireTurnstile, async (req: Request, res: Response) => {
+  if (!phoneSignInEnabled()) {
+    return res.status(503).json({ error: 'PHONE_SIGN_IN_OFF', message: 'Text sign-in is not available right now.' });
+  }
+  const purpose = req.body?.purpose === 'link' ? 'link' : 'sign-in';
+  const phone = normalizeUsPhone(req.body?.phone);
+  if (!phone) {
+    return res.status(400).json({ error: 'INVALID_PHONE', message: 'Enter a 10-digit US mobile number.' });
+  }
+
+  let userId: string | null = null;
+  if (purpose === 'link') {
+    const session = await getDonorSession(req).catch(() => null);
+    userId = session?.user?.id || null;
+    if (!userId) {
+      return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Sign in with your email first.' });
+    }
+    if (await phoneTakenByOther(phone, userId)) {
+      return res.status(409).json({
+        error: 'PHONE_IN_USE',
+        message: 'That number is already used for another My Giving account.',
+      });
+    }
+  }
+
+  const started = Date.now();
+  let limited = false;
+  try {
+    const [phoneLimit, ipLimit] = await Promise.all([
+      checkRateLimit(`sms:phone:${sha256Hex(phone)}`, smsPhoneWindow),
+      checkRateLimit(`sms:ip:${clientIp(req)}`, smsIpWindow),
+    ]);
+    limited = !phoneLimit.allowed || !ipLimit.allowed;
+    const eligible = !limited && (purpose === 'link' || Boolean(await findUserByPhone(phone)));
+    if (eligible) {
+      const day = await checkRateLimit('sms:day:all', smsDayWindow);
+      if (!day.allowed) {
+        console.warn('[phone] daily sign-in text cap reached (SMS_CODE_DAILY_CAP)');
+        limited = true;
+      } else {
+        await sendPhoneCode(phone);
+      }
+    }
+  } catch (err) {
+    console.warn('[phone] request-code', err instanceof Error ? err.message : err);
+    if (purpose === 'link') {
+      return res.status(502).json({ error: 'SEND_FAILED', message: 'We could not send a text right now. Try again shortly.' });
+    }
+  }
+
+  if (purpose === 'link' && limited) {
+    return res.status(429).json({ error: 'RATE_LIMITED', message: 'Too many codes requested. Please wait an hour and try again.' });
+  }
+
+  const elapsed = Date.now() - started;
+  if (elapsed < 150) await new Promise((r) => setTimeout(r, 150 - elapsed));
+  return res.json(purpose === 'link' ? { ok: true, message: 'Code sent. Check your texts.' } : UNIFORM_PHONE_CODE);
+});
+
+/** Stop using text sign-in for this account. */
+router.post('/phone/remove', async (req: Request, res: Response) => {
+  const session = await getDonorSession(req).catch(() => null);
+  if (!session?.user?.id) return res.status(401).json({ error: 'UNAUTHORIZED' });
+  await removeUserPhone(session.user.id);
+  return res.json({ ok: true });
 });
 
 router.get('/me/gifts', async (req: Request, res: Response) => {

@@ -73,6 +73,10 @@ export default function PrivacyPage() {
             Your phone number is used only to reply to you. It is never sold or shared with third parties for
             marketing, and SMS opt-in data is not shared with anyone.
           </li>
+          <li>
+            If you add a mobile number to My Giving, we text it one-time sign-in codes only when you ask for one.
+            You can turn text sign-in off in My Giving at any time.
+          </li>
           <li>Texts are delivered through our messaging provider, Twilio, under its own terms and security program.</li>
         </ul>
       </LegalSection>

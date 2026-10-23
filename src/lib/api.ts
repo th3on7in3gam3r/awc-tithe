@@ -255,6 +255,44 @@ export async function requestDonorCode(
   return parseJson(res);
 }
 
+/** US numbers as +1XXXXXXXXXX (same rules as the server), or null. */
+export function toUsE164(raw: string): string | null {
+  let digits = raw.replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('1')) digits = digits.slice(1);
+  return /^[2-9]\d{2}[2-9]\d{6}$/.test(digits) ? `+1${digits}` : null;
+}
+
+export async function fetchPhoneSignIn(): Promise<{ enabled: boolean; linkedPhone: string | null }> {
+  try {
+    const res = await fetch('/api/donor/phone', { credentials: 'include' });
+    if (!res.ok) return { enabled: false, linkedPhone: null };
+    const data = (await res.json()) as { enabled?: boolean; linkedPhone?: string | null };
+    return { enabled: Boolean(data.enabled), linkedPhone: data.linkedPhone || null };
+  } catch {
+    return { enabled: false, linkedPhone: null };
+  }
+}
+
+/** Text a sign-in code. "sign-in" answers the same whether or not the phone is linked. */
+export async function requestPhoneCode(
+  phone: string,
+  purpose: 'sign-in' | 'link',
+  turnstileToken?: string | null
+): Promise<{ ok: boolean; message: string }> {
+  const res = await fetch('/api/donor/phone/request-code', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone, purpose, turnstileToken: turnstileToken || undefined }),
+  });
+  return parseJson(res);
+}
+
+export async function removeDonorPhone(): Promise<void> {
+  const res = await fetch('/api/donor/phone/remove', { method: 'POST', credentials: 'include' });
+  await parseJson(res);
+}
+
 export async function acceptStaffInvite(token: string): Promise<{ ok: boolean; role?: 'admin' | 'staff'; message?: string }> {
   const res = await fetch('/api/staff/invites/accept', {
     method: 'POST',

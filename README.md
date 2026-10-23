@@ -136,3 +136,22 @@ configuration → "A message comes in" → Webhook →
 `https://awc-tithe.onrender.com/api/sms/incoming`, HTTP POST. Then set
 `TWILIO_AUTH_TOKEN` on Render. If the webhook URL is not exactly
 `PUBLIC_APP_URL` + `/api/sms/incoming`, also set `TWILIO_WEBHOOK_URL` to it.
+
+## My Giving phone sign-in (Twilio Verify)
+
+Signed-in donors can add a mobile number in My Giving ("Sign in by text"); after
+that, "Text me a code instead" on the sign-in screen opens the same account.
+
+- Codes are sent by Twilio Verify from Twilio's own senders, so the (855)
+  text-to-give number is not used. Set `TWILIO_ACCOUNT_SID`,
+  `TWILIO_VERIFY_SERVICE_SID` (Twilio console → Verify → Services → Create, code
+  length 6) and `TWILIO_AUTH_TOKEN`. The feature stays hidden until all three are set.
+- Codes go out only from `POST /api/donor/phone/request-code` (Turnstile, US
+  numbers only, per-phone / per-device hourly limits, `SMS_CODE_DAILY_CAP`). A
+  sign-in code is texted only to a phone already linked to an account, and the
+  reply is the same either way. Of the Better Auth phone-number routes, only
+  `POST /api/auth/phone-number/verify` is open (`server/auth/phoneRouteGuard.ts`).
+- A phone is linked only by a donor who is already signed in by email and
+  confirms a texted code. An unknown phone never creates an account.
+- Columns `"user"."phoneNumber"` / `"phoneNumberVerified"` are added at boot
+  (`server/sql/donor_phone_signin.sql` for reference).

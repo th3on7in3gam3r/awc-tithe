@@ -28,6 +28,7 @@ import statementsRoutes from './routes/statements';
 import manualGiftsRoutes from './routes/manualGifts';
 import vaultIntegrationRoutes from './routes/vaultIntegration';
 import smsRoutes from './routes/sms';
+import { phoneRouteGuard } from './auth/phoneRouteGuard';
 import { ensureExternalRefsSchema } from './externalRefs/store';
 import { ensureManualGiftsSchema } from './manualGifts/store';
 import { maybeBootstrapAdminInvite } from './auth/bootstrapAdmin';
@@ -131,6 +132,9 @@ app.use(
     credentials: true,
   })
 );
+
+/** Phone sign-in: only /api/auth/phone-number/verify is reachable (see phoneRouteGuard). */
+app.use('/api/auth', phoneRouteGuard);
 
 // Better Auth must mount before express.json() so it can read the raw body.
 const authHandler = toNodeHandler(auth);

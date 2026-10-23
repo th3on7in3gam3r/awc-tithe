@@ -108,6 +108,10 @@ export async function ensureSchema(): Promise<{ ok: boolean; mode: 'neon' | 'mem
       )
     `;
     await client`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "twoFactorEnabled" BOOLEAN NOT NULL DEFAULT FALSE`;
+    // My Giving phone sign-in (Better Auth phone-number plugin)
+    await client`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "phoneNumber" TEXT`;
+    await client`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "phoneNumberVerified" BOOLEAN`;
+    await client`CREATE UNIQUE INDEX IF NOT EXISTS user_phone_number_key ON "user" ("phoneNumber")`;
     await client`
       CREATE TABLE IF NOT EXISTS session (
         id TEXT PRIMARY KEY,
