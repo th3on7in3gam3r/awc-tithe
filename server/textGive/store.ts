@@ -41,11 +41,13 @@ export type TextGiveLink = {
   phone: string;
   /** Gift to make at setup; 0 = save a new card only (CHANGE). */
   amountCents: number;
+  /** Fund the first gift goes to (the word after the amount). */
+  fundId: string;
   expiresAt: string;
   usedAt: string | null;
 };
 
-export type PendingTextGift = { phone: string; amountCents: number; expiresAt: string };
+export type PendingTextGift = { phone: string; amountCents: number; fundId: string; expiresAt: string };
 
 export const LINK_TTL_MS = 30 * 60 * 1000;
 export const PENDING_TTL_MS = 10 * 60 * 1000;
@@ -73,6 +75,7 @@ const DDL = [
      used_at TIMESTAMPTZ,
      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
    )`,
+  `ALTER TABLE text_give_links ADD COLUMN IF NOT EXISTS fund_id TEXT NOT NULL DEFAULT 'fund-tithes'`,
   `CREATE INDEX IF NOT EXISTS text_give_links_phone_idx ON text_give_links (phone, created_at DESC)`,
   `CREATE TABLE IF NOT EXISTS text_give_charges (
      id BIGSERIAL PRIMARY KEY,
@@ -87,6 +90,7 @@ const DDL = [
      amount_cents INTEGER NOT NULL,
      expires_at TIMESTAMPTZ NOT NULL
    )`,
+  `ALTER TABLE text_give_pending ADD COLUMN IF NOT EXISTS fund_id TEXT NOT NULL DEFAULT 'fund-tithes'`,
 ];
 
 let schemaPromise: Promise<void> | null = null;
@@ -183,12 +187,18 @@ export async function removeGiver(phone: string): Promise<boolean> {
 }
 
 /** New one-time setup link; returns the raw token (only its hash is stored). */
-export async function createLink(phone: string, amountCents: number, now = Date.now()): Promise<{ token: string; link: TextGiveLink }> {
+export async function createLink(
+  phone: string,
+  amountCents: number,
+  now = Date.now(),
+  fundId = 'fund-tithes'
+): Promise<{ token: string; link: TextGiveLink }> {
   const token = crypto.randomBytes(24).toString('base64url');
   const link: TextGiveLink = {
     id: crypto.randomUUID(),
     phone,
     amountCents,
+    fundId,
     expiresAt: new Date(now + LINK_TTL_MS).toISOString(),
     usedAt: null,
   };
@@ -199,8 +209,8 @@ export async function createLink(phone: string, amountCents: number, now = Date.
   }
   await ensureTextGiveSchema();
   await p.query(
-    'INSERT INTO text_give_links (id, token_hash, phone, amount_cents, expires_at) VALUES ($1, $2, $3, $4, $5)',
-    [link.id, hashToken(token), phone, amountCents, link.expiresAt]
+    'INSERT INTO text_give_links (id, token_hash, phone, amount_cents, expires_at, fund_id) VALUES ($1, $2, $3, $4, $5, $6)',
+    [link.id, hashToken(token), phone, amountCents, link.expiresAt, fundId]
   );
   return { token, link };
 }
@@ -222,6 +232,7 @@ export async function findOpenLink(token: string, now = Date.now()): Promise<Tex
         id: row.id,
         phone: row.phone,
         amountCents: Number(row.amount_cents),
+        fundId: String(row.fund_id || 'fund-tithes'),
         expiresAt: new Date(row.expires_at).toISOString(),
         usedAt: row.used_at ? new Date(row.used_at).toISOString() : null,
       };
@@ -259,18 +270,18 @@ export async function countRecentLinks(phone: string, now = Date.now()): Promise
   return Number(r.rows[0]?.n ?? 0);
 }
 
-export async function setPending(phone: string, amountCents: number, now = Date.now()): Promise<void> {
+export async function setPending(phone: string, amountCents: number, now = Date.now(), fundId = 'fund-tithes'): Promise<void> {
   const expiresAt = new Date(now + PENDING_TTL_MS).toISOString();
   const p = pool();
   if (!p) {
-    memPending.set(phone, { phone, amountCents, expiresAt });
+    memPending.set(phone, { phone, amountCents, fundId, expiresAt });
     return;
   }
   await ensureTextGiveSchema();
   await p.query(
-    `INSERT INTO text_give_pending (phone, amount_cents, expires_at) VALUES ($1, $2, $3)
-     ON CONFLICT (phone) DO UPDATE SET amount_cents = EXCLUDED.amount_cents, expires_at = EXCLUDED.expires_at`,
-    [phone, amountCents, expiresAt]
+    `INSERT INTO text_give_pending (phone, amount_cents, expires_at, fund_id) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (phone) DO UPDATE SET amount_cents = EXCLUDED.amount_cents, expires_at = EXCLUDED.expires_at, fund_id = EXCLUDED.fund_id`,
+    [phone, amountCents, expiresAt, fundId]
   );
 }
 
@@ -285,7 +296,7 @@ export async function takePending(phone: string, now = Date.now()): Promise<Pend
     await ensureTextGiveSchema();
     const r = await p.query('DELETE FROM text_give_pending WHERE phone = $1 RETURNING *', [phone]);
     const x = r.rows[0];
-    if (x) row = { phone: x.phone, amountCents: Number(x.amount_cents), expiresAt: new Date(x.expires_at).toISOString() };
+    if (x) row = { phone: x.phone, amountCents: Number(x.amount_cents), fundId: String(x.fund_id || 'fund-tithes'), expiresAt: new Date(x.expires_at).toISOString() };
   }
   if (!row || Date.parse(row.expiresAt) < now) return null;
   return row;

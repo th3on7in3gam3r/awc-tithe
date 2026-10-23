@@ -168,7 +168,13 @@ Pastor's request: after a one-time setup, members give by texting an amount.
 - **After that**, texting an amount charges the saved card right away and
   replies with a thank-you; the receipt email and DCB record come from the
   normal Stripe webhook (same metadata as the giving page, `giftSource: sms`).
-- Always **Tithes & Offerings** (`fund-tithes`). Up to `TEXT_GIVE_INSTANT_MAX`
+- **Which fund**: a word with the amount picks the fund, matched against the
+  active funds (`server/textGive/funds.ts`): `50` / `50 tithe` / `50 offering`
+  → Tithes & Offerings; `40 marrieds` → Marrieds Dinner 2026; `100 building`
+  → Building Fund. New funds and event funds work by text automatically. A
+  word that matches no fund, or more than one ("dinner" with two dinners),
+  is never charged — the reply lists the words to text. Gifts to an event
+  fund by text aren't tied to a specific RSVP. Up to `TEXT_GIVE_INSTANT_MAX`
   ($2,000) is instant; bigger gifts, or more than `TEXT_GIVE_PER_DAY` (5) in
   24h, ask the giver to reply **OK**. Over `TEXT_GIVE_MAX` → giving page.
 - **Preferred way to give** is chosen at setup and remembered: card or bank

@@ -14,7 +14,8 @@ import {
   twiml,
 } from '../sms/textToGive';
 import { handleTextGive, parseTextGive } from '../textGive/service';
-import { chargeSavedCard, getTextGiveStripe, textGiveFund } from '../textGive/stripe';
+import { chargeSavedCard, getTextGiveStripe } from '../textGive/stripe';
+import { listActiveFunds } from '../funds/store';
 import { p2pGiftReply } from '../textGive/p2p';
 
 const router = Router();
@@ -66,10 +67,9 @@ router.post(
     const command = parseTextGive(params.Body);
     if (command && /^\+\d{10,15}$/.test(from) && getTextGiveStripe()) {
       try {
-        const fund = await textGiveFund();
         const reply = await handleTextGive(from, command, String(params.MessageSid || ''), {
           churchName: env.churchName,
-          fundName: fund.name,
+          listFunds: listActiveFunds,
           setupUrl: new URL('/text-give', env.smsGivingUrl || env.publicAppUrl).toString(),
           minCents: env.textGiveMinCents,
           instantMaxCents: env.textGiveInstantMaxCents,

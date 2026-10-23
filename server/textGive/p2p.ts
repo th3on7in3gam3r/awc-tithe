@@ -8,6 +8,7 @@
 import { env, publicPaymentOptions } from '../config';
 import { createManualGift } from '../manualGifts/store';
 import type { TextGiveMethod, TextGiver } from './store';
+import type { FundRecord } from '../funds/store';
 import { TEXT_GIVE_FUND_ID } from './stripe';
 
 export const P2P_LABEL: Record<string, string> = {
@@ -80,20 +81,21 @@ export function p2pInstructions(method: TextGiveMethod, cents: number, memo: str
   return null;
 }
 
-export function p2pSmsText(i: P2PInstructions): string {
+export function p2pSmsText(i: P2PInstructions, fundName?: string): string {
   const money = `$${Number(i.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+  const forFund = fundName ? ` for ${fundName}` : '';
   if (i.link) {
-    return `Thank you! Tap to send ${money} with ${i.label}: ${i.link} Please put ${i.memo} in the note. (Using your ${i.label}. Text CHANGE to switch.)`;
+    return `Thank you! Tap to send ${money}${forFund} with ${i.label}: ${i.link} Please put ${i.memo} in the note. (Using your ${i.label}. Text CHANGE to switch.)`;
   }
-  return `Thank you! In your bank app, send ${money} by ${i.label} to ${i.recipient} (${i.recipientName}) with memo ${i.memo}. (Using your ${i.label}. Text CHANGE to switch.)`;
+  return `Thank you! In your bank app, send ${money}${forFund} by ${i.label} to ${i.recipient} (${i.recipientName}) with memo ${i.memo}. (Using your ${i.label}. Text CHANGE to switch.)`;
 }
 
 /** Records the gift for Finance and returns the reply text. */
-export async function p2pGiftReply(giver: TextGiver, cents: number): Promise<string | null> {
+export async function p2pGiftReply(giver: TextGiver, cents: number, fund?: FundRecord): Promise<string | null> {
   const created = await createManualGift({
     provider: giver.method as 'cash_app' | 'venmo' | 'zelle',
     amount: cents / 100,
-    fundId: TEXT_GIVE_FUND_ID,
+    fundId: fund?.id || TEXT_GIVE_FUND_ID,
     donorName: giver.donorName,
     donorEmail: giver.donorEmail,
     isAnonymous: false,
@@ -103,5 +105,5 @@ export async function p2pGiftReply(giver: TextGiver, cents: number): Promise<str
     return null;
   }
   const i = p2pInstructions(giver.method, cents, created.value.gift.memoCode);
-  return i ? p2pSmsText(i) : null;
+  return i ? p2pSmsText(i, fund?.name) : null;
 }

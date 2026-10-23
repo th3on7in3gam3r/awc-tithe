@@ -81,10 +81,11 @@ export async function chargeSavedCard(
   giver: TextGiver,
   principalCents: number,
   idempotencyKey: string,
+  fundArg?: FundRecord,
   stripe: Stripe | null = getTextGiveStripe()
 ): Promise<ChargeResult> {
   if (!stripe) return { ok: false, reason: 'error' };
-  const fund = await textGiveFund();
+  const fund = fundArg || (await textGiveFund());
   const t = textGiveTotals(principalCents, giver.coverFees, giver.method);
   try {
     const pi = await stripe.paymentIntents.create(

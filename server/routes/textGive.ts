@@ -16,8 +16,15 @@ import * as store from '../textGive/store';
 import { getTextGiveStripe, textGiveFund, textGiveMetadata, textGiveTotals } from '../textGive/stripe';
 import { availableP2P, P2P_LABEL, p2pInstructions } from '../textGive/p2p';
 import { createManualGift } from '../manualGifts/store';
+import { getFundById } from '../funds/store';
 
 const router = Router();
+
+/** The fund named in the text ("40 dinner"); falls back to Tithes & Offerings if it has closed. */
+async function linkFund(fundId: string) {
+  const fund = await getFundById(fundId);
+  return fund && fund.active ? fund : textGiveFund();
+}
 
 function phoneHint(phone: string): string {
   return `(•••) •••-${phone.slice(-4)}`;
@@ -32,7 +39,7 @@ const EXPIRED = {
 router.get('/link', async (req: Request, res: Response) => {
   const link = await store.findOpenLink(String(req.query.t || ''));
   if (!link) return res.status(404).json(EXPIRED);
-  const fund = await textGiveFund();
+  const fund = await linkFund(link.fundId);
   return res.json({
     ok: true,
     mode: link.amountCents > 0 ? 'give' : 'card',
@@ -72,7 +79,7 @@ router.post('/start', payRateLimitMiddleware, async (req: Request, res: Response
         : {};
 
     if (link.amountCents > 0) {
-      const fund = await textGiveFund();
+      const fund = await linkFund(link.fundId);
       const t = textGiveTotals(link.amountCents, coverFees, method);
       const pi = await stripe.paymentIntents.create({
         amount: t.totalCents,
@@ -209,7 +216,7 @@ router.post('/choose-p2p', payRateLimitMiddleware, async (req: Request, res: Res
     const created = await createManualGift({
       provider: method as 'cash_app' | 'venmo' | 'zelle',
       amount: link.amountCents / 100,
-      fundId: 'fund-tithes',
+      fundId: (await linkFund(link.fundId)).id,
       donorName: name,
       donorEmail: email,
       isAnonymous: false,
