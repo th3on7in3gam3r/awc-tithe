@@ -77,6 +77,12 @@ const DDL = [
    )`,
   `ALTER TABLE text_give_links ADD COLUMN IF NOT EXISTS fund_id TEXT NOT NULL DEFAULT 'fund-tithes'`,
   `CREATE INDEX IF NOT EXISTS text_give_links_phone_idx ON text_give_links (phone, created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS text_give_fund_questions (
+     phone TEXT PRIMARY KEY,
+     amount_cents INTEGER NOT NULL,
+     fund_ids TEXT NOT NULL,
+     expires_at TIMESTAMPTZ NOT NULL
+   )`,
   `CREATE TABLE IF NOT EXISTS text_give_charges (
      id BIGSERIAL PRIMARY KEY,
      phone TEXT NOT NULL,
@@ -112,12 +118,14 @@ export function ensureTextGiveSchema(): Promise<void> {
 const memGivers = new Map<string, TextGiver>();
 const memLinks = new Map<string, TextGiveLink & { tokenHash: string }>();
 const memPending = new Map<string, PendingTextGift>();
+const memQuestions = new Map<string, FundQuestion>();
 const memCharges: Array<{ phone: string; amountCents: number; paymentIntentId: string; at: number }> = [];
 
 export function __resetTextGiveMemoryForTests(): void {
   memGivers.clear();
   memLinks.clear();
   memPending.clear();
+  memQuestions.clear();
   memCharges.length = 0;
 }
 
@@ -326,4 +334,47 @@ export async function countChargesToday(phone: string, now = Date.now()): Promis
     [phone, new Date(since).toISOString()]
   );
   return Number(r.rows[0]?.n ?? 0);
+}
+
+/** "Which fund is your $50 for?" — waiting for the giver's answer. */
+export type FundQuestion = { phone: string; amountCents: number; fundIds: string[]; expiresAt: string };
+
+export async function setFundQuestion(phone: string, amountCents: number, fundIds: string[], now = Date.now()): Promise<void> {
+  const expiresAt = new Date(now + PENDING_TTL_MS).toISOString();
+  const p = pool();
+  if (!p) {
+    memQuestions.set(phone, { phone, amountCents, fundIds, expiresAt });
+    return;
+  }
+  await ensureTextGiveSchema();
+  await p.query(
+    `INSERT INTO text_give_fund_questions (phone, amount_cents, fund_ids, expires_at) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (phone) DO UPDATE SET amount_cents = EXCLUDED.amount_cents, fund_ids = EXCLUDED.fund_ids, expires_at = EXCLUDED.expires_at`,
+    [phone, amountCents, fundIds.join(','), expiresAt]
+  );
+}
+
+/** The open question for this number (not removed), if it hasn't expired. */
+export async function peekFundQuestion(phone: string, now = Date.now()): Promise<FundQuestion | null> {
+  const p = pool();
+  let q: FundQuestion | null = null;
+  if (!p) {
+    q = memQuestions.get(phone) ?? null;
+  } else {
+    await ensureTextGiveSchema();
+    const r = await p.query('SELECT * FROM text_give_fund_questions WHERE phone = $1', [phone]);
+    const x = r.rows[0];
+    if (x) q = { phone: x.phone, amountCents: Number(x.amount_cents), fundIds: String(x.fund_ids).split(',').filter(Boolean), expiresAt: new Date(x.expires_at).toISOString() };
+  }
+  if (!q || Date.parse(q.expiresAt) < now) return null;
+  return q;
+}
+
+/** Closes the question; false if it was already answered (so a reply is used once). */
+export async function clearFundQuestion(phone: string): Promise<boolean> {
+  const p = pool();
+  if (!p) return memQuestions.delete(phone);
+  await ensureTextGiveSchema();
+  const r = await p.query('DELETE FROM text_give_fund_questions WHERE phone = $1', [phone]);
+  return (r.rowCount ?? 0) > 0;
 }

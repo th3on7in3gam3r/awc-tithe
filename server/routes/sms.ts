@@ -13,7 +13,7 @@ import {
   smsReply,
   twiml,
 } from '../sms/textToGive';
-import { handleTextGive, parseTextGive } from '../textGive/service';
+import { answerFundQuestionWithWords, handleTextGive, parseTextGive, type TextGiveDeps } from '../textGive/service';
 import { chargeSavedCard, getTextGiveStripe } from '../textGive/stripe';
 import { listActiveFunds } from '../funds/store';
 import { p2pGiftReply } from '../textGive/p2p';
@@ -65,19 +65,34 @@ router.post(
     // Text an amount ("50") → give with the saved card (or set one up the first time).
     const from = String(params.From || '');
     const command = parseTextGive(params.Body);
-    if (command && /^\+\d{10,15}$/.test(from) && getTextGiveStripe()) {
+    const textGiveOn = /^\+\d{10,15}$/.test(from) && Boolean(getTextGiveStripe());
+    const deps: TextGiveDeps = {
+      churchName: env.churchName,
+      listFunds: listActiveFunds,
+      setupUrl: new URL('/text-give', env.smsGivingUrl || env.publicAppUrl).toString(),
+      minCents: env.textGiveMinCents,
+      instantMaxCents: env.textGiveInstantMaxCents,
+      maxCents: env.textGiveMaxCents,
+      instantPerDay: env.textGivePerDay,
+      charge: chargeSavedCard,
+      p2pReply: p2pGiftReply,
+    };
+    // A word answering "Which fund?" ("tithe", "marrieds"); STOP / HELP are never answers.
+    const kw = classifySms(params.Body);
+    if (!command && textGiveOn && kw !== 'opt_out' && kw !== 'opt_in' && kw !== 'help') {
       try {
-        const reply = await handleTextGive(from, command, String(params.MessageSid || ''), {
-          churchName: env.churchName,
-          listFunds: listActiveFunds,
-          setupUrl: new URL('/text-give', env.smsGivingUrl || env.publicAppUrl).toString(),
-          minCents: env.textGiveMinCents,
-          instantMaxCents: env.textGiveInstantMaxCents,
-          maxCents: env.textGiveMaxCents,
-          instantPerDay: env.textGivePerDay,
-          charge: chargeSavedCard,
-          p2pReply: p2pGiftReply,
-        });
+        const answer = await answerFundQuestionWithWords(from, String(params.Body || ''), String(params.MessageSid || ''), deps);
+        if (answer) {
+          console.log(`[sms] text-give ${String(params.MessageSid || '').slice(0, 40)} from ${maskPhone(from)} → fund answer`);
+          return res.status(200).type('text/xml').send(twiml(answer));
+        }
+      } catch (err) {
+        console.error('[sms] fund answer failed', err instanceof Error ? err.message : err);
+      }
+    }
+    if (command && textGiveOn) {
+      try {
+        const reply = await handleTextGive(from, command, String(params.MessageSid || ''), deps);
         console.log(`[sms] text-give ${String(params.MessageSid || '').slice(0, 40)} from ${maskPhone(from)} → ${command.kind}`);
         return res.status(200).type('text/xml').send(twiml(reply));
       } catch (err) {

@@ -111,7 +111,7 @@ async function main() {
   };
   const PHONE = '+15085551234';
 
-  const first = await handleTextGive(PHONE, { kind: 'amount', fundText: '', cents: 5000 }, 'SM1', deps);
+  const first = await handleTextGive(PHONE, { kind: 'amount', fundText: 'tithe', cents: 5000 }, 'SM1', deps);
   check('new number gets a setup link', /text-give\?t=[\w-]{20,}/.test(first) && first.includes('$50.00'), first);
   check('no charge before setup', charges.length === 0);
   const token = first.match(/t=([\w-]+)/)![1];
@@ -132,38 +132,38 @@ async function main() {
   });
   check('link is single-use', (await store.useLink(link!.id)) === true && (await store.useLink(link!.id)) === false);
 
-  const gift = await handleTextGive(PHONE, { kind: 'amount', fundText: '', cents: 5000 }, 'SM2', deps);
+  const gift = await handleTextGive(PHONE, { kind: 'amount', fundText: 'tithe', cents: 5000 }, 'SM2', deps);
   check('set-up number is charged right away', charges.length === 1 && charges[0].cents === 5000, charges);
   check('idempotency key from the message id', charges[0].key === 'textgive-SM2');
   check('thank-you names amount, fund and card', /Thank you! \$50\.00 given to Tithes & Offerings/.test(gift) && gift.includes('Visa ••4242'), gift);
 
   check('plain amount goes to Tithes & Offerings', chargedFunds[0] === 'fund-tithes', chargedFunds);
-  const small = await handleTextGive(PHONE, { kind: 'amount', fundText: '', cents: 100 }, 'SM3', deps);
+  const small = await handleTextGive(PHONE, { kind: 'amount', fundText: 'tithe', cents: 100 }, 'SM3', deps);
   check('under the minimum is refused', /smallest gift/.test(small) && charges.length === 1, small);
 
-  const big = await handleTextGive(PHONE, { kind: 'amount', fundText: '', cents: 250000 }, 'SM4', deps);
+  const big = await handleTextGive(PHONE, { kind: 'amount', fundText: 'tithe', cents: 250000 }, 'SM4', deps);
   check('over $2,000 asks for OK', /reply OK/.test(big) && charges.length === 1, big);
   const ok = await handleTextGive(PHONE, { kind: 'yes' }, 'SM5', deps);
   check('OK charges the waiting gift', charges.length === 2 && charges[1].cents === 250000 && /Thank you/.test(ok), ok);
   const okAgain = await handleTextGive(PHONE, { kind: 'yes' }, 'SM6', deps);
   check('a second OK charges nothing', charges.length === 2 && /No gift is waiting/.test(okAgain), okAgain);
 
-  check('exactly $2,000 is instant', /Thank you/.test(await handleTextGive(PHONE, { kind: 'amount', fundText: '', cents: 200000 }, 'SM7', deps)));
+  check('exactly $2,000 is instant', /Thank you/.test(await handleTextGive(PHONE, { kind: 'amount', fundText: 'tithe', cents: 200000 }, 'SM7', deps)));
 
-  const huge = await handleTextGive(PHONE, { kind: 'amount', fundText: '', cents: 2000000 }, 'SM8', deps);
+  const huge = await handleTextGive(PHONE, { kind: 'amount', fundText: 'tithe', cents: 2000000 }, 'SM8', deps);
   check('over the text maximum points to the giving page', /please give at/.test(huge) && charges.length === 3, huge);
 
   failNext = 'needs_card';
-  const declined = await handleTextGive(PHONE, { kind: 'amount', fundText: '', cents: 2000 }, 'SM9', deps);
+  const declined = await handleTextGive(PHONE, { kind: 'amount', fundText: 'tithe', cents: 2000 }, 'SM9', deps);
   check('declined card → nothing taken + new link', /Nothing was taken/.test(declined) && /text-give\?t=/.test(declined), declined);
   failNext = 'error';
-  const outage = await handleTextGive(PHONE, { kind: 'amount', fundText: '', cents: 2000 }, 'SM10', deps);
+  const outage = await handleTextGive(PHONE, { kind: 'amount', fundText: 'tithe', cents: 2000 }, 'SM10', deps);
   check('Stripe trouble → nothing taken, try again', /Nothing was taken/.test(outage) && !/text-give\?t=/.test(outage), outage);
 
   // Daily limit: 3 instant gifts so far today (SM2, SM5 via OK, SM7) → 2 more, then OK needed
-  await handleTextGive(PHONE, { kind: 'amount', fundText: '', cents: 1000 }, 'SM11', deps);
-  await handleTextGive(PHONE, { kind: 'amount', fundText: '', cents: 1000 }, 'SM12', deps);
-  const sixth = await handleTextGive(PHONE, { kind: 'amount', fundText: '', cents: 1000 }, 'SM13', deps);
+  await handleTextGive(PHONE, { kind: 'amount', fundText: 'tithe', cents: 1000 }, 'SM11', deps);
+  await handleTextGive(PHONE, { kind: 'amount', fundText: 'tithe', cents: 1000 }, 'SM12', deps);
+  const sixth = await handleTextGive(PHONE, { kind: 'amount', fundText: 'tithe', cents: 1000 }, 'SM13', deps);
   check('after 5 gifts in a day, asks for OK', /reply OK/.test(sixth) && charges.length === 5, { sixth, n: charges.length });
 
   const change = await handleTextGive(PHONE, { kind: 'change' }, 'SM14', deps);
@@ -172,13 +172,13 @@ async function main() {
 
   const unlink = await handleTextGive(PHONE, { kind: 'unlink' }, 'SM15', deps);
   check('UNLINK turns it off', /turned off/.test(unlink) && (await store.getGiver(PHONE)) === null, unlink);
-  const after = await handleTextGive(PHONE, { kind: 'amount', fundText: '', cents: 5000 }, 'SM16', deps);
+  const after = await handleTextGive(PHONE, { kind: 'amount', fundText: 'tithe', cents: 5000 }, 'SM16', deps);
   // 3 links already went to this number this hour (first, declined card, CHANGE) — so the hourly cap applies.
   check('after UNLINK, an amount is not charged (setup needed again)', !/Thank you!/.test(after) && charges.length === 5, after);
 
   const OTHER = '+16175550199';
-  for (let i = 0; i < 3; i++) await handleTextGive(OTHER, { kind: 'amount', fundText: '', cents: 5000 }, `SMX${i}`, deps);
-  const flood = await handleTextGive(OTHER, { kind: 'amount', fundText: '', cents: 5000 }, 'SMX4', deps);
+  for (let i = 0; i < 3; i++) await handleTextGive(OTHER, { kind: 'amount', fundText: 'tithe', cents: 5000 }, `SMX${i}`, deps);
+  const flood = await handleTextGive(OTHER, { kind: 'amount', fundText: 'tithe', cents: 5000 }, 'SMX4', deps);
   check('at most 3 setup links per hour to one number', !/text-give\?t=/.test(flood) && /several links/.test(flood), flood);
 
   // Fund choice on its own number, so the limits above aren't affected.
@@ -198,6 +198,35 @@ async function main() {
   check('OK request names the fund', /To give \$3,000\.00 to Building Fund/.test(bigFund), bigFund);
   const okFund = await handleTextGive(PHONE_F, { kind: 'yes' }, 'SMF5', deps);
   check('OK charges the named fund', chargedFunds.at(-1) === building.id && /Building Fund/.test(okFund), okFund);
+  // --- No fund word → "Which fund?" ---------------------------------------------
+  const PHONE_Q = '+15085558888';
+  await store.saveGiver({
+    phone: PHONE_Q, method: 'card', stripeCustomerId: 'cus_q', paymentMethodId: 'pm_q', cardBrand: 'visa',
+    cardLast4: '2222', donorName: 'Ruth Ama', donorEmail: 'ruth@example.com', coverFees: false,
+  });
+  const qBefore = chargedFunds.length;
+  const question = await handleTextGive(PHONE_Q, { kind: 'amount', fundText: '', cents: 5000 }, 'SMQ1', deps);
+  check('plain amount asks which fund', /Which fund is your \$50\.00 for\? Reply with a number: 1 Tithes & Offerings/.test(question), question);
+  check('…and charges nothing yet', chargedFunds.length === qBefore);
+  check('menu lists open funds, not closed ones', /Marrieds Dinner 2026/.test(question) && !/Old Retreat/.test(question), question);
+  const menuOrder = question.match(/(\d) Marrieds Dinner 2026/)?.[1];
+  const answered = await handleTextGive(PHONE_Q, { kind: 'amount', fundText: '', cents: Number(menuOrder) * 100 }, 'SMQ2', deps);
+  check('reply with the number gives $50 to that fund', /\$50\.00 given to Marrieds Dinner 2026/.test(answered) && chargedFunds.at(-1) === marrieds.id, answered);
+  check('the number is not charged as a gift', chargedFunds.length === qBefore + 1);
+  const again = await handleTextGive(PHONE_Q, { kind: 'amount', fundText: '', cents: 100 }, 'SMQ3', deps);
+  check('after answering, a lone "1" is a $1 gift attempt (below minimum), not a choice', /smallest gift/.test(again), again);
+
+  const { answerFundQuestionWithWords } = await import('../textGive/service');
+  await handleTextGive(PHONE_Q, { kind: 'amount', fundText: '', cents: 2500 }, 'SMQ4', deps);
+  const byWord = await answerFundQuestionWithWords(PHONE_Q, 'tithe', 'SMQ5', deps);
+  check('reply with a word gives to that fund', /\$25\.00 given to Tithes & Offerings/.test(byWord || '') && chargedFunds.at(-1) === 'fund-tithes', byWord);
+  check('no open question → word reply handled as usual', (await answerFundQuestionWithWords(PHONE_Q, 'tithe', 'SMQ6', deps)) === null);
+  await handleTextGive(PHONE_Q, { kind: 'amount', fundText: '', cents: 2500 }, 'SMQ7', deps);
+  const nonsense = await answerFundQuestionWithWords(PHONE_Q, 'pizza', 'SMQ8', deps);
+  check('unclear word → asked again, nothing charged', /Which fund is your \$25\.00 for/.test(nonsense || '') && chargedFunds.length === qBefore + 2, nonsense);
+  const tooBig = await handleTextGive(PHONE_Q, { kind: 'amount', fundText: '', cents: 9900 }, 'SMQ9', deps);
+  check('a number beyond the menu is a new amount (asks again)', /Which fund is your \$99\.00 for/.test(tooBig), tooBig);
+
   // --- Preferred way to give: bank, Cash App, Venmo, Zelle ----------------------
   const { p2pGiftReply, availableP2P } = await import('../textGive/p2p');
   const { env } = await import('../config');
@@ -211,20 +240,20 @@ async function main() {
   const before = charges.length;
 
   await store.saveGiver({ ...base, phone: '+17815550101', method: 'cash_app' });
-  const cash = await handleTextGive('+17815550101', { kind: 'amount', fundText: '', cents: 2000 }, 'SMC1', p2pDeps);
+  const cash = await handleTextGive('+17815550101', { kind: 'amount', fundText: 'tithe', cents: 2000 }, 'SMC1', p2pDeps);
   check('Cash App: tap link with the amount', cash.includes('https://cash.app/$awcgiveplus/20.00'), cash);
   check('Cash App: memo code for Finance', /AWC-[A-Z0-9]{4}/.test(cash), cash);
   check('Cash App: confirms the method', /Using your Cash App\. Text CHANGE to switch/.test(cash), cash);
   check('Cash App: nothing charged by us', charges.length === before);
-  const big2 = await handleTextGive('+17815550101', { kind: 'amount', fundText: '', cents: 300000 }, 'SMC2', p2pDeps);
+  const big2 = await handleTextGive('+17815550101', { kind: 'amount', fundText: 'tithe', cents: 300000 }, 'SMC2', p2pDeps);
   check('Cash App: no OK needed (giver sends it)', !/reply OK/.test(big2) && /cash\.app/.test(big2), big2);
 
   await store.saveGiver({ ...base, phone: '+17815550102', method: 'venmo' });
-  const venmo = await handleTextGive('+17815550102', { kind: 'amount', fundText: '', cents: 2500 }, 'SMV1', p2pDeps);
+  const venmo = await handleTextGive('+17815550102', { kind: 'amount', fundText: 'tithe', cents: 2500 }, 'SMV1', p2pDeps);
   check('Venmo: pay link with amount and memo', /venmo\.com\/\?txn=pay/.test(venmo) && venmo.includes('amount=25.00') && /note=AWC-/.test(venmo), venmo);
 
   await store.saveGiver({ ...base, phone: '+17815550103', method: 'zelle' });
-  const zelle = await handleTextGive('+17815550103', { kind: 'amount', fundText: '', cents: 3000 }, 'SMZ1', p2pDeps);
+  const zelle = await handleTextGive('+17815550103', { kind: 'amount', fundText: 'tithe', cents: 3000 }, 'SMZ1', p2pDeps);
   check('Zelle: who to send to, amount and memo', zelle.includes('give@example.org') && zelle.includes('$30.00') && /memo AWC-/.test(zelle), zelle);
 
   const { listManualGiftsForAdmin } = await import('../manualGifts/store');
@@ -232,7 +261,7 @@ async function main() {
   check('each app gift is waiting for Finance to match', open.length === 4 && open.every((g) => g.fundId === 'fund-tithes'), open.length);
 
   await store.saveGiver({ ...base, phone: '+17815550104', method: 'us_bank_account', stripeCustomerId: 'cus_b', paymentMethodId: 'pm_b', cardLast4: '6789' });
-  const bank = await handleTextGive('+17815550104', { kind: 'amount', fundText: '', cents: 10000 }, 'SMB1', p2pDeps);
+  const bank = await handleTextGive('+17815550104', { kind: 'amount', fundText: 'tithe', cents: 10000 }, 'SMB1', p2pDeps);
   check('bank account is charged right away', charges.length === before + 1 && /bank ••6789/.test(bank) && /3–5 business days/.test(bank), bank);
 
   // --- Twilio webhook end to end -------------------------------------------------
@@ -262,7 +291,7 @@ async function main() {
     return res.text();
   }
   try {
-    const reply = await sms('$75', 'SMA1');
+    const reply = await sms('$75 tithe', 'SMA1');
     check('webhook: amount from new number → setup link', /set up text giving once/.test(reply) && /\$75\.00/.test(reply), reply);
     const t = reply.match(/t=([\w-]+)/)?.[1] || '';
     const info = await fetch(`http://127.0.0.1:${port}/api/text-give/link?t=${t}`).then((r) => r.json());
@@ -284,6 +313,8 @@ async function main() {
     check('setup link works once', reuse.status === 404);
     const bad = await fetch(`http://127.0.0.1:${port}/api/text-give/link?t=${'z'.repeat(32)}`);
     check('unknown link → 404', bad.status === 404);
+    const plain = await sms('20', 'SMA1b');
+    check('webhook: plain amount asks which fund', /Which fund is your \$20\.00 for/.test(plain), plain);
     const give = await sms('GIVE', 'SMA2');
     check('GIVE still sends the giving page', /Give securely here/.test(give), give);
     const help = await sms('HELP', 'SMA3');

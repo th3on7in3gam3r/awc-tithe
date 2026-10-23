@@ -17,6 +17,18 @@ import * as store from './store';
 import type { FundRecord } from '../funds/store';
 import { chooseFund, DEFAULT_TEXT_FUND_ID, fundHelpText, fundWords } from './funds';
 
+/** Funds offered in "Which fund?" — Tithes & Offerings first, then the list order. */
+export function fundMenu(funds: FundRecord[]): FundRecord[] {
+  const active = funds.filter((f) => f.active);
+  const def = active.filter((f) => f.id === DEFAULT_TEXT_FUND_ID);
+  return [...def, ...active.filter((f) => f.id !== DEFAULT_TEXT_FUND_ID)].slice(0, 9);
+}
+
+export function fundQuestionText(cents: number, menu: FundRecord[]): string {
+  const list = menu.map((f, i) => `${i + 1} ${f.name}`).join(' · ');
+  return `Which fund is your ${money(cents)} for? Reply with a number: ${list}. Nothing is charged until you choose.`;
+}
+
 export type TextGiveCommand =
   | { kind: 'amount'; cents: number; fundText: string }
   | { kind: 'yes' }
@@ -161,19 +173,52 @@ export async function handleTextGive(
   }
 
   const cents = cmd.cents;
+  // Answer to "Which fund?" — a number from the menu (1–9).
+  if (!cmd.fundText && cents % 100 === 0 && cents >= 100 && cents <= 900) {
+    const q = await store.peekFundQuestion(phone, now);
+    const n = cents / 100;
+    if (q && n <= q.fundIds.length) {
+      const funds = await deps.listFunds();
+      const fund = funds.find((f) => f.id === q.fundIds[n - 1] && f.active);
+      if (!(await store.clearFundQuestion(phone))) return `That question was already answered.${STOP}`;
+      if (!fund) return `That fund is no longer open. Nothing was charged. Text the amount again to choose.${STOP}`;
+      return giveToFund(phone, giver, q.amountCents, fund, messageSid, deps);
+    }
+  }
+
   if (cents < deps.minCents) return `The smallest gift by text is ${money(deps.minCents)}.${STOP}`;
   if (cents > deps.maxCents) {
     return `For gifts over ${money(deps.maxCents)}, please give at ${deps.setupUrl.replace(/\/text-give$/, '')} or contact the church office.${STOP}`;
   }
 
-  // Which fund: the word(s) with the amount. Unknown or unclear → never charged.
-  const typed = fundWords(cmd.fundText);
-  const choice = chooseFund(typed, await deps.listFunds());
+  // No fund word → ask which fund (Pastor: so every gift goes to the right place).
+  const funds = await deps.listFunds();
+  if (!fundWords(cmd.fundText).length) {
+    const menu = fundMenu(funds);
+    if (menu.length === 1) return giveToFund(phone, giver, cents, menu[0], messageSid, deps);
+    if (!menu.length) return `Giving by text isn't available right now. Nothing was charged.${STOP}`;
+    await store.setFundQuestion(phone, cents, menu.map((f) => f.id), now);
+    return fundQuestionText(cents, menu) + STOP;
+  }
+
+  // A word with the amount ("50 tithe", "40 marrieds"). Unknown or unclear → never charged.
+  const choice = chooseFund(fundWords(cmd.fundText), funds);
   if (choice.kind !== 'ok') {
     return fundHelpText(String(cents / 100), choice, cmd.fundText) + STOP;
   }
-  const fund = choice.fund;
+  return giveToFund(phone, giver, cents, choice.fund, messageSid, deps);
+}
 
+/** Gives `cents` to `fund` the way this number is set up (or sends the setup link). */
+async function giveToFund(
+  phone: string,
+  giver: store.TextGiver | null,
+  cents: number,
+  fund: FundRecord,
+  messageSid: string,
+  deps: TextGiveDeps
+): Promise<string> {
+  const now = deps.now?.() ?? Date.now();
   if (!giver) {
     return setupLinkReply(
       phone,
@@ -201,4 +246,28 @@ export async function handleTextGive(
   }
 
   return chargeAndReply(giver, cents, fund, `textgive-${messageSid}`, deps);
+}
+
+/**
+ * A reply with words while "Which fund?" is open ("tithe", "marrieds").
+ * Returns null when no question is open, so the text is handled as usual.
+ */
+export async function answerFundQuestionWithWords(
+  phone: string,
+  text: string,
+  messageSid: string,
+  deps: TextGiveDeps
+): Promise<string | null> {
+  const now = deps.now?.() ?? Date.now();
+  const q = await store.peekFundQuestion(phone, now);
+  if (!q) return null;
+  const typed = fundWords(text);
+  if (!typed.length) return null;
+  const funds = (await deps.listFunds()).filter((f) => q.fundIds.includes(f.id));
+  const choice = chooseFund(typed, funds);
+  if (choice.kind !== 'ok') {
+    return fundQuestionText(q.amountCents, fundMenu(funds)) + STOP;
+  }
+  if (!(await store.clearFundQuestion(phone))) return `That question was already answered.${STOP}`;
+  return giveToFund(phone, await store.getGiver(phone), q.amountCents, choice.fund, messageSid, deps);
 }

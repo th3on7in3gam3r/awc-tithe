@@ -221,7 +221,8 @@ export default function TextGivePage() {
           <div className="rounded-2xl bg-white dark:bg-slate-800 border border-[#E8E2D9] dark:border-slate-700 p-5 text-left space-y-2">
             <p className="text-lg font-bold text-[#4A0404] dark:text-[#E9C979]">Next time, just text an amount</p>
             <p className="text-base text-slate-700 dark:text-slate-300">
-              Text <span className="font-bold">50</span> to <span className="font-bold whitespace-nowrap">{GIVING_NUMBER}</span> to give $50.
+              Text <span className="font-bold">50</span> to <span className="font-bold whitespace-nowrap">{GIVING_NUMBER}</span> and
+              we'll ask which fund — or skip the question with a word, like <span className="font-bold">50 TITHE</span>.
               {done.p2p !== undefined
                 ? ` We'll text you a link to send it with ${done.p2pLabel}.`
                 : " It's given right away — we'll text you a thank-you and email your receipt."}
