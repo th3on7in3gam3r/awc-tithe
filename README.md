@@ -171,7 +171,14 @@ Pastor's request: after a one-time setup, members give by texting an amount.
 - Always **Tithes & Offerings** (`fund-tithes`). Up to `TEXT_GIVE_INSTANT_MAX`
   ($2,000) is instant; bigger gifts, or more than `TEXT_GIVE_PER_DAY` (5) in
   24h, ask the giver to reply **OK**. Over `TEXT_GIVE_MAX` → giving page.
-- `CHANGE` → link to save a different card (no charge). `UNLINK` → stop.
+- **Preferred way to give** is chosen at setup and remembered: card or bank
+  account (charged automatically; bank fee 0.8% capped at $5), or Cash App,
+  Venmo, Zelle — those can't be charged by the church, so the reply is a
+  tap-to-send link with the amount filled in (Cash App, Venmo) or the Zelle
+  details, plus a memo code; the gift appears in Finance's manual-gifts list
+  to match. Every reply names the method ("Using your Cash App").
+- `CHANGE` → link to pick a different way to give (no charge). `UNLINK` → stop.
+- `TEXT_GIVE_MIN` (dollars) sets the smallest text gift, e.g. `2` for testing.
 - A Twilio retry can't double-charge: the Stripe idempotency key is the
   message id. A declined card or bank check (3-D Secure) → nothing taken, a
   link to finish the gift is texted.

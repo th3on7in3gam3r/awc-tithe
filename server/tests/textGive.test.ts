@@ -13,6 +13,12 @@ process.env.PUBLIC_APP_URL = 'https://awc-tithe.onrender.com';
 process.env.STRIPE_SECRET_KEY = 'sk_test_fake';
 process.env.STRIPE_PUBLISHABLE_KEY = 'pk_test_fake';
 process.env.STRIPE_WEBHOOK_SECRET = 'whsec_fake';
+process.env.CASHAPP_RECIPIENT = '$awcgiveplus';
+process.env.CASHAPP_RECIPIENT_NAME = 'Anointed Worship Center';
+process.env.VENMO_HANDLE = 'anointedworshipcenter';
+process.env.ZELLE_RECIPIENT = 'give@example.org';
+process.env.ZELLE_RECIPIENT_NAME = 'Anointed Worship Center';
+process.env.TEXT_GIVE_MIN = '2';
 
 let failed = 0;
 function check(name: string, condition: boolean, detail?: unknown): void {
@@ -81,6 +87,7 @@ async function main() {
 
   await store.saveGiver({
     phone: PHONE,
+    method: 'card',
     stripeCustomerId: 'cus_1',
     paymentMethodId: 'pm_1',
     cardBrand: 'visa',
@@ -139,6 +146,43 @@ async function main() {
   const flood = await handleTextGive(OTHER, { kind: 'amount', cents: 5000 }, 'SMX4', deps);
   check('at most 3 setup links per hour to one number', !/text-give\?t=/.test(flood) && /several links/.test(flood), flood);
 
+  // --- Preferred way to give: bank, Cash App, Venmo, Zelle ----------------------
+  const { p2pGiftReply, availableP2P } = await import('../textGive/p2p');
+  const { env } = await import('../config');
+  check('TEXT_GIVE_MIN=2 allows a $2 test', env.textGiveMinCents === 200, env.textGiveMinCents);
+  check('all three app methods are offered', availableP2P().join(',') === 'cash_app,venmo,zelle', availableP2P());
+  const p2pDeps = { ...deps, p2pReply: p2pGiftReply };
+  const base = {
+    stripeCustomerId: '', paymentMethodId: '', cardBrand: '', cardLast4: '',
+    donorName: 'Ruth Ama', donorEmail: 'ruth@example.com', coverFees: false,
+  };
+  const before = charges.length;
+
+  await store.saveGiver({ ...base, phone: '+17815550101', method: 'cash_app' });
+  const cash = await handleTextGive('+17815550101', { kind: 'amount', cents: 2000 }, 'SMC1', p2pDeps);
+  check('Cash App: tap link with the amount', cash.includes('https://cash.app/$awcgiveplus/20.00'), cash);
+  check('Cash App: memo code for Finance', /AWC-[A-Z0-9]{4}/.test(cash), cash);
+  check('Cash App: confirms the method', /Using your Cash App\. Text CHANGE to switch/.test(cash), cash);
+  check('Cash App: nothing charged by us', charges.length === before);
+  const big2 = await handleTextGive('+17815550101', { kind: 'amount', cents: 300000 }, 'SMC2', p2pDeps);
+  check('Cash App: no OK needed (giver sends it)', !/reply OK/.test(big2) && /cash\.app/.test(big2), big2);
+
+  await store.saveGiver({ ...base, phone: '+17815550102', method: 'venmo' });
+  const venmo = await handleTextGive('+17815550102', { kind: 'amount', cents: 2500 }, 'SMV1', p2pDeps);
+  check('Venmo: pay link with amount and memo', /venmo\.com\/\?txn=pay/.test(venmo) && venmo.includes('amount=25.00') && /note=AWC-/.test(venmo), venmo);
+
+  await store.saveGiver({ ...base, phone: '+17815550103', method: 'zelle' });
+  const zelle = await handleTextGive('+17815550103', { kind: 'amount', cents: 3000 }, 'SMZ1', p2pDeps);
+  check('Zelle: who to send to, amount and memo', zelle.includes('give@example.org') && zelle.includes('$30.00') && /memo AWC-/.test(zelle), zelle);
+
+  const { listManualGiftsForAdmin } = await import('../manualGifts/store');
+  const open = await listManualGiftsForAdmin('open');
+  check('each app gift is waiting for Finance to match', open.length === 4 && open.every((g) => g.fundId === 'fund-tithes'), open.length);
+
+  await store.saveGiver({ ...base, phone: '+17815550104', method: 'us_bank_account', stripeCustomerId: 'cus_b', paymentMethodId: 'pm_b', cardLast4: '6789' });
+  const bank = await handleTextGive('+17815550104', { kind: 'amount', cents: 10000 }, 'SMB1', p2pDeps);
+  check('bank account is charged right away', charges.length === before + 1 && /bank ••6789/.test(bank) && /3–5 business days/.test(bank), bank);
+
   // --- Twilio webhook end to end -------------------------------------------------
   store.__resetTextGiveMemoryForTests();
   const express = (await import('express')).default;
@@ -172,6 +216,20 @@ async function main() {
     const info = await fetch(`http://127.0.0.1:${port}/api/text-give/link?t=${t}`).then((r) => r.json());
     check('setup page sees amount and masked phone', info.amountCents === 7500 && info.phoneHint === '(•••) •••-0123' && info.mode === 'give', info);
     check('setup page knows the $2,000 limit', info.instantMaxCents === 200000, info);
+    check('setup page offers all five ways', info.methods.join(',') === 'card,us_bank_account,cash_app,venmo,zelle', info.methods);
+    const chose = await fetch(`http://127.0.0.1:${port}/api/text-give/choose-p2p`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ t, method: 'cash_app', name: 'Ruth Ama', email: 'ruth@example.com' }),
+    }).then((r) => r.json());
+    check('choosing Cash App saves it and returns tap-to-send details', chose.ok && chose.instructions?.link === 'https://cash.app/$awcgiveplus/75.00' && /^AWC-/.test(chose.instructions?.memo), chose);
+    check('saved preference is Cash App', (await store.getGiver('+19785550123'))?.method === 'cash_app');
+    const reuse = await fetch(`http://127.0.0.1:${port}/api/text-give/choose-p2p`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ t, method: 'venmo', name: 'X Y', email: 'x@example.com' }),
+    });
+    check('setup link works once', reuse.status === 404);
     const bad = await fetch(`http://127.0.0.1:${port}/api/text-give/link?t=${'z'.repeat(32)}`);
     check('unknown link → 404', bad.status === 404);
     const give = await sms('GIVE', 'SMA2');

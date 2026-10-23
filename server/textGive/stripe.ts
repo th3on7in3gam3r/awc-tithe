@@ -30,9 +30,9 @@ export async function textGiveFund(): Promise<FundRecord> {
   );
 }
 
-/** Principal + optional card fee, in cents. */
-export function textGiveTotals(principalCents: number, coverFees: boolean) {
-  const fees = computeProcessingFee({ principal: principalCents / 100, method: 'card', coverFees });
+/** Principal + optional processing fee (card or bank), in cents. */
+export function textGiveTotals(principalCents: number, coverFees: boolean, method: string = 'card') {
+  const fees = computeProcessingFee({ principal: principalCents / 100, method, coverFees });
   return {
     principalCents,
     feeCents: Math.round(fees.feeAmount * 100),
@@ -85,7 +85,7 @@ export async function chargeSavedCard(
 ): Promise<ChargeResult> {
   if (!stripe) return { ok: false, reason: 'error' };
   const fund = await textGiveFund();
-  const t = textGiveTotals(principalCents, giver.coverFees);
+  const t = textGiveTotals(principalCents, giver.coverFees, giver.method);
   try {
     const pi = await stripe.paymentIntents.create(
       {
@@ -93,7 +93,7 @@ export async function chargeSavedCard(
         currency: 'usd',
         customer: giver.stripeCustomerId,
         payment_method: giver.paymentMethodId,
-        payment_method_types: ['card'],
+        payment_method_types: [giver.method === 'us_bank_account' ? 'us_bank_account' : 'card'],
         off_session: true,
         confirm: true,
         receipt_email: giver.donorEmail || undefined,
@@ -119,7 +119,10 @@ export async function chargeSavedCard(
     const type = String(err?.type || '');
     const code = String(err?.code || '');
     console.warn('[text-give] charge failed:', type, code, err?.decline_code || '');
-    if (type === 'StripeCardError' || code === 'authentication_required' || code === 'card_declined') {
+    if (
+      type === 'StripeCardError' ||
+      ['authentication_required', 'card_declined', 'payment_method_not_available', 'bank_account_unusable'].includes(code)
+    ) {
       return { ok: false, reason: 'needs_card' };
     }
     return { ok: false, reason: 'error' };

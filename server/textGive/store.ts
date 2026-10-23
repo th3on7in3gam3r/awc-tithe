@@ -14,8 +14,18 @@ import crypto from 'crypto';
 import { getPgPool } from '../auth/pgPool';
 import { memoryStoreAllowed } from '../config';
 
+/** How a text gift is paid. Card and bank are charged automatically; the others send a ready-to-tap link. */
+export type TextGiveMethod = 'card' | 'us_bank_account' | 'cash_app' | 'venmo' | 'zelle';
+export const TEXT_GIVE_METHODS: TextGiveMethod[] = ['card', 'us_bank_account', 'cash_app', 'venmo', 'zelle'];
+export const AUTO_CHARGE_METHODS: TextGiveMethod[] = ['card', 'us_bank_account'];
+
+export function isTextGiveMethod(v: unknown): v is TextGiveMethod {
+  return TEXT_GIVE_METHODS.includes(v as TextGiveMethod);
+}
+
 export type TextGiver = {
   phone: string;
+  method: TextGiveMethod;
   stripeCustomerId: string;
   paymentMethodId: string;
   cardBrand: string;
@@ -53,6 +63,7 @@ const DDL = [
      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
    )`,
+  `ALTER TABLE text_givers ADD COLUMN IF NOT EXISTS method TEXT NOT NULL DEFAULT 'card'`,
   `CREATE TABLE IF NOT EXISTS text_give_links (
      id TEXT PRIMARY KEY,
      token_hash TEXT NOT NULL UNIQUE,
@@ -119,6 +130,7 @@ export function hashToken(token: string): string {
 function mapGiver(r: any): TextGiver {
   return {
     phone: r.phone,
+    method: isTextGiveMethod(r.method) ? r.method : 'card',
     stripeCustomerId: r.stripe_customer_id,
     paymentMethodId: r.payment_method_id,
     cardBrand: r.card_brand || '',
@@ -146,9 +158,10 @@ export async function saveGiver(g: Omit<TextGiver, 'createdAt'>): Promise<void> 
   }
   await ensureTextGiveSchema();
   await p.query(
-    `INSERT INTO text_givers (phone, stripe_customer_id, payment_method_id, card_brand, card_last4, donor_name, donor_email, cover_fees)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO text_givers (phone, stripe_customer_id, payment_method_id, card_brand, card_last4, donor_name, donor_email, cover_fees, method)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT (phone) DO UPDATE SET
+       method = EXCLUDED.method,
        stripe_customer_id = EXCLUDED.stripe_customer_id,
        payment_method_id = EXCLUDED.payment_method_id,
        card_brand = EXCLUDED.card_brand,
@@ -157,7 +170,7 @@ export async function saveGiver(g: Omit<TextGiver, 'createdAt'>): Promise<void> 
        donor_email = EXCLUDED.donor_email,
        cover_fees = EXCLUDED.cover_fees,
        updated_at = NOW()`,
-    [g.phone, g.stripeCustomerId, g.paymentMethodId, g.cardBrand, g.cardLast4, g.donorName, g.donorEmail, g.coverFees]
+    [g.phone, g.stripeCustomerId, g.paymentMethodId, g.cardBrand, g.cardLast4, g.donorName, g.donorEmail, g.coverFees, g.method]
   );
 }
 

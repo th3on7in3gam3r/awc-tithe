@@ -3,11 +3,12 @@
  *
  *   "50" / "$50" / "give 50" / "1,200.00"
  *     new number   → texts a one-time setup link (amount filled in)
- *     set up       → charges the saved card right away (Tithes & Offerings),
+ *     card / bank  → charges it right away (Tithes & Offerings),
  *                    unless it's over the instant limit or the daily count —
- *                    then it asks for YES
+ *                    then it asks for OK
+ *     Cash App / Venmo / Zelle → a tap-to-send link with a memo code for Finance
  *   OK / YES → charges the gift waiting for confirmation
- *   CHANGE   → link to save a different card (no charge)
+ *   CHANGE   → link to pick a different way to give (no charge)
  *   UNLINK   → stops text giving for this number (card stays with Stripe)
  *
  * Words without a number (GIVE, HELP, …) are handled by the giving-link reply.
@@ -44,6 +45,7 @@ export function money(cents: number): string {
 }
 
 function cardLabel(g: store.TextGiver): string {
+  if (g.method === 'us_bank_account') return g.cardLast4 ? `bank ••${g.cardLast4}` : 'bank account';
   const brand = g.cardBrand ? g.cardBrand.charAt(0).toUpperCase() + g.cardBrand.slice(1) : 'Card';
   return g.cardLast4 ? `${brand} ••${g.cardLast4}` : brand;
 }
@@ -65,6 +67,8 @@ export type TextGiveDeps = {
   /** Instant gifts per number per 24h before a YES is required. */
   instantPerDay: number;
   charge: (giver: store.TextGiver, principalCents: number, idempotencyKey: string) => Promise<ChargeResult>;
+  /** Cash App / Venmo / Zelle: records the gift and returns the tap-to-send reply. */
+  p2pReply?: (giver: store.TextGiver, principalCents: number) => Promise<string | null>;
   now?: () => number;
 };
 
@@ -102,7 +106,8 @@ async function chargeAndReply(
     ? `${money(result.principalCents)} + ${money(result.feeCents)} card fee`
     : money(result.principalCents);
   const receipt = giver.donorEmail ? ' A receipt is on its way to your email.' : '';
-  return `Thank you! ${total} given to ${deps.fundName} at ${deps.churchName} (${cardLabel(giver)}).${receipt}${STOP}`;
+  const bank = giver.method === 'us_bank_account' ? ' Bank gifts take 3–5 business days to clear.' : '';
+  return `Thank you! ${total} given to ${deps.fundName} at ${deps.churchName} (${cardLabel(giver)}).${receipt}${bank} Text CHANGE to switch how you give.${STOP}`;
 }
 
 /** Reply text for a text-giving command from `phone` (E.164). */
@@ -123,12 +128,12 @@ export async function handleTextGive(
   }
 
   if (cmd.kind === 'change') {
-    return setupLinkReply(phone, 0, deps, 'Save a different card for text giving here:');
+    return setupLinkReply(phone, 0, deps, 'Choose how you want to give by text (card, bank, Cash App, Venmo or Zelle):');
   }
 
   if (cmd.kind === 'yes') {
     const pending = await store.takePending(phone, now);
-    if (!pending || !giver) {
+    if (!pending || !giver || !store.AUTO_CHARGE_METHODS.includes(giver.method)) {
       return `No gift is waiting to be confirmed. Text an amount (like 50) to give.${STOP}`;
     }
     return chargeAndReply(giver, pending.amountCents, `textgive-${messageSid}`, deps);
@@ -146,6 +151,15 @@ export async function handleTextGive(
       cents,
       deps,
       `Thank you! To give ${money(cents)} to ${deps.churchName}, add your card once here. After that, just text an amount to give.`
+    );
+  }
+
+  // Cash App / Venmo / Zelle: nothing is charged here — the giver taps Send in their app.
+  if (!store.AUTO_CHARGE_METHODS.includes(giver.method)) {
+    const reply = deps.p2pReply ? await deps.p2pReply(giver, cents) : null;
+    return (
+      reply ??
+      `Sorry, ${giver.method === 'zelle' ? 'Zelle' : giver.method === 'venmo' ? 'Venmo' : 'Cash App'} giving isn't available right now. Text CHANGE to choose another way to give.${STOP}`
     );
   }
 

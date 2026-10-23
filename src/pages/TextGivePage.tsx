@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
-import { CheckCircle2, Lock, MessageSquare } from 'lucide-react';
+import { Building2, CheckCircle2, CreditCard, Lock, MessageSquare, Smartphone } from 'lucide-react';
 import { stripeAppearance } from '../components/StripeCheckout';
 
 /**
@@ -19,6 +19,27 @@ type LinkInfo = {
   feeCents: number;
   publishableKey: string | null;
   instantMaxCents: number;
+  bankFeeCents: number;
+  methods: Method[];
+};
+
+type Method = 'card' | 'us_bank_account' | 'cash_app' | 'venmo' | 'zelle';
+
+const METHOD_INFO: Record<Method, { label: string; note: string; icon: React.ReactNode }> = {
+  card: { label: 'Debit or credit card', note: 'Text an amount and it is given right away.', icon: <CreditCard className="h-6 w-6" /> },
+  us_bank_account: { label: 'Bank account', note: 'Lowest fee. Text an amount and it is given right away.', icon: <Building2 className="h-6 w-6" /> },
+  cash_app: { label: 'Cash App', note: 'We text you a link — tap Send in Cash App.', icon: <Smartphone className="h-6 w-6" /> },
+  venmo: { label: 'Venmo', note: 'We text you a link — tap Pay in Venmo.', icon: <Smartphone className="h-6 w-6" /> },
+  zelle: { label: 'Zelle', note: 'We text you the Zelle details to send in your bank app.', icon: <Smartphone className="h-6 w-6" /> },
+};
+
+type P2PInstructions = {
+  label: string;
+  amount: string;
+  memo: string;
+  link: string | null;
+  recipient: string;
+  recipientName: string;
 };
 
 const GIVING_NUMBER = '(855) 297-1920';
@@ -91,7 +112,7 @@ function CardStep({
       {error ? <p className="text-sm text-red-700" role="alert">{error}</p> : null}
       <button type="submit" disabled={busy || !stripe} className={bigButton} style={{ backgroundColor: '#4A0404' }}>
         <Lock className="h-5 w-5" />
-        {busy ? 'Please wait…' : kind === 'payment' ? `Give ${money(info.amountCents)} & save card` : 'Save card'}
+        {busy ? 'Please wait…' : kind === 'payment' ? `Give & save for next time` : 'Save for text giving'}
       </button>
     </form>
   );
@@ -108,7 +129,8 @@ export default function TextGivePage() {
   const [starting, setStarting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [intent, setIntent] = useState<{ kind: 'payment' | 'setup'; clientSecret: string } | null>(null);
-  const [done, setDone] = useState<{ card: string; phoneHint: string } | null>(null);
+  const [method, setMethod] = useState<Method>('card');
+  const [done, setDone] = useState<{ card: string; phoneHint: string; p2p?: P2PInstructions | null; p2pLabel?: string } | null>(null);
 
   const stripePromise = useMemo(() => (info?.publishableKey ? loadStripe(info.publishableKey) : null), [info?.publishableKey]);
 
@@ -142,11 +164,20 @@ export default function TextGivePage() {
     setStarting(true);
     setFormError(null);
     try {
+      if (method === 'cash_app' || method === 'venmo' || method === 'zelle') {
+        const res = await post<{ phoneHint: string; label: string; instructions: P2PInstructions | null }>(
+          '/api/text-give/choose-p2p',
+          { t: token, name, email, method }
+        );
+        setDone({ card: res.label, phoneHint: res.phoneHint, p2p: res.instructions, p2pLabel: res.label });
+        return;
+      }
       const res = await post<{ kind: 'payment' | 'setup'; clientSecret: string }>('/api/text-give/start', {
         t: token,
         name,
         email,
         coverFees,
+        method,
       });
       setIntent(res);
     } catch (err) {
@@ -164,6 +195,26 @@ export default function TextGivePage() {
           <h1 className="font-serif-display text-2xl font-semibold text-slate-900 dark:text-white">
             {info?.mode === 'give' ? 'Thank you for your gift!' : 'Your card is saved'}
           </h1>
+          {done.p2p ? (
+            <div className="rounded-2xl border-2 border-[#4A0404]/20 bg-white dark:bg-slate-800 p-5 text-left space-y-3">
+              <p className="text-lg font-bold text-slate-900 dark:text-white">
+                Last step: send ${Number(done.p2p.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })} with {done.p2p.label}
+              </p>
+              {done.p2p.link ? (
+                <a href={done.p2p.link} className={bigButton} style={{ backgroundColor: '#4A0404' }}>
+                  Open {done.p2p.label} and send
+                </a>
+              ) : (
+                <p className="text-base text-slate-700 dark:text-slate-300">
+                  In your bank app, send by Zelle to <span className="font-bold">{done.p2p.recipient}</span> ({done.p2p.recipientName}).
+                </p>
+              )}
+              <p className="text-base text-slate-700 dark:text-slate-300">
+                Put this in the note: <span className="font-mono text-lg font-bold">{done.p2p.memo}</span>
+              </p>
+              <p className="text-sm text-slate-500">The note helps our Finance team record your gift for your giving statement.</p>
+            </div>
+          ) : null}
           <p className="text-base text-slate-700 dark:text-slate-300 leading-relaxed">
             Text giving is ready for {done.phoneHint} using {done.card}.
           </p>
@@ -171,9 +222,11 @@ export default function TextGivePage() {
             <p className="text-lg font-bold text-[#4A0404] dark:text-[#E9C979]">Next time, just text an amount</p>
             <p className="text-base text-slate-700 dark:text-slate-300">
               Text <span className="font-bold">50</span> to <span className="font-bold whitespace-nowrap">{GIVING_NUMBER}</span> to give $50.
-              We'll text you a thank-you, and email your receipt.
+              {done.p2p !== undefined
+                ? ` We'll text you a link to send it with ${done.p2pLabel}.`
+                : " It's given right away — we'll text you a thank-you and email your receipt."}
             </p>
-            <p className="text-sm text-slate-500">Text CHANGE to use a different card, or UNLINK to stop text giving.</p>
+            <p className="text-sm text-slate-500">Text CHANGE to switch how you give, or UNLINK to stop text giving.</p>
           </div>
           <p className="text-sm text-slate-500">You can close this page.</p>
         </div>
@@ -210,12 +263,12 @@ export default function TextGivePage() {
         <div className="space-y-2 text-center">
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Anointed Worship Center</p>
           <h1 className="font-serif-display text-3xl font-semibold text-slate-900 dark:text-white">
-            {giving ? `Give ${money(info.amountCents)}` : 'Save a card for text giving'}
+            {giving ? `Give ${money(info.amountCents)}` : 'How you give by text'}
           </h1>
           <p className="text-base text-slate-600 dark:text-slate-400 leading-relaxed">
             {giving
-              ? `to ${info.fundName}. Your card is saved so next time you can just text an amount from ${info.phoneHint}.`
-              : `This card will be used when you text an amount from ${info.phoneHint}.`}
+              ? `to ${info.fundName}. We'll remember your choice so next time you can just text an amount from ${info.phoneHint}.`
+              : `Choose what to use when you text an amount from ${info.phoneHint}.`}
           </p>
         </div>
 
@@ -237,6 +290,33 @@ export default function TextGivePage() {
                 required
               />
             </label>
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">How would you like to give?</legend>
+              {info.methods.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMethod(m)}
+                  aria-pressed={method === m}
+                  className={`w-full flex items-center gap-3 rounded-2xl border-2 p-4 text-left transition-colors ${
+                    method === m
+                      ? 'border-[#4A0404] bg-[#4A0404]/5'
+                      : 'border-[#E8E2D9] dark:border-slate-700 bg-white dark:bg-slate-800'
+                  }`}
+                >
+                  <span className="text-[#4A0404] dark:text-[#E9C979]">{METHOD_INFO[m].icon}</span>
+                  <span className="flex-1">
+                    <span className="block text-base font-bold text-slate-900 dark:text-white">{METHOD_INFO[m].label}</span>
+                    <span className="block text-sm text-slate-600 dark:text-slate-400">{METHOD_INFO[m].note}</span>
+                  </span>
+                  <span
+                    className={`h-5 w-5 rounded-full border-2 ${method === m ? 'border-[#4A0404] bg-[#4A0404]' : 'border-slate-300'}`}
+                    aria-hidden="true"
+                  />
+                </button>
+              ))}
+            </fieldset>
+            {(method === 'card' || method === 'us_bank_account') && (
             <label className="flex items-start gap-3 rounded-xl border border-[#E8E2D9] dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
               <input
                 type="checkbox"
@@ -245,13 +325,21 @@ export default function TextGivePage() {
                 onChange={(e) => setCoverFees(e.target.checked)}
               />
               <span className="text-base text-slate-700 dark:text-slate-300">
-                Add the card fee so the church receives my full gift
-                {giving ? ` (+${money(info.feeCents)} today)` : ''}. I'll keep this choice for text gifts.
+                Add the {method === 'us_bank_account' ? 'bank' : 'card'} fee so the church receives my full gift
+                {giving ? ` (+${money(method === 'us_bank_account' ? info.bankFeeCents : info.feeCents)} today)` : ''}. I'll keep
+                this choice for text gifts.
               </span>
             </label>
+            )}
             {formError ? <p className="text-sm text-red-700" role="alert">{formError}</p> : null}
             <button type="submit" disabled={starting} className={bigButton} style={{ backgroundColor: '#4A0404' }}>
-              {starting ? 'Please wait…' : 'Continue to card'}
+              {starting
+                ? 'Please wait…'
+                : method === 'card'
+                  ? 'Continue to card'
+                  : method === 'us_bank_account'
+                    ? 'Continue to bank'
+                    : `Use ${METHOD_INFO[method].label}`}
             </button>
           </form>
         ) : stripePromise ? (
@@ -264,9 +352,10 @@ export default function TextGivePage() {
         )}
 
         <p className="text-xs text-slate-500 leading-relaxed">
-          By saving your card, you allow Anointed Worship Center to charge it when you text an amount from{' '}
-          {info.phoneHint} to {GIVING_NUMBER}. Gifts over {money(info.instantMaxCents)} ask you to reply OK first. Text UNLINK anytime to stop.
-          Cards are stored securely by Stripe, never by the church.{' '}
+          With a card or bank account, you allow Anointed Worship Center to charge it when you text an amount from{' '}
+          {info.phoneHint} to {GIVING_NUMBER}. Gifts over {money(info.instantMaxCents)} ask you to reply OK first. Cash App, Venmo
+          and Zelle are never charged automatically — you send each gift yourself. Text UNLINK anytime to stop. Cards and bank
+          details are stored securely by Stripe, never by the church.{' '}
           <Link to="/privacy" className="underline">Privacy</Link>
         </p>
       </div>

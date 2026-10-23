@@ -15,6 +15,7 @@ import {
 } from '../sms/textToGive';
 import { handleTextGive, parseTextGive } from '../textGive/service';
 import { chargeSavedCard, getTextGiveStripe, textGiveFund } from '../textGive/stripe';
+import { p2pGiftReply } from '../textGive/p2p';
 
 const router = Router();
 
@@ -70,11 +71,12 @@ router.post(
           churchName: env.churchName,
           fundName: fund.name,
           setupUrl: new URL('/text-give', env.smsGivingUrl || env.publicAppUrl).toString(),
-          minCents: env.minGiftCents,
+          minCents: env.textGiveMinCents,
           instantMaxCents: env.textGiveInstantMaxCents,
           maxCents: env.textGiveMaxCents,
           instantPerDay: env.textGivePerDay,
           charge: chargeSavedCard,
+          p2pReply: p2pGiftReply,
         });
         console.log(`[sms] text-give ${String(params.MessageSid || '').slice(0, 40)} from ${maskPhone(from)} → ${command.kind}`);
         return res.status(200).type('text/xml').send(twiml(reply));
