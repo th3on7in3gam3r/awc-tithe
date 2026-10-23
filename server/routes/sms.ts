@@ -13,6 +13,8 @@ import {
   smsReply,
   twiml,
 } from '../sms/textToGive';
+import { handleTextGive, parseTextGive } from '../textGive/service';
+import { chargeSavedCard, getTextGiveStripe, textGiveFund } from '../textGive/stripe';
 
 const router = Router();
 
@@ -37,7 +39,7 @@ export function signatureUrlCandidates(req: Request): string[] {
 router.post(
   '/incoming',
   express.urlencoded({ extended: false, limit: '64kb' }),
-  (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const params = (req.body || {}) as Record<string, unknown>;
 
     if (!env.twilioAuthToken) {
@@ -55,6 +57,33 @@ router.post(
             'the Auth Token of the Twilio account that owns the number.'
         );
         return res.status(403).type('text/plain').send('Forbidden');
+      }
+    }
+
+    // Text an amount ("50") → give with the saved card (or set one up the first time).
+    const from = String(params.From || '');
+    const command = parseTextGive(params.Body);
+    if (command && /^\+\d{10,15}$/.test(from) && getTextGiveStripe()) {
+      try {
+        const fund = await textGiveFund();
+        const reply = await handleTextGive(from, command, String(params.MessageSid || ''), {
+          churchName: env.churchName,
+          fundName: fund.name,
+          setupUrl: new URL('/text-give', env.smsGivingUrl || env.publicAppUrl).toString(),
+          minCents: env.minGiftCents,
+          instantMaxCents: env.textGiveInstantMaxCents,
+          maxCents: env.textGiveMaxCents,
+          instantPerDay: env.textGivePerDay,
+          charge: chargeSavedCard,
+        });
+        console.log(`[sms] text-give ${String(params.MessageSid || '').slice(0, 40)} from ${maskPhone(from)} → ${command.kind}`);
+        return res.status(200).type('text/xml').send(twiml(reply));
+      } catch (err) {
+        console.error('[sms] text-give failed', err instanceof Error ? err.message : err);
+        return res
+          .status(200)
+          .type('text/xml')
+          .send(twiml('Sorry, something went wrong. Nothing was charged. Please try again in a few minutes.'));
       }
     }
 

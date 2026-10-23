@@ -28,6 +28,8 @@ import statementsRoutes from './routes/statements';
 import manualGiftsRoutes from './routes/manualGifts';
 import vaultIntegrationRoutes from './routes/vaultIntegration';
 import smsRoutes from './routes/sms';
+import textGiveRoutes from './routes/textGive';
+import { ensureTextGiveSchema } from './textGive/store';
 import { phoneRouteGuard } from './auth/phoneRouteGuard';
 import { ensureExternalRefsSchema } from './externalRefs/store';
 import { ensureManualGiftsSchema } from './manualGifts/store';
@@ -217,6 +219,7 @@ app.use('/api/church', churchRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/statements', statementsRoutes);
 app.use('/api/manual-gifts', manualGiftsRoutes);
+app.use('/api/text-give', textGiveRoutes);
 
 // Serve Vite production build (Render single-service deploy)
 app.use(express.static(distPath));
@@ -263,6 +266,7 @@ async function boot() {
   await ensureChurchSettings();
   await ensureManualGiftsSchema();
   await ensureExternalRefsSchema();
+  await ensureTextGiveSchema();
   await maybeBootstrapAdminInvite().catch((err) =>
     console.error('[bootstrap] admin invite failed', err instanceof Error ? err.message : err)
   );

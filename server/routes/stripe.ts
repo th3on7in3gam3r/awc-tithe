@@ -70,7 +70,7 @@ function recurringCadence(frequency: string): {
   return { interval: 'month', interval_count: 1 };
 }
 
-async function ensureStripeCustomer(
+export async function ensureStripeCustomer(
   stripe: Stripe,
   email: string,
   name: string

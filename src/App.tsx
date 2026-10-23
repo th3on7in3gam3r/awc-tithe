@@ -10,6 +10,7 @@ import { MfaModal } from './components/MfaModal';
 import { ToastContainer } from './components/ToastContainer';
 import { Footer } from './components/Footer';
 import { AppPortalMode } from './types';
+import TextGivePage from './pages/TextGivePage';
 import PrivacyPage from './pages/PrivacyPage';
 import TermsPage from './pages/TermsPage';
 import RefundPolicyPage from './pages/RefundPolicyPage';
@@ -177,6 +178,7 @@ export default function App() {
     <ChurchProvider>
       <BrowserRouter>
         <Routes>
+          <Route path="/text-give" element={<TextGivePage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/refund-policy" element={<RefundPolicyPage />} />

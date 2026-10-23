@@ -52,7 +52,7 @@ check('give reply has STOP', /Reply STOP to opt out/.test(give), give);
 check('help reply mentions rates and STOP', /rates may apply/.test(smsReply('help', opts) || '') && /STOP/.test(smsReply('help', opts) || ''));
 check('STOP left to Twilio', smsReply('opt_out', opts) === null);
 check('START left to Twilio', smsReply('opt_in', opts) === null);
-check('other nudges to GIVE', /Text GIVE/.test(smsReply('other', opts) || ''));
+check('other nudges to text an amount or GIVE', /Text an amount/.test(smsReply('other', opts) || ''));
 check('giving url adds from=sms', smsGivingUrl('https://awc-tithe.onrender.com') === 'https://awc-tithe.onrender.com/?from=sms');
 check('giving url keeps other params', smsGivingUrl('https://x.org/give?fund=1') === 'https://x.org/give?fund=1&from=sms');
 

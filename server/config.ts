@@ -81,6 +81,12 @@ export const env = {
   smsCodeDailyCap: Math.max(1, Number(process.env.SMS_CODE_DAILY_CAP || 60) || 60),
   /** Sign-in texts allowed per phone number per hour. */
   rateLimitSmsPhonePerHour: Math.max(1, Number(process.env.RATE_LIMIT_SMS_PHONE_PER_HOUR || 3) || 3),
+  /** Text an amount: charged without a confirmation up to this (Pastor: $2,000). */
+  textGiveInstantMaxCents: Math.round(Math.max(1, Number(process.env.TEXT_GIVE_INSTANT_MAX || 2000) || 2000) * 100),
+  /** Largest gift accepted by text at all; bigger gifts use the giving page. */
+  textGiveMaxCents: Math.round(Math.max(1, Number(process.env.TEXT_GIVE_MAX || 10000) || 10000) * 100),
+  /** Instant text gifts per number per 24h before an OK reply is required. */
+  textGivePerDay: Math.max(1, Number(process.env.TEXT_GIVE_PER_DAY || 5) || 5),
   /** Sign-in texts allowed per device/IP per hour. */
   rateLimitSmsIpPerHour: Math.max(1, Number(process.env.RATE_LIMIT_SMS_IP_PER_HOUR || 5) || 5),
   /** Better Auth (donor My Giving email OTP) */

@@ -155,3 +155,25 @@ that, "Text me a code instead" on the sign-in screen opens the same account.
   confirms a texted code. An unknown phone never creates an account.
 - Columns `"user"."phoneNumber"` / `"phoneNumberVerified"` are added at boot
   (`server/sql/donor_phone_signin.sql` for reference).
+
+## Text an amount (saved card)
+
+Pastor's request: after a one-time setup, members give by texting an amount.
+
+- **First text** (e.g. `50`) from a new number → we text a one-time link
+  (`/text-give?t=…`, 30 minutes) with the amount filled in. Name, email, card
+  and the card-fee choice are entered once; Stripe saves the card for later
+  (`setup_future_usage: off_session`). The link was texted to that phone, so
+  it proves the number.
+- **After that**, texting an amount charges the saved card right away and
+  replies with a thank-you; the receipt email and DCB record come from the
+  normal Stripe webhook (same metadata as the giving page, `giftSource: sms`).
+- Always **Tithes & Offerings** (`fund-tithes`). Up to `TEXT_GIVE_INSTANT_MAX`
+  ($2,000) is instant; bigger gifts, or more than `TEXT_GIVE_PER_DAY` (5) in
+  24h, ask the giver to reply **OK**. Over `TEXT_GIVE_MAX` → giving page.
+- `CHANGE` → link to save a different card (no charge). `UNLINK` → stop.
+- A Twilio retry can't double-charge: the Stripe idempotency key is the
+  message id. A declined card or bank check (3-D Secure) → nothing taken, a
+  link to finish the gift is texted.
+- Tables (created at boot): `text_givers`, `text_give_links`,
+  `text_give_pending`, `text_give_charges` (history of every text charge).

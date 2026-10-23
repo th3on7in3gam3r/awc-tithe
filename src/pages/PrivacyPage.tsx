@@ -77,6 +77,11 @@ export default function PrivacyPage() {
             If you add a mobile number to My Giving, we text it one-time sign-in codes only when you ask for one.
             You can turn text sign-in off in My Giving at any time.
           </li>
+          <li>
+            Text giving: if you text an amount and save a card, Stripe stores the card and we keep your phone number
+            linked to it so a later text can charge it. We never see or store your full card number. Text UNLINK
+            anytime to stop text giving.
+          </li>
           <li>Texts are delivered through our messaging provider, Twilio, under its own terms and security program.</li>
         </ul>
       </LegalSection>

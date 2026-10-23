@@ -33,7 +33,7 @@ interface StripeCheckoutProps {
 
 const METHOD_ORDER = ['card', 'apple_pay', 'google_pay', 'us_bank_account', 'cashapp'];
 
-function stripeAppearance(): Appearance {
+export function stripeAppearance(): Appearance {
   const dark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
   return {
     theme: dark ? 'night' : 'stripe',

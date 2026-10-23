@@ -47,12 +47,12 @@ export function smsReply(keyword: SmsKeyword, opts: { churchName: string; giving
     case 'give':
       return `Thank you for giving to ${churchName}! Give securely here: ${givingUrl} Reply STOP to opt out.`;
     case 'help':
-      return `${churchName} giving line. Text GIVE for our secure giving link. Msg & data rates may apply. Reply STOP to opt out.`;
+      return `${churchName} giving line. Text an amount (like 50) to give, or GIVE for our giving page. Msg & data rates may apply. Reply STOP to opt out.`;
     case 'opt_out':
     case 'opt_in':
       return null;
     default:
-      return `Text GIVE to receive ${churchName}'s secure giving link.`;
+      return `Text an amount (like 50) to give to ${churchName}, or text GIVE for our secure giving page.`;
   }
 }
 
