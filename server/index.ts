@@ -27,6 +27,7 @@ import auditRoutes from './routes/audit';
 import statementsRoutes from './routes/statements';
 import manualGiftsRoutes from './routes/manualGifts';
 import vaultIntegrationRoutes from './routes/vaultIntegration';
+import smsRoutes from './routes/sms';
 import { ensureExternalRefsSchema } from './externalRefs/store';
 import { ensureManualGiftsSchema } from './manualGifts/store';
 import { maybeBootstrapAdminInvite } from './auth/bootstrapAdmin';
@@ -147,6 +148,9 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), strip
 
 /** AWC Vault RSVP payment status — HMAC over the raw body, so also before express.json(). */
 app.use('/api/integrations/vault', vaultIntegrationRoutes);
+
+/** Twilio text-to-give webhook — form-encoded body, Twilio signature checked in the route. */
+app.use('/api/sms', smsRoutes);
 
 app.use(express.json({ limit: '1mb' }));
 

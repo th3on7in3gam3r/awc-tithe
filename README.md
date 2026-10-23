@@ -115,3 +115,24 @@ Settings (see `.env.example`):
 | `ZELLE_RECIPIENT_NAME` | Name donors see in Zelle (defaults to `CHURCH_LEGAL_NAME`). |
 | `VENMO_HANDLE` | Venmo business profile username, without `@`. |
 | `STRIPE_CASHAPP_PAY_ENABLED` | `true` after Cash App Pay is turned on in the Stripe Dashboard. |
+
+## Text-to-give (Twilio)
+
+Members text **GIVE** to **(855) 297-1920** and get the giving link back
+(`PUBLIC_APP_URL/?from=sms`). The number is used only for text-to-give.
+
+- Webhook: `POST /api/sms/incoming` (`server/routes/sms.ts`). Every request's
+  `X-Twilio-Signature` is verified with `TWILIO_AUTH_TOKEN`; production refuses
+  inbound texts when the token is missing.
+- Keywords: GIVE / TITHE / OFFERING / DONATE / GIVING → giving link; HELP → help
+  text; anything else → "Text GIVE…". STOP / START are answered by Twilio's
+  Advanced Opt-Out, so the app sends no reply for them.
+- A text never creates or completes a gift. Gifts made from the link carry
+  `giftSource: sms` in Stripe metadata and are recorded by the Stripe webhook
+  like any other card or bank gift.
+
+Twilio setup: Phone Numbers → Active numbers → (855) 297-1920 → Messaging
+configuration → "A message comes in" → Webhook →
+`https://awc-tithe.onrender.com/api/sms/incoming`, HTTP POST. Then set
+`TWILIO_AUTH_TOKEN` on Render. If the webhook URL is not exactly
+`PUBLIC_APP_URL` + `/api/sms/incoming`, also set `TWILIO_WEBHOOK_URL` to it.

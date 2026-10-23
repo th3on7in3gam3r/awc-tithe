@@ -47,3 +47,5 @@ services:
         sync: false
       - key: STRIPE_CASHAPP_PAY_ENABLED
         value: "false"
+      - key: TWILIO_AUTH_TOKEN
+        sync: false

@@ -11,7 +11,7 @@ export default function PrivacyPage() {
   const location = [street, cityStateZip].filter(Boolean).join(', ');
 
   return (
-    <LegalPageLayout title="Privacy Policy" updated="October 7, 2026">
+    <LegalPageLayout title="Privacy Policy" updated="October 23, 2026">
       <p>
         This policy describes how {legalName} (“we,” “us”) collects and uses information when you use AWC
         Tithe, our online giving experience. It explains how we handle donor information on AWC Tithe.
@@ -61,7 +61,23 @@ export default function PrivacyPage() {
         </p>
       </LegalSection>
 
-      <LegalSection title="6. Contact">
+      <LegalSection title="6. Text-to-give (SMS)">
+        <p>
+          When you text GIVE to our giving number, we reply with a link to this giving page. We only text people
+          who text us first, and only to send that link or answer HELP. We do not send marketing texts.
+        </p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>Reply STOP at any time to stop receiving texts; reply HELP for help.</li>
+          <li>Message and data rates may apply. Message frequency depends on how often you text us.</li>
+          <li>
+            Your phone number is used only to reply to you. It is never sold or shared with third parties for
+            marketing, and SMS opt-in data is not shared with anyone.
+          </li>
+          <li>Texts are delivered through our messaging provider, Twilio, under its own terms and security program.</li>
+        </ul>
+      </LegalSection>
+
+      <LegalSection title="7. Contact">
         <div
           className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-4"
           style={{ borderLeft: '3px solid #D4AF37' }}

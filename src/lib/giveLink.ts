@@ -6,6 +6,7 @@
  */
 import type { DonationFrequency } from '../types';
 import { normalizeExternalRef, normalizeRefLabel } from '../../shared/externalRef';
+import { normalizeGiftSource, type GiftSource } from '../../shared/giftSource';
 
 export type GiveLinkMethod = 'card' | 'us_bank_account' | 'zelle' | 'venmo' | 'cash_app';
 
@@ -26,6 +27,8 @@ export interface GiveLink {
   email?: string;
   /** Where "Back to my RSVP" goes. Only AWC Vault / AWC Connect addresses are accepted. */
   returnUrl?: string;
+  /** Where the donor came from (?from=sms for text-to-give). Saved on the Stripe payment. */
+  source?: GiftSource;
 }
 
 /** Apps allowed to receive donors back after an RSVP payment. */
@@ -82,6 +85,8 @@ export function parseGiveLink(search: string): GiveLink {
   }
   const frequency = (params.get('frequency') || '').trim().toLowerCase() as DonationFrequency;
   if (FREQUENCIES.includes(frequency)) out.frequency = frequency;
+  const source = normalizeGiftSource(params.get('from'));
+  if (source) out.source = source;
   const fund = (params.get('fund') || '').trim().slice(0, 80);
   if (fund) out.fund = fund;
   const ref = normalizeExternalRef(params.get('ref'));

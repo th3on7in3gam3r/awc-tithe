@@ -136,6 +136,8 @@ export async function createStripePaymentIntent(body: {
   paymentMethodType?: string;
   /** AWC Vault RSVP reference (rsvp:<uuid>); one-time gifts only. */
   externalRef?: string | null;
+  /** Where the donor came from, e.g. "sms" for text-to-give. */
+  giftSource?: string | null;
 }): Promise<{
   clientSecret: string;
   paymentIntentId: string;

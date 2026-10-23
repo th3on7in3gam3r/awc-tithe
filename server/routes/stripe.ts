@@ -16,6 +16,7 @@ import { fromNodeHeaders } from 'better-auth/node';
 import { auth } from '../auth/betterAuth';
 import { linkTransactionToRef } from '../externalRefs/store';
 import { normalizeExternalRef } from '../../shared/externalRef';
+import { normalizeGiftSource } from '../../shared/giftSource';
 
 const router = Router();
 
@@ -125,8 +126,10 @@ router.post(
       coverFees = false,
       paymentMethodType,
       externalRef: rawExternalRef,
+      giftSource: rawGiftSource,
     } = req.body as Record<string, unknown>;
     const externalRef = normalizeExternalRef(rawExternalRef);
+    const giftSource = normalizeGiftSource(rawGiftSource) || '';
 
     const requestedMethod = String(paymentMethodType || '');
     const methodTypes = checkoutMethodTypes(requestedMethod);
@@ -205,6 +208,7 @@ router.post(
             feeCovered: String(cover),
             frequency: frequencyName,
             isAnonymous: String(parseBoolean(isAnonymous)),
+            giftSource,
           },
         });
         const invoice = subscription.latest_invoice;
@@ -263,6 +267,7 @@ router.post(
           isAnonymous: String(parseBoolean(isAnonymous)),
           stripeCustomerId: customerId || '',
           externalRef: externalRef || '',
+          giftSource,
         },
         statement_descriptor_suffix: 'AWC TITHE',
       });

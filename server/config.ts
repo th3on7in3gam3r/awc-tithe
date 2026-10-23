@@ -68,6 +68,12 @@ export const env = {
     process.env.CHURCH_WEBSITE?.trim()
     || 'https://anointedworshipcenter.com',
   churchName: process.env.CHURCH_NAME?.trim() || 'Anointed Worship Center',
+  /** Twilio text-to-give (POST /api/sms/incoming). Auth token verifies X-Twilio-Signature. */
+  twilioAuthToken: process.env.TWILIO_AUTH_TOKEN?.trim() || '',
+  /** Exact webhook URL entered in Twilio, if it differs from PUBLIC_APP_URL + /api/sms/incoming. */
+  twilioWebhookUrl: process.env.TWILIO_WEBHOOK_URL?.trim() || '',
+  /** Giving page texted back to members (defaults to PUBLIC_APP_URL). */
+  smsGivingUrl: process.env.SMS_GIVING_URL?.trim() || '',
   /** Better Auth (donor My Giving email OTP) */
   betterAuthSecret: process.env.BETTER_AUTH_SECRET?.trim() || '',
   betterAuthUrl: process.env.BETTER_AUTH_URL?.trim() || '',

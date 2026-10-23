@@ -116,6 +116,8 @@ export const DonorPortal: React.FC<{
   const [turnstileKey, setTurnstileKey] = useState(0);
 
   const [frequency, setFrequency] = useState<DonationFrequency>('one-time');
+  /** ?from=sms etc. — kept for the session so it survives the address-bar tidy-up. */
+  const [giftSource, setGiftSource] = useState<string | null>(null);
   const [selectedFundId, setSelectedFundId] = useState<string>(
     () => (initialFundId && funds.some((f) => f.id === initialFundId) ? initialFundId : funds[0]?.id) || 'fund-tithes'
   );
@@ -238,6 +240,7 @@ export const DonorPortal: React.FC<{
       setRsvpPrefill(true);
     }
     if (link.fund) setLinkFund(link.fund);
+    if (link.source) setGiftSource(link.source);
     if (
       link.method ||
       link.amount ||
@@ -695,6 +698,7 @@ export const DonorPortal: React.FC<{
                   fundName={selectedFund.name}
                   frequency={eventGift ? 'one-time' : frequency}
                   externalRef={eventGift?.ref ?? null}
+                  giftSource={giftSource}
                   isAnonymous={isAnonymous}
                   turnstileToken={turnstileToken}
                   publishableKey={apiConfig.stripePublishableKey}
