@@ -26,7 +26,8 @@ if (!pool && !memoryStoreAllowed()) {
  * Donor auth stays on /api/auth with a 30-day session.
  */
 export const staffAuth = betterAuth({
-  database: pool ?? memoryAdapter({}),
+  // Memory adapter needs its tables up front (dev/test only).
+  database: pool ?? memoryAdapter({ user: [], session: [], account: [], verification: [], twoFactor: [] }),
   secret: env.betterAuthSecret,
   baseURL,
   trustedOrigins: allowedOrigins(),

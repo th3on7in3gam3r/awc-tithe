@@ -29,7 +29,9 @@ import manualGiftsRoutes from './routes/manualGifts';
 import vaultIntegrationRoutes from './routes/vaultIntegration';
 import smsRoutes from './routes/sms';
 import textGiveRoutes from './routes/textGive';
+import staffPhoneRoutes from './routes/staffPhone';
 import { ensureTextGiveSchema } from './textGive/store';
+import { ensureStaffPhoneSchema } from './auth/staffPhone';
 import { phoneRouteGuard } from './auth/phoneRouteGuard';
 import { ensureExternalRefsSchema } from './externalRefs/store';
 import { ensureManualGiftsSchema } from './manualGifts/store';
@@ -213,6 +215,7 @@ app.use('/api/stripe', stripeRoutes);
 app.use('/api/dcb', dcbRoutes);
 app.use('/api/gifts', giftsRoutes);
 app.use('/api/staff', staffRoutes);
+app.use('/api/staff-phone', staffPhoneRoutes);
 app.use('/api/donor', donorRoutes);
 app.use('/api/funds', fundsRoutes);
 app.use('/api/church', churchRoutes);
@@ -267,6 +270,7 @@ async function boot() {
   await ensureManualGiftsSchema();
   await ensureExternalRefsSchema();
   await ensureTextGiveSchema();
+  await ensureStaffPhoneSchema();
   await maybeBootstrapAdminInvite().catch((err) =>
     console.error('[bootstrap] admin invite failed', err instanceof Error ? err.message : err)
   );

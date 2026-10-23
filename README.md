@@ -193,3 +193,20 @@ Pastor's request: after a one-time setup, members give by texting an amount.
   link to finish the gift is texted.
 - Tables (created at boot): `text_givers`, `text_give_links`,
   `text_give_pending`, `text_give_charges` (history of every text charge).
+
+## Staff Portal sign-in codes by text
+
+Staff can get their Staff Portal sign-in code by text instead of email
+("Text me a code instead" in the sign-in window). The authenticator step for
+admins is unchanged.
+
+- A staff member adds their own number while signed in (and past the
+  authenticator step, when they use one): Staff dashboard → "Sign-in codes by
+  text" → a code texted to that number confirms it. Audit-logged.
+- Sign-in: `POST /api/staff-phone/request-code` texts a code only to a
+  confirmed number of an eligible staff email (same answer either way);
+  `POST /api/staff-phone/verify` checks it with Twilio Verify, then runs the
+  normal email-code sign-in on the server, so sessions and the authenticator
+  step behave exactly as with an emailed code.
+- Same Twilio Verify service, rate limits and daily cap as donor phone codes.
+  Table `staff_sms_phones` is created at boot.

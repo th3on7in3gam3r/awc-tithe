@@ -15,6 +15,7 @@ import { GivingGoalsAdmin } from './GivingGoalsAdmin';
 import { YearEndStatementsAdmin } from './YearEndStatementsAdmin';
 import { ManualGiftsPanel } from './ManualGiftsPanel';
 import { DcbSyncStatusPanel } from './DcbSyncStatusPanel';
+import { StaffPhoneCard } from './StaffPhoneCard';
 import { auditStaffTwoFactor, fetchActivityAudit, fetchStaffSession, recordOfflineGift } from '../lib/api';
 import { staffAuthClient } from '../lib/authClient';
 import {
@@ -351,6 +352,7 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
       {isMfaVerified && staffPortalRole === 'staff' && <StaffAuthenticatorSetup />}
+      {isMfaVerified && <StaffPhoneCard />}
 
       {/* Sub-Tabs Navigation */}
       <div className="mt-8 border-b border-[#E8E2D9] dark:border-slate-800 overflow-x-auto">

@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { staffAuthClient } from '../lib/authClient';
 import { acceptStaffInvite, auditStaffTwoFactor, fetchStaffSession } from '../lib/api';
 import { useChurch } from '../context/ChurchContext';
-import { KeyRound, X } from 'lucide-react';
+import { KeyRound, Smartphone, X } from 'lucide-react';
 
 interface MfaModalProps {
   isOpen: boolean;
@@ -19,7 +19,7 @@ function inviteTokenFromLocation(): string {
 
 export const MfaModal: React.FC<MfaModalProps> = ({ isOpen, onClose, onAccessGranted }) => {
   const { refreshStaffSession } = useChurch();
-  const [step, setStep] = useState<Step>('email');
+  const [step, setStep] = useState<Step | 'sms'>('email');
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
   const [totp, setTotp] = useState('');
@@ -74,6 +74,70 @@ export const MfaModal: React.FC<MfaModalProps> = ({ isOpen, onClose, onAccessGra
       window.history.replaceState(null, '', query ? `/?${query}` : '/');
     }
     await finish();
+  };
+
+  const [smsOn, setSmsOn] = useState(false);
+  const [smsCode, setSmsCode] = useState('');
+  useEffect(() => {
+    void fetch('/api/donor/phone', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setSmsOn(Boolean(d?.enabled)))
+      .catch(() => setSmsOn(false));
+  }, []);
+
+  /** Text the sign-in code to the staff member's confirmed mobile number instead of email. */
+  const sendTextCode = async () => {
+    if (!email.trim().includes('@')) {
+      setError('Enter your staff email first.');
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/staff-phone/request-code', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setError(d.message || 'Could not send a text code. Use your email code.');
+        return;
+      }
+      setSmsCode('');
+      setStep('sms');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const verifyTextCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    const res = await fetch('/api/staff-phone/verify', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.trim().toLowerCase(), code: smsCode.trim() }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { twoFactorRedirect?: boolean; message?: string };
+    setSubmitting(false);
+    if (!res.ok) {
+      setError(data.message || 'That code was not accepted.');
+      return;
+    }
+    if (data.twoFactorRedirect) {
+      setStep('totp');
+      return;
+    }
+    const session = await fetchStaffSession();
+    if (session.mfaRequired) {
+      setStep('totp');
+      return;
+    }
+    await afterSignIn();
   };
 
   const sendCode = async (e: React.FormEvent) => {
@@ -201,6 +265,48 @@ export const MfaModal: React.FC<MfaModalProps> = ({ isOpen, onClose, onAccessGra
             <button type="submit" disabled={submitting} className="w-full py-2.5 rounded-lg text-white text-sm font-semibold" style={{ backgroundColor: '#4A0404' }}>
               {submitting ? 'Sending…' : 'Email me a code'}
             </button>
+            {smsOn && (
+              <button
+                type="button"
+                onClick={() => void sendTextCode()}
+                disabled={submitting}
+                className="w-full py-3 rounded-lg border-2 text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                style={{ borderColor: '#4A0404', color: '#4A0404' }}
+              >
+                <Smartphone className="h-4 w-4" /> Text me a code instead
+              </button>
+            )}
+          </form>
+        )}
+
+        {step === 'sms' && (
+          <form onSubmit={(e) => void verifyTextCode(e)} className="space-y-3">
+            <p className="text-xs text-slate-600">
+              If your account has a mobile number for codes, we texted a 6-digit code to it.
+            </p>
+            <input
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              autoFocus
+              value={smsCode}
+              onChange={(e) => setSmsCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              className="w-full py-2.5 px-3 rounded-lg border border-slate-300 text-sm tracking-widest"
+            />
+            <button type="submit" disabled={submitting || smsCode.length !== 6} className="w-full py-2.5 rounded-lg text-white text-sm font-semibold" style={{ backgroundColor: '#4A0404' }}>
+              {submitting ? 'Checking…' : 'Continue'}
+            </button>
+            <button
+              type="button"
+              onClick={(e) => void sendCode(e as unknown as React.FormEvent)}
+              disabled={submitting}
+              className="w-full py-3 rounded-lg border-2 text-sm font-bold disabled:opacity-50"
+              style={{ borderColor: '#4A0404', color: '#4A0404' }}
+            >
+              Email me the code instead
+            </button>
+            <p className="text-[11px] text-slate-500">
+              No number set up yet? Sign in with your email code, then add your number under “Sign-in codes by text”.
+            </p>
           </form>
         )}
 
