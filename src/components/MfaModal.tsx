@@ -27,6 +27,17 @@ export const MfaModal: React.FC<MfaModalProps> = ({ isOpen, onClose, onAccessGra
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Every hook stays above the `isOpen` early return, or React crashes the whole
+  // page (blank screen) the moment the sign-in box opens.
+  const [smsOn, setSmsOn] = useState(false);
+  const [smsCode, setSmsCode] = useState('');
+  useEffect(() => {
+    if (!isOpen) return;
+    void fetch('/api/donor/phone', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setSmsOn(Boolean(d?.enabled)))
+      .catch(() => setSmsOn(false));
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -75,15 +86,6 @@ export const MfaModal: React.FC<MfaModalProps> = ({ isOpen, onClose, onAccessGra
     }
     await finish();
   };
-
-  const [smsOn, setSmsOn] = useState(false);
-  const [smsCode, setSmsCode] = useState('');
-  useEffect(() => {
-    void fetch('/api/donor/phone', { credentials: 'include' })
-      .then((r) => r.json())
-      .then((d) => setSmsOn(Boolean(d?.enabled)))
-      .catch(() => setSmsOn(false));
-  }, []);
 
   /** Text the sign-in code to the staff member's confirmed mobile number instead of email. */
   const sendTextCode = async () => {
