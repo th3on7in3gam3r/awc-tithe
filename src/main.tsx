@@ -25,3 +25,11 @@ createRoot(document.getElementById('root')!).render(
 // A plain timer, not requestAnimationFrame: rAF never fires in background or
 // hidden tabs, which left the cover up indefinitely.
 window.setTimeout(dismissBootCover, 150);
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js').catch(() => {
+      /* offline or blocked — home-screen install still works on iOS without it */
+    });
+  });
+}

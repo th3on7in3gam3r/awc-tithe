@@ -10,6 +10,7 @@ import {
   Lock,
   Users,
 } from 'lucide-react';
+import { AddToHomeScreen, AddToHomeScreenBanner, AddToHomeScreenMobile } from './AddToHomeScreen';
 
 interface NavbarProps {
   portalMode: AppPortalMode;
@@ -133,6 +134,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </nav>
 
         <div className="flex items-center gap-2 sm:gap-3">
+          <AddToHomeScreen quiet={portalMode === 'admin'} />
           <div className="hidden sm:block">{portalSwitch}</div>
 
           {isAdmin && (
@@ -182,8 +184,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             ))}
           </nav>
           <div className="mt-3 sm:hidden">{portalSwitch}</div>
+          <AddToHomeScreenMobile onDone={() => setMobileMenuOpen(false)} />
         </div>
       )}
+      <AddToHomeScreenBanner hidden={portalMode === 'admin'} />
     </header>
   );
 };

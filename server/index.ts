@@ -226,7 +226,15 @@ app.use('/api/manual-gifts', manualGiftsRoutes);
 app.use('/api/text-give', textGiveRoutes);
 
 // Serve Vite production build (Render single-service deploy)
-app.use(express.static(distPath));
+app.use(
+  express.static(distPath, {
+    setHeaders(res, filePath) {
+      if (filePath.endsWith('.webmanifest')) {
+        res.setHeader('Content-Type', 'application/manifest+json');
+      }
+    },
+  })
+);
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api')) return next();
   res.sendFile(path.join(distPath, 'index.html'), (err) => {
