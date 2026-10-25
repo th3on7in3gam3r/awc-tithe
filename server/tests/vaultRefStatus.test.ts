@@ -197,6 +197,10 @@ async function main() {
     const ev = withEventFund(gift, REF);
     check('RSVP gift goes to DCB as an event fund', ev.eventFund === true && ev.memo === 'Thanksgiving Dinner 2026 RSVP', ev);
     check('regular gift unchanged', withEventFund(gift, null) === gift && withEventFund(gift, FRM) === gift);
+    const direct = withEventFund(gift, null, { isEventFund: true });
+    check('event-fund gift from the giving page also goes to DCB as an event fund', direct.eventFund === true && direct.memo === 'Thanksgiving Dinner 2026', direct);
+    const tithe = { ...gift, fundName: 'Tithes & Offerings' };
+    check('Tithes & Offerings is never marked as an event', withEventFund(tithe, null, { isEventFund: false }) === tithe);
   } finally {
     server.close();
   }

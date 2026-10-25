@@ -33,16 +33,28 @@ import { externalRefsForDonations } from '../externalRefs/store';
 import { withEventFund } from './eventFund';
 
 /** Event RSVP gifts carry the event's fund to DCB. A lookup failure never blocks delivery. */
+async function isEventFundName(fundName: unknown): Promise<boolean> {
+  const name = String(fundName || '').trim().toLowerCase();
+  if (!name) return false;
+  try {
+    const { listAllFunds } = await import('../funds/store');
+    return (await listAllFunds()).some((f) => f.isEvent && f.name.trim().toLowerCase() === name);
+  } catch {
+    return false;
+  }
+}
+
 async function contributionPayloadFor(row: DcbOutboxRow): Promise<DcbContributionPayload> {
   const payload = row.payload as unknown as DcbContributionPayload;
+  const isEventFund = await isEventFundName(payload.fundName);
   try {
     const refs = await externalRefsForDonations([
       { id: row.donationId, transactionId: String(payload.transactionId || '') },
     ]);
-    return withEventFund(payload, refs.get(row.donationId));
+    return withEventFund(payload, refs.get(row.donationId), { isEventFund });
   } catch (err) {
     console.warn('[dcb-worker] event ref lookup failed:', err instanceof Error ? err.message : err);
-    return payload;
+    return withEventFund(payload, null, { isEventFund });
   }
 }
 
