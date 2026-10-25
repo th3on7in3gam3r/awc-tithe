@@ -312,7 +312,11 @@ export const DonorPortal: React.FC<{
   }, [step]);
 
   // Event RSVP funds are paid only from their RSVP link, so the Give list leaves them out.
-  const activeFunds = funds.filter((f) => f.active && !f.isEvent);
+  /** Every fund a giver can choose: regular funds first, then events (e.g. Thanksgiving Dinner 2026). */
+  const activeFunds = [
+    ...funds.filter((f) => f.active && !f.isEvent),
+    ...funds.filter((f) => f.active && f.isEvent),
+  ];
   /** Paying for an RSVP / balance: amount and fund come from the other app and stay fixed. */
   const lockedAmount = eventGift?.amount ?? null;
   const showFundChoice = !eventGift && activeFunds.length > 1;
@@ -927,6 +931,11 @@ export const DonorPortal: React.FC<{
                             }`}
                           >
                             <span className="text-[15px] font-semibold text-awc-ink">{f.name}</span>
+                            {f.isEvent ? (
+                              <span className="ml-2 rounded-full bg-awc-accent/10 px-2 py-0.5 align-middle text-[11px] font-semibold text-awc-accent">
+                                Event
+                              </span>
+                            ) : null}
                             {f.description ? (
                               <span className="mt-1 block text-[13px] leading-snug text-awc-muted line-clamp-2">{f.description}</span>
                             ) : null}
