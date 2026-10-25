@@ -187,6 +187,7 @@ app.get('/api/config', async (_req, res) => {
     integrations: { stripe, database },
     giftStore: giftStoreMode(),
     paymentOptions: publicPaymentOptions(),
+    textGiveNumber: process.env.TEXT_GIVE_NUMBER?.trim() || null,
     church: church
       ? {
           name: church.name,

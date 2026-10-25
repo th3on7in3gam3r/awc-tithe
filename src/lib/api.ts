@@ -22,6 +22,8 @@ export interface ApiConfig {
   giftStore?: 'neon' | 'memory';
   minGiftCents?: number;
   paymentOptions?: PaymentOptions;
+  /** Text-to-give number shown under "Other Giving Options" (TEXT_GIVE_NUMBER); null when not set. */
+  textGiveNumber?: string | null;
   church?: {
     name?: string;
     legalEntityName?: string;

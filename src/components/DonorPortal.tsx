@@ -9,6 +9,7 @@ import {
   type ApiConfig,
   type DonorManualGift,
 } from '../lib/api';
+import { MobileGivePicker, useIsPhone } from './MobileGivePicker';
 import {
   loadVerifiedDonorProfile,
   normalizeDonorEmail,
@@ -170,6 +171,11 @@ export const DonorPortal: React.FC<{
   const [manualGift, setManualGift] = useState<{ gift: DonorManualGift; claimToken: string } | null>(null);
   const [doneState, setDoneState] = useState<{ status: 'processing' | 'completed'; receiptNumber?: string } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  /** Phones start on a simple "how would you like to give?" screen. */
+  const isPhone = useIsPhone();
+  const [phonePicked, setPhonePicked] = useState(false);
+  /** A link that already chose the method (?method=zelle) skips that screen. */
+  const [linkChoseMethod, setLinkChoseMethod] = useState(false);
 
   const stripeLive = Boolean(apiConfig?.integrations.stripe.configured && apiConfig.stripePublishableKey);
   const paymentOptions = apiConfig?.paymentOptions;
@@ -208,7 +214,10 @@ export const DonorPortal: React.FC<{
   useEffect(() => {
     const link = parseGiveLink(window.location.search);
     if (link.frequency) setFrequency(link.frequency);
-    if (link.method) setMethod(link.method);
+    if (link.method) {
+      setMethod(link.method);
+      setLinkChoseMethod(true);
+    }
     if (link.amount) {
       if ((PRESETS as number[]).includes(link.amount)) {
         setPresetAmount(link.amount);
@@ -471,6 +480,33 @@ export const DonorPortal: React.FC<{
   const amountDisplay =
     presetAmount === 'custom' ? customAmountStr : String(presetAmount);
 
+  /** Phone giving (not an RSVP / balance payment) uses the simple start screen and skips the tall banner. */
+  const phoneFlow = isPhone && !eventGift;
+  const showPhonePicker = phoneFlow && step === 'details' && !phonePicked && !linkChoseMethod;
+
+  if (showPhonePicker) {
+    return (
+      <div className="bg-awc-cream">
+        <MobileGivePicker
+          methods={methods}
+          loading={apiConfigLoading}
+          apiConfig={apiConfig}
+          onPick={(id) => {
+            setMethod(id);
+            setErrorMessage(null);
+            setPhonePicked(true);
+            try {
+              window.scrollTo({ top: 0 });
+            } catch {
+              /* older browsers */
+            }
+          }}
+          onViewMyGiving={onViewMyGiving ? () => onViewMyGiving(normalizeDonorEmail(donorEmail) || '') : undefined}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="bg-awc-cream">
       <div className="flex flex-wrap">
@@ -479,7 +515,7 @@ export const DonorPortal: React.FC<{
         {/* ---------------------------------------------------------------- */}
         <section
           aria-label="Why we give"
-          className="relative isolate w-full overflow-hidden bg-awc-wine text-awc-on-wine lg:sticky lg:top-[72px] lg:h-[calc(100vh-72px)] lg:w-[42%] lg:self-start"
+          className={`relative isolate w-full overflow-hidden bg-awc-wine text-awc-on-wine ${phoneFlow ? 'hidden' : ''} lg:sticky lg:top-[72px] lg:h-[calc(100vh-72px)] lg:w-[42%] lg:self-start`}
         >
           <img
             src="/assets/images/awc_giving_hero.jpg"
@@ -552,8 +588,32 @@ export const DonorPortal: React.FC<{
         {/* ---------------------------------------------------------------- */}
         {/* Gift                                                             */}
         {/* ---------------------------------------------------------------- */}
-        <section aria-label="Your gift" className="w-full min-w-0 px-4 py-12 sm:px-8 sm:py-16 lg:w-[58%] lg:px-12 lg:py-16">
+        <section
+          aria-label="Your gift"
+          className={`w-full min-w-0 px-4 sm:px-8 sm:py-16 lg:w-[58%] lg:px-12 lg:py-16 ${phoneFlow ? 'py-6' : 'py-12'}`}
+        >
           <div id="give-form" className="give-form-enter mx-auto w-full max-w-[600px] scroll-mt-24">
+            {phoneFlow && step === 'details' ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setPhonePicked(false);
+                  setLinkChoseMethod(false);
+                  setErrorMessage(null);
+                }}
+                className="mb-6 flex min-h-11 w-full items-center justify-between gap-3 rounded-full px-1 text-[15px] font-semibold text-awc-accent"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                  All giving options
+                </span>
+                {currentMethod ? (
+                  <span className="rounded-full bg-awc-sand px-3 py-1 text-[13px] text-awc-ink">
+                    Giving with {currentMethod.label}
+                  </span>
+                ) : null}
+              </button>
+            ) : null}
             {apiConfig?.integrations.stripe.mode === 'sandbox' ? (
               <div className="mb-8 rounded-xl border border-awc-warn-line bg-awc-warn-bg px-4 py-3 text-sm leading-relaxed text-awc-warn" role="note">
                 <strong className="font-semibold">Test mode.</strong> Card and bank payments are not real yet and no money
@@ -619,6 +679,8 @@ export const DonorPortal: React.FC<{
                     type="button"
                     onClick={() => {
                       setDoneState(null);
+                      setPhonePicked(false);
+                      setLinkChoseMethod(false);
                       backToDetails();
                     }}
                     className="inline-flex min-h-12 items-center justify-center rounded-full border-[1.5px] border-awc-line px-6 text-[15px] font-semibold text-awc-ink hover:border-awc-accent"
