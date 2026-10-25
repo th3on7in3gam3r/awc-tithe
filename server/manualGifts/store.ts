@@ -401,6 +401,26 @@ export async function createManualGift(input: {
 // Donor: "I've sent it" — moves to submitted, never to verified
 // ---------------------------------------------------------------------------
 
+/** Email Finance that a gift needs checking. Fire-and-forget: never blocks or fails the donor's request. */
+export function alertFinance(gift: ManualGift, reason: 'marked_sent' | 'text_started'): void {
+  void import('../email/sendP2pGiftAlert')
+    .then((m) =>
+      m.sendP2pGiftAlert(
+        {
+          memoCode: gift.memoCode,
+          provider: gift.provider,
+          amount: gift.amount,
+          fundName: gift.fundName,
+          donorName: gift.donorName,
+          isAnonymous: gift.isAnonymous,
+          donorReference: gift.donorReference,
+        },
+        reason
+      )
+    )
+    .catch((err) => console.warn('[p2p-alert]', err instanceof Error ? err.message : err));
+}
+
 export async function markManualGiftSubmitted(input: {
   id: string;
   claimToken: string;
@@ -411,12 +431,15 @@ export async function markManualGiftSubmitted(input: {
   if (!pool) {
     const row = memoryRows.get(input.id);
     if (!row || !tokensMatch(input.claimToken, row.claimTokenHash)) return fail(404, 'NOT_FOUND', 'Gift not found.');
-    if (row.status === 'initiated') {
+    const firstTime = row.status === 'initiated';
+    if (firstTime) {
       row.status = 'submitted';
       row.submittedAt = new Date().toISOString();
     }
     if (reference && row.status === 'submitted') row.donorReference = reference;
-    return { ok: true, value: stripSecret(row) };
+    const value = stripSecret(row);
+    if (firstTime) alertFinance(value, 'marked_sent');
+    return { ok: true, value };
   }
   await ensureManualGiftsSchema();
   const found = await pool.query('SELECT * FROM manual_gifts WHERE id = $1 LIMIT 1', [input.id]);
@@ -434,7 +457,9 @@ export async function markManualGiftSubmitted(input: {
      RETURNING *`,
     [input.id, reference]
   );
-  return { ok: true, value: mapRow(updated.rows[0]) };
+  const value = mapRow(updated.rows[0]);
+  if (row.status === 'initiated' && value.status === 'submitted') alertFinance(value, 'marked_sent');
+  return { ok: true, value };
 }
 
 // ---------------------------------------------------------------------------

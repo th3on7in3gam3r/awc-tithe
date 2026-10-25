@@ -38,6 +38,20 @@ function MainApp() {
       setActiveTab('admin');
       setIsMfaModalOpen(true);
     }
+    // Finance alert email: "Open Verify in AWC Tithe" → staff sign-in, then the Verify tab.
+    if (params.get('staff') === 'verify') {
+      try { sessionStorage.setItem('awc.adminSubTab', 'verify-payments'); } catch { /* private mode */ }
+      params.delete('staff');
+      const rest = params.toString();
+      window.history.replaceState(null, '', rest ? `/?${rest}` : '/');
+      if (isMfaVerified) {
+        setPortalMode('admin');
+        setActiveTab('admin');
+      } else {
+        setActiveTab('admin');
+        setIsMfaModalOpen(true);
+      }
+    }
     const tab = params.get('tab');
     if (
       tab === 'funds' ||

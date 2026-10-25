@@ -45,6 +45,8 @@ services:
         sync: false
       - key: CASHAPP_RECIPIENT_NAME
         sync: false
+      - key: FINANCE_ALERT_EMAILS
+        sync: false
       - key: STRIPE_CASHAPP_PAY_ENABLED
         value: "false"
       - key: TWILIO_AUTH_TOKEN

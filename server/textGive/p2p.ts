@@ -6,7 +6,7 @@
  * filled in (Cash App, Venmo) or the details to send (Zelle).
  */
 import { env, publicPaymentOptions } from '../config';
-import { createManualGift } from '../manualGifts/store';
+import { alertFinance, createManualGift } from '../manualGifts/store';
 import type { TextGiveMethod, TextGiver } from './store';
 import type { FundRecord } from '../funds/store';
 import { TEXT_GIVE_FUND_ID } from './stripe';
@@ -104,6 +104,7 @@ export async function p2pGiftReply(giver: TextGiver, cents: number, fund?: FundR
     console.warn('[text-give] manual gift not created:', created.error);
     return null;
   }
+  alertFinance(created.value.gift, 'text_started');
   const i = p2pInstructions(giver.method, cents, created.value.gift.memoCode);
   return i ? p2pSmsText(i, fund?.name) : null;
 }

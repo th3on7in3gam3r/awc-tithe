@@ -16,7 +16,7 @@ import { YearEndStatementsAdmin } from './YearEndStatementsAdmin';
 import { ManualGiftsPanel } from './ManualGiftsPanel';
 import { DcbSyncStatusPanel } from './DcbSyncStatusPanel';
 import { StaffPhoneCard } from './StaffPhoneCard';
-import { auditStaffTwoFactor, fetchActivityAudit, fetchAdminManualGifts, fetchStaffSession, recordOfflineGift } from '../lib/api';
+import { auditStaffTwoFactor, fetchActivityAudit, fetchAdminManualGifts, fetchStaffSession, recordOfflineGift, type AdminManualGift } from '../lib/api';
 import { staffAuthClient } from '../lib/authClient';
 import {
   DollarSign,
@@ -151,7 +151,16 @@ export const AdminDashboard: React.FC = () => {
     | 'year-end'
     | 'dcb-sync'
     | 'verify-payments'
-  >('analytics');
+>(() => {
+    // Opened from a Finance alert email → land on Verify.
+    try {
+      if (sessionStorage.getItem('awc.adminSubTab') === 'verify-payments') {
+        sessionStorage.removeItem('awc.adminSubTab');
+        return 'verify-payments';
+      }
+    } catch { /* private mode */ }
+    return 'analytics';
+  });
 
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
@@ -201,23 +210,39 @@ export const AdminDashboard: React.FC = () => {
     return matchesSearch && matchesFund && matchesStatus;
   });
 
+
   const loggedContributions = donations.filter((d) =>
     ['cash', 'check', 'cash_app', 'zelle', 'venmo', 'card'].includes(d.paymentMethod)
   ).slice(0, 40);
 
   // Zelle / Venmo / Cash App gifts that are not counted until someone checks them.
   const [waitingP2p, setWaitingP2p] = useState<{ total: number; cashApp: number } | null>(null);
+  const [waitingGifts, setWaitingGifts] = useState<AdminManualGift[]>([]);
   useEffect(() => {
     let alive = true;
     void fetchAdminManualGifts('open')
       .then((gifts) => {
-        if (alive) setWaitingP2p({ total: gifts.length, cashApp: gifts.filter((g) => g.provider === 'cash_app').length });
+        if (!alive) return;
+        setWaitingGifts(gifts);
+        setWaitingP2p({ total: gifts.length, cashApp: gifts.filter((g) => g.provider === 'cash_app').length });
       })
       .catch(() => undefined);
     return () => {
       alive = false;
     };
   }, [activeAdminSubTab]);
+
+  // Zelle / Venmo / Cash App gifts still waiting to be checked — shown as Pending, never counted in totals.
+  const P2P_LABEL: Record<string, string> = { zelle: 'Zelle', venmo: 'Venmo', cash_app: 'Cash App' };
+  const selectedFundName = funds.find((f) => f.id === selectedFundFilter)?.name;
+  const pendingRows = waitingGifts.filter((g) => {
+    const q = searchTerm.toLowerCase();
+    const matchesSearch =
+      !q || g.donorName.toLowerCase().includes(q) || g.memoCode.toLowerCase().includes(q) || g.donorReference.toLowerCase().includes(q);
+    const matchesFund = selectedFundFilter === 'all' || g.fundName === selectedFundName;
+    const matchesStatus = selectedStatusFilter === 'all' || selectedStatusFilter === 'pending';
+    return matchesSearch && matchesFund && matchesStatus;
+  });
 
   useEffect(() => {
     if (activeAdminSubTab !== 'audit' || !isMfaVerified) return;
@@ -612,6 +637,7 @@ export const AdminDashboard: React.FC = () => {
               >
                 <option value="all">All Statuses</option>
                 <option value="completed">Completed</option>
+                <option value="pending">Pending (not counted yet)</option>
                 <option value="refunded">Refunded</option>
               </select>
 
@@ -644,7 +670,43 @@ export const AdminDashboard: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {filteredDonations.map((d) => (
+                  {pendingRows.map((g) => (
+                    <tr key={`pending-${g.id}`} className="bg-amber-50/60 dark:bg-amber-950/20">
+                      <td className="px-5 py-3.5 font-mono text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                        {new Date(g.submittedAt || g.createdAt).toLocaleDateString()}{' '}
+                        {new Date(g.submittedAt || g.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </td>
+                      <td className="px-5 py-3.5 font-mono font-medium text-slate-900 dark:text-white">{g.memoCode}</td>
+                      <td className="px-5 py-3.5">
+                        <div className="font-semibold text-slate-900 dark:text-white">{g.donorName}</div>
+                        <div className="text-[11px] text-slate-500">{g.donorEmailMasked}</div>
+                      </td>
+                      <td className="px-5 py-3.5 font-medium text-slate-800 dark:text-slate-200">{g.fundName}</td>
+                      <td className="px-5 py-3.5 text-slate-500">One-time</td>
+                      <td className="px-5 py-3.5 text-slate-700 dark:text-slate-300">{P2P_LABEL[g.provider] || g.provider}</td>
+                      <td className="px-5 py-3.5 text-right font-semibold text-slate-500 dark:text-slate-400">
+                        ${g.amount.toFixed(2)}
+                      </td>
+                      <td className="px-5 py-3.5 text-center">
+                        <span
+                          title={g.status === 'submitted' ? 'The giver says they sent it. Not counted until it is checked.' : 'Started, but the giver has not said they sent it.'}
+                          className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900 dark:bg-amber-900/50 dark:text-amber-100"
+                        >
+                          {g.status === 'submitted' ? 'Pending · sent' : 'Pending · started'}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setActiveAdminSubTab('verify-payments')}
+                          className="rounded-lg bg-church-burgundy px-3 py-1.5 text-[11px] font-semibold text-white"
+                        >
+                          Verify
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {selectedStatusFilter !== 'pending' && filteredDonations.map((d) => (
                     <tr key={d.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
                       <td className="px-5 py-3.5 font-mono text-slate-600 dark:text-slate-400 whitespace-nowrap">
                         {new Date(d.timestamp).toLocaleDateString()} {new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
