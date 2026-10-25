@@ -394,11 +394,12 @@ export const ManualGiftsPanel: React.FC<{ isAdmin: boolean }> = ({ isAdmin }) =>
     <div className="mt-6 space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h3 className="font-serif-display text-lg font-bold text-slate-900 dark:text-white">Verify Zelle &amp; Venmo payments</h3>
+          <h3 className="font-serif-display text-lg font-bold text-slate-900 dark:text-white">Verify Zelle, Venmo &amp; Cash App payments</h3>
           <p className="mt-1 max-w-2xl text-xs leading-relaxed text-slate-600 dark:text-slate-400">
             These gifts are never counted until someone here confirms the money arrived. Match each memo code to the
-            church's Zelle or Venmo history, then enter the payment's transaction ID. Verified gifts get a receipt and go
-            to DCB automatically.
+            church's Zelle, Venmo or Cash App history, then enter the payment's transaction ID. Verified gifts
+            get a receipt and go to DCB automatically. Someone who paid in the Cash App app without using AWC Tithe won't be
+            listed here. Use Record a payment for those.
             {!isAdmin ? ' Only administrators can verify or reject.' : ''}
           </p>
         </div>
@@ -461,7 +462,7 @@ export const ManualGiftsPanel: React.FC<{ isAdmin: boolean }> = ({ isAdmin }) =>
 
       {!loading && gifts.length === 0 && !error ? (
         <div className="rounded-xl border border-dashed border-[#E8E2D9] p-8 text-center text-sm text-slate-500 dark:border-slate-800">
-          {filter === 'open' ? 'Nothing waiting. All Zelle and Venmo gifts are checked.' : 'No verified or rejected payments yet.'}
+          {filter === 'open' ? 'Nothing waiting. All Zelle, Venmo and Cash App gifts are checked.' : 'No verified or rejected payments yet.'}
         </div>
       ) : (
         <ul className="space-y-3">

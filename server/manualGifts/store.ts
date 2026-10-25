@@ -572,7 +572,7 @@ export async function verifyManualGift(input: {
 }): Promise<Result<ManualGift>> {
   const ref = normalizeProviderReference(input.providerTransactionId);
   if (!ref) {
-    return fail(400, 'REFERENCE_REQUIRED', 'Enter the transaction or confirmation ID from the Zelle/Venmo record (3–80 letters or numbers).');
+    return fail(400, 'REFERENCE_REQUIRED', 'Enter the transaction or confirmation ID from the Zelle, Venmo or Cash App record (3–80 letters or numbers).');
   }
   const receivedAmount = roundMoney(Number(input.receivedAmount));
   if (!Number.isFinite(receivedAmount) || receivedAmount <= 0 || receivedAmount > 1_000_000) {

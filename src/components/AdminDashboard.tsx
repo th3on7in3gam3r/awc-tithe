@@ -16,7 +16,7 @@ import { YearEndStatementsAdmin } from './YearEndStatementsAdmin';
 import { ManualGiftsPanel } from './ManualGiftsPanel';
 import { DcbSyncStatusPanel } from './DcbSyncStatusPanel';
 import { StaffPhoneCard } from './StaffPhoneCard';
-import { auditStaffTwoFactor, fetchActivityAudit, fetchStaffSession, recordOfflineGift } from '../lib/api';
+import { auditStaffTwoFactor, fetchActivityAudit, fetchAdminManualGifts, fetchStaffSession, recordOfflineGift } from '../lib/api';
 import { staffAuthClient } from '../lib/authClient';
 import {
   DollarSign,
@@ -205,6 +205,20 @@ export const AdminDashboard: React.FC = () => {
     ['cash', 'check', 'cash_app', 'zelle', 'venmo', 'card'].includes(d.paymentMethod)
   ).slice(0, 40);
 
+  // Zelle / Venmo / Cash App gifts that are not counted until someone checks them.
+  const [waitingP2p, setWaitingP2p] = useState<{ total: number; cashApp: number } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void fetchAdminManualGifts('open')
+      .then((gifts) => {
+        if (alive) setWaitingP2p({ total: gifts.length, cashApp: gifts.filter((g) => g.provider === 'cash_app').length });
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [activeAdminSubTab]);
+
   useEffect(() => {
     if (activeAdminSubTab !== 'audit' || !isMfaVerified) return;
     setAuditError(null);
@@ -364,7 +378,7 @@ export const AdminDashboard: React.FC = () => {
             { id: 'transactions', label: 'Transactions', count: donations.length },
             { id: 'donors', label: 'Donor CRM', count: donors.length },
             { id: 'audit', label: 'Audit', count: null as number | null },
-            { id: 'verify-payments', label: 'Verify Zelle & Venmo', count: null as number | null },
+            { id: 'verify-payments', label: 'Verify Zelle, Venmo & Cash App', count: waitingP2p?.total ?? null },
             { id: 'offline', label: 'Contribution Log', count: null as number | null },
             { id: 'integrations', label: 'Integrations & Settings', count: null },
             ...(isPortalAdmin ? [{ id: 'dcb-sync' as const, label: 'DCB Sync', count: null as number | null }] : []),
@@ -547,6 +561,24 @@ export const AdminDashboard: React.FC = () => {
       {/* SUB-TAB 2: Transactions Ledger */}
       {activeAdminSubTab === 'transactions' && (
         <div className="mt-8 space-y-4">
+          {waitingP2p && waitingP2p.total > 0 ? (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100" role="status">
+              <p>
+                <strong>
+                  {waitingP2p.total} Zelle, Venmo or Cash App gift{waitingP2p.total === 1 ? ' is' : 's are'} waiting to be checked
+                  {waitingP2p.cashApp ? ` (${waitingP2p.cashApp} Cash App)` : ''}.
+                </strong>{' '}
+                They don’t appear in Transactions until someone confirms the money arrived.
+              </p>
+              <button
+                type="button"
+                onClick={() => setActiveAdminSubTab('verify-payments')}
+                className="shrink-0 rounded-lg bg-church-burgundy px-4 py-2 text-xs font-semibold text-white"
+              >
+                Check them now
+              </button>
+            </div>
+          ) : null}
           
           {/* Controls Bar */}
           <div className="flex flex-col sm:flex-row gap-3 justify-between items-center bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
