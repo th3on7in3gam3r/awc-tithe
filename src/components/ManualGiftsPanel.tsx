@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle2, Clock, Plus, RefreshCw, XCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, Mail, Plus, RefreshCw, XCircle } from 'lucide-react';
 import {
   fetchAdminManualGifts,
   recordAdminManualGift,
@@ -7,6 +7,7 @@ import {
   verifyAdminManualGift,
   type AdminManualGift,
   type ManualProvider,
+  sendPendingGiftsReminder,
 } from '../lib/api';
 import { useChurch } from '../context/ChurchContext';
 
@@ -362,6 +363,25 @@ export const ManualGiftsPanel: React.FC<{ isAdmin: boolean }> = ({ isAdmin }) =>
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [showRecord, setShowRecord] = useState(false);
+  const [reminding, setReminding] = useState(false);
+
+  const emailReminder = async () => {
+    if (!window.confirm('Email Finance a list of every gift still waiting to be checked?')) return;
+    setReminding(true);
+    setError(null);
+    try {
+      const r = await sendPendingGiftsReminder();
+      setNotice(
+        r.count === 0
+          ? 'Nothing is waiting to be checked.'
+          : `Reminder emailed to ${r.sent} ${r.sent === 1 ? 'person' : 'people'} about ${r.count} ${r.count === 1 ? 'gift' : 'gifts'}.`
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'The reminder could not be sent.');
+    } finally {
+      setReminding(false);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -400,7 +420,8 @@ export const ManualGiftsPanel: React.FC<{ isAdmin: boolean }> = ({ isAdmin }) =>
             church's Zelle, Venmo or Cash App history, then enter the payment's transaction ID. Verified gifts
             get a receipt and go to DCB automatically. Someone who paid in the Cash App app without using AWC Tithe won't be
             listed here. Use Record a payment for those.
-            {!isAdmin ? ' Only administrators can verify or reject.' : ''}
+            {!isAdmin ? ' Only administrators can verify or reject.' : ''} Finance also gets a reminder email at 9 AM
+            whenever a gift has waited more than a day.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -427,6 +448,18 @@ export const ManualGiftsPanel: React.FC<{ isAdmin: boolean }> = ({ isAdmin }) =>
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
           </button>
+          {filter === 'open' && gifts.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => void emailReminder()}
+              disabled={reminding}
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+              data-testid="email-reminder"
+            >
+              <Mail className="h-3.5 w-3.5" aria-hidden="true" />
+              {reminding ? 'Sending…' : 'Email reminder'}
+            </button>
+          ) : null}
           {isAdmin ? (
             <button
               type="button"

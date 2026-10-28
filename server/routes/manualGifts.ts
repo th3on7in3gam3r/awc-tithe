@@ -157,6 +157,47 @@ router.get('/admin', requireStaffSession, async (req: Request, res: Response) =>
   }
 });
 
+/**
+ * POST /api/manual-gifts/admin/remind — email Finance a list of every gift still waiting.
+ * Any staff member may send it; at most once every 5 minutes so it can't be spammed.
+ */
+let lastManualReminderAt = 0;
+router.post('/admin/remind', requireStaffSession, async (req: Request, res: Response) => {
+  const staff = getStaffSessionOrNull(req);
+  if (Date.now() - lastManualReminderAt < 5 * 60_000) {
+    return res.status(429).json({
+      ok: false,
+      error: 'REMINDER_TOO_SOON',
+      message: 'A reminder was just sent. Try again in a few minutes.',
+    });
+  }
+  const { sendPendingGiftsReminder } = await import('../email/sendPendingGiftsReminder');
+  const result = await sendPendingGiftsReminder({ reason: 'manual' });
+  if (result.count === 0) {
+    return res.json({ ok: true, sent: 0, count: 0, message: 'Nothing is waiting to be checked.' });
+  }
+  if (!result.emailConfigured) {
+    return res.status(503).json({ ok: false, error: 'EMAIL_NOT_CONFIGURED', message: 'Email is not set up on the server.' });
+  }
+  if (result.sent === 0) {
+    return res.status(502).json({ ok: false, error: 'REMINDER_SEND_FAILED', message: 'The reminder email could not be sent.' });
+  }
+  lastManualReminderAt = Date.now();
+  if (staff) {
+    const { writeActivityAudit } = await import('../audit/activity');
+    await writeActivityAudit({
+      actorId: staff.userId,
+      actorLabel: staff.email,
+      actorRole: staff.role,
+      action: 'FINANCE_REMINDER_SENT',
+      resource: 'manual-gifts',
+      details: `Reminder for ${result.count} waiting gifts emailed to ${result.sent} people`,
+      ipAddress: clientIp(req),
+    }).catch(() => undefined);
+  }
+  return res.json({ ok: true, sent: result.sent, count: result.count, total: result.total });
+});
+
 /** POST /api/manual-gifts/admin/:id/verify */
 router.post('/admin/:id/verify', requireAdminSession, async (req: Request, res: Response) => {
   const actor = actorFrom(req);

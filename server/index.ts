@@ -40,6 +40,7 @@ import { maybeBootstrapAdminInvite } from './auth/bootstrapAdmin';
 import { seedDefaultFund } from './funds/store';
 import { ensureChurchSettings, getChurchSettings } from './church/settings';
 import { startDcbOutboxWorker } from './dcb/worker';
+import { startDailyFinanceReminder } from './financeAlerts/dailyReminder';
 
 // Run production guard before anything else — exits with clear message if vars are missing
 assertProductionEnv();
@@ -288,6 +289,8 @@ async function boot() {
 
   // Start DCB outbox delivery worker (no-ops if no DATABASE_URL)
   startDcbOutboxWorker();
+  // 9 AM Eastern: remind Finance about Zelle/Venmo/Cash App gifts waiting over a day
+  startDailyFinanceReminder();
 
   app.listen(env.port, '0.0.0.0', () => {
     console.log(`AWC Tithe listening on http://0.0.0.0:${env.port}`);

@@ -911,3 +911,9 @@ export async function removeFinanceAlertRecipient(email: string): Promise<unknow
   });
   return parseJson(res);
 }
+
+/** Email Finance a list of every Zelle / Venmo / Cash App gift still waiting to be checked. */
+export async function sendPendingGiftsReminder(): Promise<{ ok: boolean; sent: number; count: number; message?: string }> {
+  const res = await fetch('/api/manual-gifts/admin/remind', { method: 'POST', credentials: 'include' });
+  return parseJson(res);
+}
