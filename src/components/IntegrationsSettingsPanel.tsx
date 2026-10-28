@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useChurch } from '../context/ChurchContext';
+import { FinanceAlertsCard } from './FinanceAlertsCard';
 import {
   ApiConfig,
   IntegrationStatus,
@@ -232,6 +233,8 @@ export const IntegrationsSettingsPanel: React.FC = () => {
           }
         />
       </div>
+
+      {isAdmin ? <FinanceAlertsCard /> : null}
 
       <div className="bg-[#FFFCF8] dark:bg-slate-900 rounded-xl border border-[#E8E2D9] dark:border-slate-800 p-6 shadow-sm">
         <h3 className="font-serif-display text-lg font-semibold text-slate-900 dark:text-white mb-1">

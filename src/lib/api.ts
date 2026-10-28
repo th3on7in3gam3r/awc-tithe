@@ -880,3 +880,34 @@ export async function recordAdminManualGift(body: {
   });
   return (await parseJson<{ ok: boolean; gift: AdminManualGift }>(res)).gift;
 }
+
+/* ---- Who gets finance emails (admin) ---- */
+
+export type FinanceAlertRecipient = { email: string; name: string; addedBy: string; addedAt: string };
+
+export async function fetchFinanceAlerts(): Promise<{
+  admins: string[];
+  recipients: FinanceAlertRecipient[];
+  fromServerSettings: number;
+}> {
+  const res = await fetch('/api/finance-alerts', { credentials: 'include' });
+  return parseJson(res);
+}
+
+export async function addFinanceAlertRecipient(email: string, name: string): Promise<unknown> {
+  const res = await fetch('/api/finance-alerts', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, name }),
+  });
+  return parseJson(res);
+}
+
+export async function removeFinanceAlertRecipient(email: string): Promise<unknown> {
+  const res = await fetch(`/api/finance-alerts/${encodeURIComponent(email)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  return parseJson(res);
+}

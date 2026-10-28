@@ -4,8 +4,9 @@
  *   - when a giver taps "I've sent it" on the giving page, and
  *   - when someone starts one by text-to-give (they never tap "sent").
  *
- * Goes to every active Tithe admin (the people who can verify), plus anyone
- * listed in FINANCE_ALERT_EMAILS (comma-separated). Email only — no SMS cost.
+ * Goes to every active Tithe admin (the people who can verify), anyone added in
+ * Integrations & Settings → "Who gets finance emails", and anyone listed in
+ * FINANCE_ALERT_EMAILS (comma-separated). Email only — no SMS cost.
  * Never throws; a failed alert never blocks the gift.
  */
 import { Resend } from 'resend';
@@ -80,6 +81,15 @@ export async function financeAlertRecipients(): Promise<string[]> {
     }
   } catch (err) {
     console.warn('[p2p-alert] could not list admins:', err instanceof Error ? err.message : err);
+  }
+  try {
+    // People added in Integrations & Settings → "Who gets finance emails".
+    const { listFinanceAlertRecipients } = await import('../financeAlerts/store');
+    for (const r of await listFinanceAlertRecipients()) {
+      if (EMAIL_RE.test(r.email)) emails.add(r.email.toLowerCase());
+    }
+  } catch (err) {
+    console.warn('[p2p-alert] could not list finance recipients:', err instanceof Error ? err.message : err);
   }
   return [...emails];
 }
