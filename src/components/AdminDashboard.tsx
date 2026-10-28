@@ -12,6 +12,7 @@ import {
 import { ExportDataModal } from './ExportDataModal';
 import { IntegrationsSettingsPanel } from './IntegrationsSettingsPanel';
 import { GivingGoalsAdmin } from './GivingGoalsAdmin';
+import { FundsAdmin } from './FundsAdmin';
 import { YearEndStatementsAdmin } from './YearEndStatementsAdmin';
 import { ManualGiftsPanel } from './ManualGiftsPanel';
 import { DcbSyncStatusPanel } from './DcbSyncStatusPanel';
@@ -148,6 +149,7 @@ export const AdminDashboard: React.FC = () => {
     | 'offline'
     | 'integrations'
     | 'giving-goals'
+    | 'funds'
     | 'year-end'
     | 'dcb-sync'
     | 'verify-payments'
@@ -399,6 +401,7 @@ export const AdminDashboard: React.FC = () => {
           {[
             { id: 'analytics', label: 'Financial Analytics', count: null as number | null },
             ...(isPortalAdmin ? [{ id: 'giving-goals' as const, label: 'Giving Goals', count: null as number | null }] : []),
+            ...(isPortalAdmin ? [{ id: 'funds' as const, label: 'Funds', count: null as number | null }] : []),
             ...(isPortalAdmin ? [{ id: 'year-end' as const, label: 'Year-end statements', count: null as number | null }] : []),
             { id: 'transactions', label: 'Transactions', count: donations.length },
             { id: 'donors', label: 'Donor CRM', count: donors.length },
@@ -1050,6 +1053,7 @@ export const AdminDashboard: React.FC = () => {
       )}
 
       {activeAdminSubTab === 'giving-goals' && isPortalAdmin && <GivingGoalsAdmin />}
+      {activeAdminSubTab === 'funds' && isPortalAdmin && <FundsAdmin />}
       {activeAdminSubTab === 'year-end' && isPortalAdmin && <YearEndStatementsAdmin />}
 
       {activeAdminSubTab === 'integrations' && (

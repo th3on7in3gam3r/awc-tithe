@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "npm run test:no-inline-scripts && npm run test:checkout-methods && npm run test:stripe-key-mode && npm run test:removed-routes && npm run test:stripe-webhook && npm run test:dcb-outbox && npm run test:admin-goals && npm run test:staff-auth && npm run test:staff-roles && npm run test:staff-mfa && npm run test:manual-gifts && npm run test:p2p-alert && npm run test:home-screen && npm run test:bootstrap-admin && npm run test:giving-analytics && npm run test:give-link && npm run test:vault-ref-status && npm run test:text-to-give && npm run test:phone-sign-in && npm run test:text-give && npm run test:staff-phone",
+    "test": "npm run test:no-inline-scripts && npm run test:checkout-methods && npm run test:stripe-key-mode && npm run test:removed-routes && npm run test:stripe-webhook && npm run test:dcb-outbox && npm run test:admin-goals && npm run test:staff-auth && npm run test:staff-roles && npm run test:staff-mfa && npm run test:manual-gifts && npm run test:p2p-alert && npm run test:home-screen && npm run test:bootstrap-admin && npm run test:giving-analytics && npm run test:give-link && npm run test:vault-ref-status && npm run test:text-to-give && npm run test:phone-sign-in && npm run test:text-give && npm run test:staff-phone && npm run test:fund-delete",
     "test:admin-goals": "tsx server/tests/adminGoalsAuth.test.ts",
     "test:dcb-outbox": "tsx server/tests/dcbOutbox.test.ts",
     "test:checkout-methods": "tsx server/tests/checkoutMethods.test.ts",
@@ -35,7 +35,8 @@
     "test:text-to-give": "tsx server/tests/textToGive.test.ts",
     "test:phone-sign-in": "tsx server/tests/phoneSignIn.test.ts",
     "test:text-give": "tsx server/tests/textGive.test.ts",
-    "test:staff-phone": "tsx server/tests/staffPhone.test.ts"
+    "test:staff-phone": "tsx server/tests/staffPhone.test.ts",
+    "test:fund-delete": "tsx server/tests/fundDelete.test.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

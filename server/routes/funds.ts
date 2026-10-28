@@ -2,7 +2,9 @@ import { Router } from 'express';
 import { requireAdminSession, getStaffSessionOrNull } from '../auth/staffGate';
 import {
   createFund,
+  deleteFund,
   getFundById,
+  listFundUsage,
   listActiveFunds,
   listAllFunds,
   listGivingGoalProgress,
@@ -12,6 +14,7 @@ import {
 } from '../funds/store';
 import { recordStaffOfflineGift } from '../gifts/recordOffline';
 import { clientIp } from '../middleware/rateLimit';
+import { writeActivityAudit } from '../audit/activity';
 
 const router = Router();
 
@@ -146,8 +149,14 @@ router.post('/admin/offline-gifts', requireAdminSession, async (req, res) => {
 /** GET /api/funds/admin — all funds including inactive (admin only) */
 router.get('/admin', requireAdminSession, async (_req, res) => {
   try {
-    const funds = await listAllFunds();
-    return res.json({ ok: true, funds });
+    const [funds, usage] = await Promise.all([listAllFunds(), listFundUsage()]);
+    return res.json({
+      ok: true,
+      funds: funds.map((f) => ({
+        ...f,
+        usage: usage.get(f.id) || { gifts: 0, offlineGifts: 0, manualGifts: 0, textGive: 0, total: 0 },
+      })),
+    });
   } catch (err) {
     return res.status(500).json({
       ok: false,
@@ -197,6 +206,46 @@ router.patch('/admin/:id', requireAdminSession, async (req, res) => {
     return res.status(500).json({
       ok: false,
       error: 'FUND_UPDATE_FAILED',
+      message: 'Request failed',
+    });
+  }
+});
+
+/**
+ * DELETE /api/funds/admin/:id — delete a fund for good (admin).
+ * Refused for "Tithes & Offerings" and for any fund that has gifts or text-to-give links.
+ */
+router.delete('/admin/:id', requireAdminSession, async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const result = await deleteFund(id);
+    if (result.ok === false) {
+      const status = result.error === 'FUND_NOT_FOUND' ? 404 : 409;
+      const message =
+        result.error === 'FUND_PROTECTED'
+          ? 'Tithes & Offerings can never be deleted.'
+          : result.error === 'FUND_IN_USE'
+            ? 'This fund has gifts recorded, so it cannot be deleted. Turn it off instead.'
+            : 'Fund not found.';
+      return res.status(status).json({ ok: false, error: result.error, message, usage: result.usage });
+    }
+    const staff = getStaffSessionOrNull(req);
+    if (staff) {
+      await writeActivityAudit({
+        actorId: staff.userId,
+        actorLabel: staff.email,
+        actorRole: staff.role,
+        action: 'FUND_DELETED',
+        resource: id,
+        details: JSON.stringify({ name: result.fund.name, isEvent: Boolean(result.fund.isEvent) }),
+        ipAddress: clientIp(req),
+      }).catch(() => undefined);
+    }
+    return res.json({ ok: true, deletedId: id });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: 'FUND_DELETE_FAILED',
       message: 'Request failed',
     });
   }

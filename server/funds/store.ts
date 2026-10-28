@@ -509,3 +509,110 @@ export function __addMemoryCompletedGiftForTests(g: {
     status: g.status || 'completed',
   });
 }
+
+/* ------------------------------------------------------------------ */
+/* Fund usage + delete (Funds tab in the admin)                        */
+/* ------------------------------------------------------------------ */
+
+/** What still points at a fund. A fund can only be deleted when every count is 0. */
+export type FundUsage = {
+  gifts: number; // online gifts (any status)
+  offlineGifts: number; // Contribution Log entries
+  manualGifts: number; // Zelle / Venmo / Cash App gifts waiting or verified
+  textGive: number; // text-to-give links and pending text gifts
+  total: number;
+};
+
+export const PROTECTED_FUND_IDS = new Set<string>([DEFAULT_FUND.id]);
+
+function emptyUsage(): FundUsage {
+  return { gifts: 0, offlineGifts: 0, manualGifts: 0, textGive: 0, total: 0 };
+}
+
+function isMissingTable(err: unknown): boolean {
+  const e = err as { code?: string; message?: string };
+  return e?.code === '42P01' || /does not exist/i.test(String(e?.message || ''));
+}
+
+/** Rows grouped by fund_id. A table that hasn't been created yet counts as empty. */
+async function countByFund(run: () => Promise<unknown[]>): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  try {
+    const rows = (await run()) as Array<{ fund_id: string; n: number | string }>;
+    for (const r of rows) out.set(String(r.fund_id), Number(r.n) || 0);
+  } catch (err) {
+    if (!isMissingTable(err)) throw err;
+  }
+  return out;
+}
+
+/** Usage for every fund, keyed by fund id. */
+export async function listFundUsage(): Promise<Map<string, FundUsage>> {
+  const usage = new Map<string, FundUsage>();
+  const bump = (id: string, key: keyof Omit<FundUsage, 'total'>, n: number) => {
+    if (!n) return;
+    const u = usage.get(id) || emptyUsage();
+    u[key] += n;
+    u.total += n;
+    usage.set(id, u);
+  };
+  const client = getSql();
+  if (!client) {
+    requireMemoryFunds();
+    for (const g of memoryCompletedGifts) bump(g.fundId, 'gifts', 1);
+    for (const g of memoryOfflineGifts) bump(g.fundId, 'offlineGifts', 1);
+    return usage;
+  }
+  const [gifts, offline, manual, links, pending] = await Promise.all([
+    countByFund(() => client`SELECT fund_id, COUNT(*) AS n FROM donations GROUP BY fund_id`),
+    countByFund(() => client`SELECT fund_id, COUNT(*) AS n FROM offline_gifts GROUP BY fund_id`),
+    countByFund(() => client`SELECT fund_id, COUNT(*) AS n FROM manual_gifts GROUP BY fund_id`),
+    countByFund(() => client`SELECT fund_id, COUNT(*) AS n FROM text_give_links GROUP BY fund_id`),
+    countByFund(() => client`SELECT fund_id, COUNT(*) AS n FROM text_give_pending GROUP BY fund_id`),
+  ]);
+  for (const [id, n] of gifts) bump(id, 'gifts', n);
+  for (const [id, n] of offline) bump(id, 'offlineGifts', n);
+  for (const [id, n] of manual) bump(id, 'manualGifts', n);
+  for (const [id, n] of links) bump(id, 'textGive', n);
+  for (const [id, n] of pending) bump(id, 'textGive', n);
+  return usage;
+}
+
+export async function getFundUsage(id: string): Promise<FundUsage> {
+  return (await listFundUsage()).get(id) || emptyUsage();
+}
+
+export type DeleteFundResult =
+  | { ok: true; fund: FundRecord }
+  | { ok: false; error: 'FUND_NOT_FOUND' | 'FUND_PROTECTED' | 'FUND_IN_USE'; usage?: FundUsage };
+
+/**
+ * Delete a fund for good — only when nothing was ever given to it (no online gifts,
+ * Contribution Log entries, Zelle/Venmo/Cash App gifts or text-to-give links), so
+ * giving records are never lost. "Tithes & Offerings" can never be deleted.
+ */
+export async function deleteFund(id: string): Promise<DeleteFundResult> {
+  const fund = await getFundById(id);
+  if (!fund) return { ok: false, error: 'FUND_NOT_FOUND' };
+  if (PROTECTED_FUND_IDS.has(id)) return { ok: false, error: 'FUND_PROTECTED' };
+  const usage = await getFundUsage(id);
+  if (usage.total > 0) return { ok: false, error: 'FUND_IN_USE', usage };
+  const client = getSql();
+  if (!client) {
+    requireMemoryFunds();
+    memoryFunds.delete(id);
+    for (const k of Array.from(memoryGoals.keys())) if (k.startsWith(`${id}:`)) memoryGoals.delete(k);
+    return { ok: true, fund };
+  }
+  // Giving goals cascade with the fund. The guard on donations/offline_gifts makes this a
+  // no-op if a gift landed between the check and the delete.
+  const rows = await client`
+    DELETE FROM funds
+    WHERE id = ${id}
+      AND NOT EXISTS (SELECT 1 FROM donations d WHERE d.fund_id = ${id})
+      AND NOT EXISTS (SELECT 1 FROM offline_gifts o WHERE o.fund_id = ${id})
+    RETURNING id
+  `;
+  if (!rows.length) return { ok: false, error: 'FUND_IN_USE', usage: await getFundUsage(id) };
+  return { ok: true, fund };
+}

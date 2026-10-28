@@ -380,27 +380,29 @@ export async function putAdminGivingGoal(body: {
   return parseJson(res);
 }
 
-export async function fetchAdminFunds(): Promise<
-  Array<{
-    id: string;
-    name: string;
-    description: string;
-    active: boolean;
-    sortOrder: number;
-    code: string;
-    glCode: string;
-  }>
-> {
+export type AdminFundUsage = {
+  gifts: number;
+  offlineGifts: number;
+  manualGifts: number;
+  textGive: number;
+  total: number;
+};
+
+export type AdminFund = {
+  id: string;
+  name: string;
+  description: string;
+  active: boolean;
+  sortOrder: number;
+  code: string;
+  glCode: string;
+  isEvent?: boolean;
+  usage?: AdminFundUsage;
+};
+
+export async function fetchAdminFunds(): Promise<AdminFund[]> {
   const res = await fetch('/api/funds/admin', { credentials: 'include' });
-  const data = await parseJson<{ ok: boolean; funds: Array<{
-    id: string;
-    name: string;
-    description: string;
-    active: boolean;
-    sortOrder: number;
-    code: string;
-    glCode: string;
-  }> }>(res);
+  const data = await parseJson<{ ok: boolean; funds: AdminFund[] }>(res);
   return (data.funds || []).map((f) => ({
     ...f,
     glCode: f.glCode ?? f.code ?? '',
@@ -432,6 +434,15 @@ export async function patchAdminFund(
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+  });
+  return parseJson(res);
+}
+
+/** Delete a fund for good. The server refuses Tithes & Offerings and any fund with gifts. */
+export async function deleteAdminFund(id: string): Promise<{ ok: boolean; deletedId?: string }> {
+  const res = await fetch(`/api/funds/admin/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    credentials: 'include',
   });
   return parseJson(res);
 }
