@@ -8,6 +8,7 @@ import {
   assertStaffSessionFresh,
   claimPendingStaffAccess,
   findStaffByUserId,
+  isAuthenticatorExempt,
   revokeUserSessions,
   type StaffAccount,
 } from './staffRoles';
@@ -117,10 +118,15 @@ async function loadStaff(req: Request): Promise<{ status: number; error: string;
     return { status: 403, error: 'STAFF_DEACTIVATED' };
   }
 
-  const twoFactorEnabled = Boolean((session.user as { twoFactorEnabled?: boolean }).twoFactorEnabled);
-  const mfaVerified = twoFactorEnabled
+  let twoFactorEnabled = Boolean((session.user as { twoFactorEnabled?: boolean }).twoFactorEnabled);
+  let mfaVerified = twoFactorEnabled
     ? await isStaffSessionMfaVerified(session.session.id)
     : true;
+  // Exempt account (no authenticator app): the one-time email/text sign-in code is the check.
+  if (!twoFactorEnabled && (await isAuthenticatorExempt(account.id))) {
+    twoFactorEnabled = true;
+    mfaVerified = true;
+  }
   return {
     status: 200,
     error: '',

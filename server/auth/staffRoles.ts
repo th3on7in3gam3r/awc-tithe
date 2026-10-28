@@ -637,3 +637,22 @@ export function __resetStaffRoleMemoryForTests(): void {
   memoryInvites.clear();
   memorySeen.clear();
 }
+
+/**
+ * A staff account an Admin chose to let sign in without an authenticator app (the Pastor,
+ * Oct 2026). They still sign in with a one-time code sent to their email or phone; the
+ * extra authenticator step is skipped. Set per account in the database only
+ * (staff_accounts.authenticator_exempt) — there is no button for it on purpose.
+ */
+export async function isAuthenticatorExempt(accountId: string): Promise<boolean> {
+  const client = getSql();
+  if (!client || !accountId) return false;
+  try {
+    const rows = await client`
+      SELECT authenticator_exempt FROM staff_accounts WHERE id = ${accountId} AND status = 'active' LIMIT 1
+    `;
+    return Boolean((rows[0] as { authenticator_exempt?: boolean } | undefined)?.authenticator_exempt);
+  } catch {
+    return false; // column not added yet → nobody is exempt
+  }
+}

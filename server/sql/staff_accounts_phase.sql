@@ -64,3 +64,6 @@ ALTER TABLE "twoFactor"
   ADD COLUMN IF NOT EXISTS "failedVerificationCount" INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE "twoFactor"
   ADD COLUMN IF NOT EXISTS "lockedUntil" TIMESTAMPTZ;
+
+-- Per-account: sign in without an authenticator app (email/text code only). Set by hand.
+ALTER TABLE staff_accounts ADD COLUMN IF NOT EXISTS authenticator_exempt BOOLEAN NOT NULL DEFAULT FALSE;
