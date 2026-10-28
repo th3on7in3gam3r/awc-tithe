@@ -14,6 +14,7 @@ import {
   acceptStaffInvite,
   createStaffInvite,
   deactivateStaffAccount,
+  findStaffByUserId,
   listStaffAccounts,
   resetStaffTwoFactor,
   updateStaffRole,
@@ -91,8 +92,24 @@ router.post('/invites/accept', async (req, res) => {
     });
     return res.json({ ok: true, role: account.role, email: account.email });
   } catch (err) {
-    console.error('[staff] invite accept', err);
     const text = err instanceof Error ? err.message : '';
+    // Opening the invite link again after it was already accepted (a second tap, the email
+    // link reopened, or coming back to finish authenticator setup) must not lock the person
+    // out: if this signed-in user already has an active staff account, just continue.
+    if (/invalid or expired|already has a staff account/i.test(text)) {
+      try {
+        const session = await staffAuth.api.getSession({ headers: fromNodeHeaders(req.headers) });
+        const userId = session?.user?.id;
+        const email = session?.user?.email?.trim().toLowerCase();
+        const existing = userId ? await findStaffByUserId(userId) : null;
+        if (existing && existing.status === 'active' && existing.email.toLowerCase() === email) {
+          return res.json({ ok: true, role: existing.role, email: existing.email, alreadyAccepted: true });
+        }
+      } catch {
+        /* fall through to the normal error */
+      }
+    }
+    console.error('[staff] invite accept', err);
     const friendly =
       text.includes('invalid or expired')
         ? 'This invite is invalid or expired'
