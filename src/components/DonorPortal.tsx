@@ -32,6 +32,8 @@ type EventGift = {
   amount: number | null;
   /** "Back to my RSVP" */
   returnUrl: string | null;
+  /** The event's fund named by the RSVP link (e.g. "AWC GRAND FAMILY CELEBRATION 2026"). */
+  fund?: string | null;
 };
 
 const EVENT_GIFT_KEY = 'awc.tithe.eventGift';
@@ -58,6 +60,7 @@ function recallEventGift(): EventGift | null {
       detail: typeof g.detail === 'string' ? g.detail : null,
       amount: typeof g.amount === 'number' ? g.amount : null,
       returnUrl: typeof g.returnUrl === 'string' ? g.returnUrl : null,
+      fund: typeof g.fund === 'string' ? g.fund : null,
     };
   } catch {
     return null;
@@ -111,7 +114,7 @@ export const DonorPortal: React.FC<{
   initialFundId?: string;
   onConsumedInitialFund?: () => void;
 }> = ({ onViewMyGiving, initialFundId, onConsumedInitialFund }) => {
-  const { funds } = useChurch();
+  const { funds, fundsStatus } = useChurch();
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   /** Turnstile tokens are single-use: remount the widget whenever we return to the form. */
   const [turnstileKey, setTurnstileKey] = useState(0);
@@ -233,6 +236,7 @@ export const DonorPortal: React.FC<{
         detail: link.refDetail || null,
         amount: link.amount ?? null,
         returnUrl: link.returnUrl || null,
+        fund: link.fund || null,
       };
       setEventGift(gift);
       rememberEventGift(gift);
@@ -264,8 +268,10 @@ export const DonorPortal: React.FC<{
 
   // A give link can name the fund by id or name (e.g. fund=Special Offerings). An event fund
   // also answers to its earlier names, so links sent before the event was renamed still work.
+  // Wait for the church's real fund list: before it loads, the page only knows Tithes &
+  // Offerings, and matching then would drop the RSVP's fund (gifts landed in Tithes).
   useEffect(() => {
-    if (!linkFund || !funds.length) return;
+    if (!linkFund || !funds.length || fundsStatus === 'loading') return;
     const wanted = linkFund.trim().toLowerCase();
     const active = funds.filter((f) => f.active);
     const match =
@@ -273,7 +279,7 @@ export const DonorPortal: React.FC<{
       active.find((f) => (f.formerNames || []).some((n) => n.trim().toLowerCase() === wanted));
     if (match) setSelectedFundId(match.id);
     setLinkFund(null);
-  }, [linkFund, funds]);
+  }, [linkFund, funds, fundsStatus]);
 
   // Coming back from a redirect-based payment (e.g. Cash App Pay on a phone)
   useEffect(() => {
@@ -465,6 +471,7 @@ export const DonorPortal: React.FC<{
         isAnonymous,
         turnstileToken,
         externalRef: eventGift?.ref ?? null,
+        eventFund: eventGift?.fund ?? null,
       });
       rememberEmail();
       setManualGift(result);
@@ -768,6 +775,7 @@ export const DonorPortal: React.FC<{
                   fundName={selectedFund.name}
                   frequency={eventGift ? 'one-time' : frequency}
                   externalRef={eventGift?.ref ?? null}
+                  eventFund={eventGift?.fund ?? null}
                   giftSource={giftSource}
                   isAnonymous={isAnonymous}
                   turnstileToken={turnstileToken}

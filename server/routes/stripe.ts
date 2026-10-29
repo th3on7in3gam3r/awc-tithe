@@ -15,6 +15,7 @@ import { computeProcessingFee } from '../../shared/fees';
 import { fromNodeHeaders } from 'better-auth/node';
 import { auth } from '../auth/betterAuth';
 import { linkTransactionToRef } from '../externalRefs/store';
+import { resolveGiftFund } from '../funds/store';
 import { normalizeExternalRef } from '../../shared/externalRef';
 import { normalizeGiftSource } from '../../shared/giftSource';
 
@@ -117,9 +118,9 @@ router.post(
       amount,
       donorName,
       donorEmail,
-      fundId,
-      fundCode,
-      fundName,
+      fundId: chosenFundId,
+      fundCode: chosenFundCode,
+      fundName: chosenFundName,
       envelopeNumber,
       frequency = 'one-time',
       isAnonymous = false,
@@ -127,7 +128,13 @@ router.post(
       paymentMethodType,
       externalRef: rawExternalRef,
       giftSource: rawGiftSource,
+      eventFund: rawEventFund,
     } = req.body as Record<string, unknown>;
+    // An RSVP gift always goes to its event's fund (never the default fund by mistake).
+    const giftFund = await resolveGiftFund({ fundId: chosenFundId, eventFund: rawEventFund });
+    const fundId = giftFund.fundId;
+    const fundName = giftFund.fundName ?? chosenFundName;
+    const fundCode = giftFund.fundCode ?? chosenFundCode;
     const externalRef = normalizeExternalRef(rawExternalRef);
     const giftSource = normalizeGiftSource(rawGiftSource) || '';
 

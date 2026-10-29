@@ -27,6 +27,8 @@ interface StripeCheckoutProps {
   submitLabel: string;
   /** AWC Vault RSVP reference (rsvp:<uuid>) when the donor came from an event signup. */
   externalRef?: string | null;
+  /** The RSVP's event fund name (server uses it for RSVP gifts). */
+  eventFund?: string | null;
   /** Where the donor came from ("sms" for text-to-give). */
   giftSource?: string | null;
 }
@@ -189,6 +191,7 @@ export const StripeCheckout: React.FC<StripeCheckoutProps> = ({
   returnUrl,
   submitLabel,
   externalRef = null,
+  eventFund = null,
   giftSource = null,
 }) => {
   const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null);
@@ -219,6 +222,7 @@ export const StripeCheckout: React.FC<StripeCheckoutProps> = ({
           turnstileToken,
           paymentMethodType: preferredMethod,
           externalRef,
+          eventFund,
           giftSource,
         });
         if (!cancelled) {
@@ -234,7 +238,7 @@ export const StripeCheckout: React.FC<StripeCheckoutProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [amount, donorEmail, donorName, fundCode, fundId, fundName, frequency, isAnonymous, turnstileToken, preferredMethod, externalRef, giftSource, onError]);
+  }, [amount, donorEmail, donorName, fundCode, fundId, fundName, frequency, isAnonymous, turnstileToken, preferredMethod, externalRef, eventFund, giftSource, onError]);
 
   if (loading || !clientSecret || !paymentIntentId || !stripePromise) {
     return (

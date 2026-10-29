@@ -7,6 +7,7 @@
  * verified 2FA can verify one, after matching it to the actual payment.
  */
 
+import { resolveGiftFund } from '../funds/store';
 import { Router, type Request, type Response } from 'express';
 import { requireAdminSession, requireStaffSession, getStaffSessionOrNull } from '../auth/staffGate';
 import { clientIp, payRateLimitMiddleware } from '../middleware/rateLimit';
@@ -108,10 +109,12 @@ router.post('/', payRateLimitMiddleware, requireTurnstile, async (req: Request, 
         message: `Amount must be at least $${(min.minCents / 100).toFixed(2)}.`,
       });
     }
+    // An RSVP gift always goes to its event's fund (never the default fund by mistake).
+    const giftFund = await resolveGiftFund({ fundId: body.fundId, eventFund: body.eventFund });
     const result = await createManualGift({
       provider,
       amount,
-      fundId: String(body.fundId || ''),
+      fundId: giftFund.fundId,
       donorName: String(body.donorName || ''),
       donorEmail: String(body.donorEmail || ''),
       isAnonymous: body.isAnonymous === true,

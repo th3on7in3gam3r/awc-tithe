@@ -210,6 +210,20 @@ async function main() {
     const other = await signedPost('event-fund', { name: 'Spring Gala 2027 Cookout', eventId: 'b1b2c3d4-0000-4000-8000-0000000000d2', previousNames: ['Spring Gala 2027'] });
     check('never takes over another event\'s fund', other.json.created === true && other.json.fund?.id !== dance.json.fund?.id, other.json);
 
+    // RSVP gifts always land in the event fund named by the link (not Tithes & Offerings).
+    const { resolveGiftFund } = await import('../funds/store');
+    const viaNew = await resolveGiftFund({ fundId: 'fund-tithes', eventFund: 'AWC GRAND FAMILY CELEBRATION 2026' });
+    check('RSVP gift with the event fund goes to that fund', viaNew.fundId === old.json.fund?.id && viaNew.isEvent, viaNew);
+    const viaOld = await resolveGiftFund({ fundId: 'fund-tithes', eventFund: 'AWC THANKSGIVING DINNER 2026' });
+    check('an old pay link\'s fund name still finds the event fund', viaOld.fundId === old.json.fund?.id, viaOld);
+    const plainGift = await resolveGiftFund({ fundId: 'fund-tithes', eventFund: null });
+    check('a normal gift keeps the fund the giver chose', plainGift.fundId === 'fund-tithes' && !plainGift.isEvent);
+    const notEvent = await resolveGiftFund({ fundId: 'fund-tithes', eventFund: 'Tithes & Offerings' });
+    check('eventFund never redirects to a regular fund', notEvent.fundId === 'fund-tithes' && !notEvent.isEvent);
+    const repair = await signedPost('rsvp-gift-fund', { eventFund: 'AWC GRAND FAMILY CELEBRATION 2026', refs: [REF] });
+    check('repair endpoint finds the event fund', repair.status === 200 && repair.json.fundFound === true, repair.json);
+    check('repair endpoint refuses a bad key', (await signedPost('rsvp-gift-fund', { eventFund: 'x', refs: [] }, 'nope')).status === 401);
+
     const { withEventFund } = await import('../dcb/eventFund');
     const gift = {
       voucherNumber: 'REC-1', donorName: 'Grace', donorEmail: '', amount: 40, feeAmount: 0, netAmount: 40,

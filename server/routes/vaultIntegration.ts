@@ -19,6 +19,7 @@ import { env } from '../config';
 import { externalRefsForDonations, statusForRefs } from '../externalRefs/store';
 import { ensureEventFund, listAllFunds } from '../funds/store';
 import { postEventFundToDcb } from '../dcb/client';
+import { repairRsvpGiftFunds } from '../funds/rsvpGiftRepair';
 import { listConfirmedGiftsForFund } from '../gifts/store';
 
 const MAX_SKEW_MS = 5 * 60 * 1000;
@@ -112,6 +113,23 @@ router.post('/event-fund', express.raw({ type: '*/*', limit: '4kb' }), async (re
   } catch (err) {
     console.error('[vault-integration] event-fund', err);
     return res.status(500).json({ ok: false, error: 'FUND_SETUP_FAILED' });
+  }
+});
+
+/**
+ * RSVP gifts filed under the wrong fund (Give-page bug before Oct 29, 2026): the Vault sends
+ * an event's fund name and its RSVP refs; gifts not yet in DCB move to the event fund, gifts
+ * DCB already has are listed so Finance can fix them there.
+ */
+router.post('/rsvp-gift-fund', express.raw({ type: '*/*', limit: '64kb' }), async (req: Request, res: Response) => {
+  const body = readSignedBody(req, res);
+  if (!body) return;
+  try {
+    const result = await repairRsvpGiftFunds({ eventFund: body.eventFund, refs: body.refs });
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('[vault-integration] rsvp-gift-fund', err);
+    return res.status(500).json({ ok: false, error: 'REPAIR_FAILED' });
   }
 });
 

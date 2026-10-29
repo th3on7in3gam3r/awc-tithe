@@ -719,3 +719,22 @@ export async function deleteFund(id: string): Promise<DeleteFundResult> {
   if (!rows.length) return { ok: false, error: 'FUND_IN_USE', usage: await getFundUsage(id) };
   return { ok: true, fund };
 }
+
+/**
+ * The fund an RSVP / event gift must go to. A gift paid from a Vault RSVP link names its
+ * event fund (eventFund); the server finds that fund by its current or earlier name and uses
+ * it, whatever fund the page sent. Anything else keeps the fund the giver chose.
+ */
+export async function resolveGiftFund(input: {
+  fundId: unknown;
+  eventFund?: unknown;
+}): Promise<{ fundId: string; fundName: string | null; fundCode: string | null; isEvent: boolean }> {
+  const chosen = String(input.fundId || '').trim();
+  const wanted = cleanEventFundName(input.eventFund);
+  if (wanted) {
+    const active = (await listAllFunds()).filter((f) => f.active);
+    const hit = findFundByIdOrName(active.filter((f) => f.isEvent), wanted);
+    if (hit) return { fundId: hit.id, fundName: hit.name, fundCode: hit.glCode || '', isEvent: true };
+  }
+  return { fundId: chosen, fundName: null, fundCode: null, isEvent: false };
+}

@@ -138,6 +138,8 @@ export async function createStripePaymentIntent(body: {
   paymentMethodType?: string;
   /** AWC Vault RSVP reference (rsvp:<uuid>); one-time gifts only. */
   externalRef?: string | null;
+  /** The event's fund named by the RSVP link; the server uses it for RSVP gifts. */
+  eventFund?: string | null;
   /** Where the donor came from, e.g. "sms" for text-to-give. */
   giftSource?: string | null;
 }): Promise<{
@@ -788,6 +790,8 @@ export async function createManualGift(body: {
   isAnonymous: boolean;
   turnstileToken?: string | null;
   externalRef?: string | null;
+  /** The event's fund named by the RSVP link; the server uses it for RSVP gifts. */
+  eventFund?: string | null;
 }): Promise<{ gift: DonorManualGift; claimToken: string }> {
   const res = await fetch('/api/manual-gifts', {
     method: 'POST',
