@@ -18,6 +18,7 @@ import express, { Router, type Request, type Response } from 'express';
 import { env } from '../config';
 import { externalRefsForDonations, statusForRefs } from '../externalRefs/store';
 import { ensureEventFund, listAllFunds } from '../funds/store';
+import { postEventFundToDcb } from '../dcb/client';
 import { listConfirmedGiftsForFund } from '../gifts/store';
 
 const MAX_SKEW_MS = 5 * 60 * 1000;
@@ -91,11 +92,21 @@ router.post('/event-fund', express.raw({ type: '*/*', limit: '4kb' }), async (re
   const body = readSignedBody(req, res);
   if (!body) return;
   try {
-    const result = await ensureEventFund(body.name);
+    // eventId: the Vault event the fund follows; previousNames: its old names (after a rename).
+    const result = await ensureEventFund(body.name, { eventKey: body.eventId, previousNames: body.previousNames });
     if (!result) return res.status(400).json({ ok: false, error: 'NAME_REQUIRED' });
+    if (result.created || result.renamed) {
+      // DCB renames (or makes) the same fund right away; failures self-heal on the next gift.
+      void postEventFundToDcb({
+        eventKey: result.fund.eventKey,
+        name: result.fund.name,
+        previousNames: result.fund.formerNames,
+      });
+    }
     return res.json({
       ok: true,
       created: result.created,
+      renamed: result.renamed,
       fund: { id: result.fund.id, name: result.fund.name, active: result.fund.active },
     });
   } catch (err) {

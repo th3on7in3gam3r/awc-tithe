@@ -262,11 +262,15 @@ export const DonorPortal: React.FC<{
     }
   }, []);
 
-  // A give link can name the fund by id or name (e.g. fund=Special Offerings).
+  // A give link can name the fund by id or name (e.g. fund=Special Offerings). An event fund
+  // also answers to its earlier names, so links sent before the event was renamed still work.
   useEffect(() => {
     if (!linkFund || !funds.length) return;
     const wanted = linkFund.trim().toLowerCase();
-    const match = funds.find((f) => f.active && (f.id.toLowerCase() === wanted || f.name.trim().toLowerCase() === wanted));
+    const active = funds.filter((f) => f.active);
+    const match =
+      active.find((f) => f.id.toLowerCase() === wanted || f.name.trim().toLowerCase() === wanted) ||
+      active.find((f) => (f.formerNames || []).some((n) => n.trim().toLowerCase() === wanted));
     if (match) setSelectedFundId(match.id);
     setLinkFund(null);
   }, [linkFund, funds]);

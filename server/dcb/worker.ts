@@ -32,21 +32,51 @@ import {
 import { externalRefsForDonations } from '../externalRefs/store';
 import { withEventFund } from './eventFund';
 
-/** Event RSVP gifts carry the event's fund to DCB. A lookup failure never blocks delivery. */
-async function isEventFundName(fundName: unknown): Promise<boolean> {
-  const name = String(fundName || '').trim().toLowerCase();
-  if (!name) return false;
+/**
+ * The event fund a gift belongs to, as it is named NOW. A gift made before the event was
+ * renamed still points at the same fund id, so it reaches DCB under the new name together
+ * with the event id. A lookup failure never blocks delivery.
+ */
+async function currentEventFund(
+  donationId: string,
+  fundName: unknown
+): Promise<import('../funds/store').FundRecord | null> {
   try {
-    const { listAllFunds } = await import('../funds/store');
-    return (await listAllFunds()).some((f) => f.isEvent && f.name.trim().toLowerCase() === name);
+    const { listAllFunds, getFundById } = await import('../funds/store');
+    const pool = getPgPool();
+    if (pool && donationId) {
+      const r = await pool.query('SELECT fund_id FROM donations WHERE id = $1 LIMIT 1', [donationId]);
+      const fundId = r.rows[0]?.fund_id ? String(r.rows[0].fund_id) : '';
+      if (fundId) {
+        const fund = await getFundById(fundId);
+        if (fund) return fund.isEvent ? fund : null;
+      }
+    }
+    const name = String(fundName || '').trim().toLowerCase();
+    if (!name) return null;
+    const all = await listAllFunds();
+    return (
+      all.find((f) => f.isEvent && f.name.trim().toLowerCase() === name) ||
+      all.find((f) => f.isEvent && (f.formerNames || []).some((n) => n.trim().toLowerCase() === name)) ||
+      null
+    );
   } catch {
-    return false;
+    return null;
   }
 }
 
 async function contributionPayloadFor(row: DcbOutboxRow): Promise<DcbContributionPayload> {
-  const payload = row.payload as unknown as DcbContributionPayload;
-  const isEventFund = await isEventFundName(payload.fundName);
+  let payload = row.payload as unknown as DcbContributionPayload;
+  const eventFund = await currentEventFund(row.donationId, payload.fundName);
+  const isEventFund = Boolean(eventFund);
+  if (eventFund) {
+    payload = {
+      ...payload,
+      fundName: eventFund.name,
+      ...(eventFund.eventKey ? { eventKey: eventFund.eventKey } : {}),
+      ...(eventFund.formerNames?.length ? { previousFundNames: eventFund.formerNames } : {}),
+    };
+  }
   try {
     const refs = await externalRefsForDonations([
       { id: row.donationId, transactionId: String(payload.transactionId || '') },

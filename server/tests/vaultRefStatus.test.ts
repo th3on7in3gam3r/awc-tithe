@@ -188,6 +188,28 @@ async function main() {
     check('event fund strips markup', (await signedPost('event-fund', { name: '<b>Marrieds Dinner 2026</b>' })).json.fund?.name === 'bMarrieds Dinner 2026b');
     check('event fund refuses a bad key', (await signedPost('event-fund', { name: 'X Event' }, 'nope')).status === 401);
 
+    // Renaming an event keeps the same fund (and its gifts); old pay links still find it.
+    const EV = '86ac9498-ee56-4c6a-baae-079832b0ea73';
+    const old = await signedPost('event-fund', { name: 'AWC THANKSGIVING DINNER 2026' });
+    const claimed = await signedPost('event-fund', { name: 'AWC THANKSGIVING DINNER 2026', eventId: EV });
+    check('the Vault event id is stamped on its existing fund', claimed.json.fund?.id === old.json.fund?.id && claimed.json.created === false, claimed.json);
+    const renamed = await signedPost('event-fund', { name: 'AWC GRAND FAMILY CELEBRATION 2026', eventId: EV });
+    check('rename by event id keeps the same fund', renamed.json.fund?.id === old.json.fund?.id && renamed.json.renamed === true && renamed.json.fund?.name === 'AWC GRAND FAMILY CELEBRATION 2026', renamed.json);
+    const funds2 = await listActiveFunds();
+    const evFund = funds2.find((f) => f.id === old.json.fund?.id);
+    check('old name kept for old pay links', evFund?.formerNames?.includes('AWC THANKSGIVING DINNER 2026') === true, evFund);
+    check('no second fund for the new name', funds2.filter((f) => /grand family|thanksgiving dinner 2026$/i.test(f.name) && f.eventKey === EV).length === 1, funds2);
+    const { findFundByIdOrName } = await import('../funds/store');
+    check('a pay link with the old name finds the renamed fund', findFundByIdOrName(funds2, 'awc thanksgiving dinner 2026')?.id === old.json.fund?.id);
+    const twice = await signedPost('event-fund', { name: 'AWC GRAND FAMILY CELEBRATION 2026', eventId: EV });
+    check('same name again changes nothing', twice.json.renamed === false && twice.json.created === false, twice.json);
+    // A first-time rename with no event id yet: the Vault sends the old name along.
+    const dance = await signedPost('event-fund', { name: '2027 Fundraiser Dance' });
+    const dance2 = await signedPost('event-fund', { name: 'Spring Gala 2027', eventId: 'b1b2c3d4-0000-4000-8000-0000000000d1', previousNames: ['2027 Fundraiser Dance'] });
+    check('previous name finds the fund to rename', dance2.json.fund?.id === dance.json.fund?.id && dance2.json.fund?.name === 'Spring Gala 2027', dance2.json);
+    const other = await signedPost('event-fund', { name: 'Spring Gala 2027 Cookout', eventId: 'b1b2c3d4-0000-4000-8000-0000000000d2', previousNames: ['Spring Gala 2027'] });
+    check('never takes over another event\'s fund', other.json.created === true && other.json.fund?.id !== dance.json.fund?.id, other.json);
+
     const { withEventFund } = await import('../dcb/eventFund');
     const gift = {
       voucherNumber: 'REC-1', donorName: 'Grace', donorEmail: '', amount: 40, feeAmount: 0, netAmount: 40,

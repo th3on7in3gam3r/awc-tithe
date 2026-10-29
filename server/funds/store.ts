@@ -16,6 +16,10 @@ export type FundRecord = {
   glCode: string;
   /** Event RSVP fund: paid only from an AWC Vault RSVP link, hidden from the public fund list. */
   isEvent?: boolean;
+  /** Event fund: the AWC Vault event id it follows. A renamed event renames this fund. */
+  eventKey?: string | null;
+  /** Event fund: earlier names, so pay links sent before a rename still find it. */
+  formerNames?: string[];
 };
 
 export type GivingGoalProgress = {
@@ -89,7 +93,19 @@ function mapFund(row: Record<string, unknown>): FundRecord {
     sortOrder: Number(row.sort_order ?? 0),
     glCode: String(row.gl_code || row.code || ''),
     isEvent: Boolean(row.is_event),
+    eventKey: row.event_key ? String(row.event_key) : null,
+    formerNames: parseFormerNames(row.former_names),
   };
+}
+
+function parseFormerNames(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.map(String);
+  try {
+    const list = JSON.parse(String(raw || '[]'));
+    return Array.isArray(list) ? list.map(String).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
 }
 
 /** Public: active funds only — never includes goals or raised totals. */
@@ -102,7 +118,7 @@ export async function listActiveFunds(): Promise<FundRecord[]> {
       .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
   }
   const rows = await client`
-    SELECT id, name, description, active, sort_order, gl_code, is_event
+    SELECT id, name, description, active, sort_order, gl_code, is_event, event_key, former_names
     FROM funds
     WHERE active = TRUE
     ORDER BY sort_order ASC, name ASC
@@ -120,7 +136,7 @@ export async function listAllFunds(): Promise<FundRecord[]> {
     );
   }
   const rows = await client`
-    SELECT id, name, description, active, sort_order, gl_code, is_event
+    SELECT id, name, description, active, sort_order, gl_code, is_event, event_key, former_names
     FROM funds
     ORDER BY sort_order ASC, name ASC
   `;
@@ -134,7 +150,7 @@ export async function getFundById(id: string): Promise<FundRecord | null> {
     return memoryFunds.get(id) || null;
   }
   const rows = await client`
-    SELECT id, name, description, active, sort_order, gl_code, is_event FROM funds WHERE id = ${id} LIMIT 1
+    SELECT id, name, description, active, sort_order, gl_code, is_event, event_key, former_names FROM funds WHERE id = ${id} LIMIT 1
   `;
   const row = rows[0];
   return row ? mapFund(row as Record<string, unknown>) : null;
@@ -147,6 +163,7 @@ export async function createFund(input: {
   sortOrder?: number;
   glCode?: string;
   isEvent?: boolean;
+  eventKey?: string | null;
 }): Promise<FundRecord> {
   const id = `fund-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
   const record: FundRecord = {
@@ -157,6 +174,8 @@ export async function createFund(input: {
     sortOrder: Number(input.sortOrder ?? 0),
     glCode: (input.glCode || '').trim(),
     isEvent: Boolean(input.isEvent),
+    eventKey: input.eventKey || null,
+    formerNames: [],
   };
   const client = getSql();
   if (!client) {
@@ -165,8 +184,8 @@ export async function createFund(input: {
     return record;
   }
   await client`
-    INSERT INTO funds (id, name, description, active, sort_order, gl_code, is_event)
-    VALUES (${record.id}, ${record.name}, ${record.description}, ${record.active}, ${record.sortOrder}, ${record.glCode}, ${Boolean(record.isEvent)})
+    INSERT INTO funds (id, name, description, active, sort_order, gl_code, is_event, event_key)
+    VALUES (${record.id}, ${record.name}, ${record.description}, ${record.active}, ${record.sortOrder}, ${record.glCode}, ${Boolean(record.isEvent)}, ${record.eventKey || null})
   `;
   return record;
 }
@@ -182,39 +201,123 @@ export function cleanEventFundName(raw: unknown): string | null {
   return name.length >= 2 ? name : null;
 }
 
-/**
- * Make sure an event RSVP fund exists and is active (e.g. "Thanksgiving Dinner 2026").
- * Matches an existing fund by name, ignoring case; creates it otherwise.
- */
-export async function ensureEventFund(rawName: unknown): Promise<{ fund: FundRecord; created: boolean } | null> {
-  const name = cleanEventFundName(rawName);
-  if (!name) return null;
-  const all = await listAllFunds();
-  const existing = all.find((f) => f.name.trim().toLowerCase() === name.toLowerCase());
-  if (existing) {
-    if (!existing.isEvent) await markEventFund(existing.id);
-    if (existing.active) return { fund: { ...existing, isEvent: true }, created: false };
-    const reactivated = await updateFund(existing.id, { active: true });
-    return { fund: { ...(reactivated || existing), active: true, isEvent: true }, created: false };
-  }
-  const fund = await createFund({
-    name,
-    description: 'Event RSVP payments.',
-    sortOrder: 100,
-    isEvent: true,
-  });
-  return { fund, created: true };
+/** Clean the AWC Vault event id an event fund follows (letters, digits, dashes). */
+export function cleanEventKey(raw: unknown): string | null {
+  const key = String(raw ?? '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 64);
+  return key.length >= 4 ? key : null;
 }
 
-/** Flag a fund as an event RSVP fund (hidden from the public Give list). */
-async function markEventFund(id: string): Promise<void> {
+export type EnsureEventFundResult = {
+  fund: FundRecord;
+  created: boolean;
+  /** The fund's name changed (the Vault event was renamed). */
+  renamed: boolean;
+  /** Names the fund went by before, newest last. */
+  previousName: string | null;
+};
+
+/**
+ * Make sure an event RSVP fund exists and is active (e.g. "Thanksgiving Dinner 2026").
+ *
+ * The fund follows its AWC Vault event id (eventKey), not just its name: when staff rename
+ * the event, the same fund is renamed. Every gift points at the fund id, so gifts made under
+ * the old name stay with the event, and pay links that still say the old name keep working
+ * (the old name is kept in formerNames).
+ *
+ * Lookup order: event id → current name → one of the event's previous names → create.
+ */
+export async function ensureEventFund(
+  rawName: unknown,
+  opts: { eventKey?: unknown; previousNames?: unknown } = {}
+): Promise<EnsureEventFundResult | null> {
+  const name = cleanEventFundName(rawName);
+  if (!name) return null;
+  const key = cleanEventKey(opts.eventKey);
+  const lower = name.toLowerCase();
+  const previous = (Array.isArray(opts.previousNames) ? opts.previousNames : [])
+    .map((n) => cleanEventFundName(n))
+    .filter((n): n is string => Boolean(n) && n!.toLowerCase() !== lower)
+    .slice(0, 10);
+  const all = await listAllFunds();
+  const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  const freeFor = (f: FundRecord) => !f.eventKey || !key || f.eventKey === key;
+
+  const byKey = key ? all.find((f) => f.eventKey === key) : undefined;
+  let existing =
+    byKey ||
+    all.find((f) => same(f.name, name) && freeFor(f)) ||
+    all.find((f) => previous.some((p) => same(f.name, p)) && freeFor(f));
+
+  if (!existing) {
+    const fund = await createFund({
+      name,
+      description: 'Event RSVP payments.',
+      sortOrder: 100,
+      isEvent: true,
+      eventKey: key,
+    });
+    return { fund, created: true, renamed: false, previousName: null };
+  }
+
+  // Matched by event id: the Vault's spelling wins exactly. Matched by name: only a real
+  // name change counts (not a difference in capital letters).
+  const renamed = byKey ? existing.name !== name : !same(existing.name, name);
+  const formerNames = [...(existing.formerNames || [])];
+  if (renamed && !formerNames.some((n) => same(n, existing!.name))) formerNames.push(existing.name);
+  const next: FundRecord = {
+    ...existing,
+    name: renamed ? name : existing.name,
+    active: true,
+    isEvent: true,
+    eventKey: existing.eventKey || key,
+    formerNames: formerNames.filter((n) => !same(n, renamed ? name : existing!.name)).slice(-10),
+  };
+  const changed =
+    renamed ||
+    !existing.active ||
+    !existing.isEvent ||
+    next.eventKey !== existing.eventKey ||
+    JSON.stringify(next.formerNames) !== JSON.stringify(existing.formerNames || []);
+  if (changed) await saveEventFund(next, renamed);
+  return { fund: next, created: false, renamed, previousName: renamed ? existing.name : null };
+}
+
+async function saveEventFund(f: FundRecord, renamed = false): Promise<void> {
   const client = getSql();
   if (!client) {
-    const f = memoryFunds.get(id);
-    if (f) memoryFunds.set(id, { ...f, isEvent: true });
+    requireMemoryFunds();
+    memoryFunds.set(f.id, { ...f });
     return;
   }
-  await client`UPDATE funds SET is_event = TRUE, updated_at = NOW() WHERE id = ${id}`;
+  await client`
+    UPDATE funds SET
+      name = ${f.name},
+      active = TRUE,
+      is_event = TRUE,
+      event_key = ${f.eventKey || null},
+      former_names = ${JSON.stringify(f.formerNames || [])},
+      updated_at = NOW()
+    WHERE id = ${f.id}
+  `;
+  if (!renamed) return;
+  // Gifts already made to this event show its new name too (they keep the same fund id).
+  await client`UPDATE donations SET fund_name = ${f.name} WHERE fund_id = ${f.id}`;
+  try {
+    await client`UPDATE manual_gifts SET fund_name = ${f.name} WHERE fund_id = ${f.id}`;
+  } catch {
+    // manual_gifts is created on first use; nothing to rename before then.
+  }
+}
+
+/** Find a fund by id, current name or (for event funds) an earlier name. */
+export function findFundByIdOrName(funds: FundRecord[], wanted: string): FundRecord | undefined {
+  const w = wanted.trim().toLowerCase();
+  if (!w) return undefined;
+  return (
+    funds.find((f) => f.id.toLowerCase() === w) ||
+    funds.find((f) => f.name.trim().toLowerCase() === w) ||
+    funds.find((f) => (f.formerNames || []).some((n) => n.trim().toLowerCase() === w))
+  );
 }
 
 export async function updateFund(

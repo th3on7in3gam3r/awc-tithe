@@ -20,6 +20,8 @@ export const DEFAULT_TEXT_FUND_ID = 'fund-tithes';
 const FILLER = new Set([
   'give', 'giving', 'gift', 'gifts', 'donate', 'donation', 'for', 'to', 'the', 'my', 'a', 'an', 'and', 'of',
   'fund', 'funds', 'dollar', 'dollars', 'usd', 'please', 'pls', 'thanks', 'thank', 'you', 'amp',
+  // The church's initials start many fund names ("AWC GRAND FAMILY CELEBRATION 2026" → text "40 GRAND").
+  'awc',
 ]);
 
 function words(text: string): string[] {

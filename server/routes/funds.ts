@@ -34,6 +34,8 @@ router.get('/', async (_req, res) => {
         sortOrder: f.sortOrder,
         // Event RSVP funds stay out of the Give page list; an RSVP link still selects them.
         isEvent: Boolean(f.isEvent),
+        // An event fund's earlier names, so pay links sent before a rename still pick it.
+        ...(f.isEvent && f.formerNames?.length ? { formerNames: f.formerNames } : {}),
       })),
     });
   } catch (err) {

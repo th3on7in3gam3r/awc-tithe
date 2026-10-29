@@ -216,6 +216,7 @@ export const ChurchProvider: React.FC<{ children: React.ReactNode }> = ({ childr
               active: true,
               sortOrder: f.sortOrder,
               isEvent: Boolean(f.isEvent),
+              formerNames: f.formerNames || [],
             }))
           );
         }

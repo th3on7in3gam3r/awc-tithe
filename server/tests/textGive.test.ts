@@ -79,6 +79,15 @@ async function main() {
   check('"marrieds" → Marrieds Dinner', idOf('marrieds') === marrieds.id);
   check('"married dinner" → Marrieds Dinner', idOf('married dinner') === marrieds.id);
   check('"thanksgiving" → Thanksgiving Dinner', idOf('thanksgiving') === thanks.id);
+  {
+    const grand = await fundsStore.createFund({ name: 'AWC GRAND FAMILY CELEBRATION 2026', isEvent: true, sortOrder: 101 });
+    const { fundKeyword } = await import('../textGive/funds');
+    check('AWC event fund is texted by its first real word', fundKeyword(grand) === 'GRAND', fundKeyword(grand));
+    const withGrand = await fundsStore.listActiveFunds();
+    const g = chooseFund(fundWords('grand'), withGrand);
+    check('"grand" → Grand Family Celebration', g.kind === 'ok' && g.fund.id === grand.id, g);
+    await fundsStore.updateFund(grand.id, { active: false });
+  }
   check('"building" → Building Fund', idOf('building fund') === building.id);
   check('"dinner" matches two → ask', idOf('dinner') === 'many');
   check('closed fund is never chosen', idOf('retreat') === 'none');

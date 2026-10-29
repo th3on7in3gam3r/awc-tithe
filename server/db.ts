@@ -208,6 +208,10 @@ export async function ensureSchema(): Promise<{ ok: boolean; mode: 'neon' | 'mem
     // Event RSVP funds (e.g. "Thanksgiving Dinner 2026") are paid only from an AWC Vault RSVP
     // link, so the public Give page leaves them out of its fund list.
     await client`ALTER TABLE funds ADD COLUMN IF NOT EXISTS is_event BOOLEAN NOT NULL DEFAULT FALSE`;
+    // Event funds follow their AWC Vault event id, so renaming the event renames the fund
+    // (gifts keep pointing at the same fund id). former_names keeps old pay links working.
+    await client`ALTER TABLE funds ADD COLUMN IF NOT EXISTS event_key TEXT`;
+    await client`ALTER TABLE funds ADD COLUMN IF NOT EXISTS former_names TEXT NOT NULL DEFAULT '[]'`;
     await client`
       UPDATE funds SET is_event = TRUE
       WHERE is_event = FALSE AND description LIKE 'Event RSVP payments%'

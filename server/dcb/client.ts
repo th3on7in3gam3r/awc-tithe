@@ -43,6 +43,10 @@ export interface DcbContributionPayload {
   eventFund?: boolean;
   /** Short note shown on the DCB contribution ("Thanksgiving Dinner 2026 RSVP"). */
   memo?: string;
+  /** Event fund: the AWC Vault event id, so DCB keeps one fund per event across renames. */
+  eventKey?: string;
+  /** Event fund: earlier names, so DCB finds the right fund after a rename. */
+  previousFundNames?: string[];
 }
 
 export interface DcbSyncResult {
@@ -111,6 +115,43 @@ function signRequest(
     'X-AWC-Signature': signature,
     'Idempotency-Key': idempotencyKey,
   };
+}
+
+/** DCB base URL (the configured URL may be the full contributions path). */
+function dcbBaseUrl(): string {
+  const configured = env.awcDcbApiUrl.replace(/\/$/, '');
+  const i = configured.indexOf('/api/');
+  return i >= 0 ? configured.slice(0, i) : configured;
+}
+
+/**
+ * Tell DCB an event fund was set up or renamed, so DCB renames the same fund right away
+ * (its gifts stay with it). Never throws: returns false when DCB is not set up or fails;
+ * the next gift for the event also carries the event id and fixes the name then.
+ */
+export async function postEventFundToDcb(input: {
+  eventKey: string | null | undefined;
+  name: string;
+  previousNames?: string[];
+}): Promise<boolean> {
+  if (!env.awcDcbApiUrl?.trim() || !env.awcDcbKeyTithe?.trim()) return false;
+  const rawBody = JSON.stringify({
+    eventKey: input.eventKey || undefined,
+    name: input.name,
+    previousNames: (input.previousNames || []).slice(0, 10),
+  });
+  try {
+    const res = await fetch(`${dcbBaseUrl()}/api/public/giving/event-fund`, {
+      method: 'POST',
+      headers: signRequest(rawBody, `event-fund:${input.eventKey || input.name}:${Date.now()}`),
+      body: rawBody,
+      signal: AbortSignal.timeout(8000),
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('[dcb] event fund sync failed:', err instanceof Error ? err.message : err);
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
