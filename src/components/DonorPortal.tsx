@@ -927,8 +927,11 @@ export const DonorPortal: React.FC<{
 
                 {/* 03 Fund — only when there's a choice (never for an RSVP payment) */}
                 {showFundChoice ? (
-                  <fieldset aria-labelledby="fund-label">
+                  <fieldset aria-labelledby="fund-label" aria-describedby="fund-help">
                     <SectionLabel n="03" id="fund-label">Give to</SectionLabel>
+                    <p id="fund-help" className="-mt-2 mb-3.5 text-[15px] text-awc-ink">
+                      Where would you like your gift to go?
+                    </p>
                     <div className="space-y-2.5">
                       {activeFunds.map((f) => {
                         const on = selectedFundId === f.id;
