@@ -353,7 +353,7 @@ export const AdminDashboard: React.FC = () => {
 
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8" style={textZoom !== 1 ? ({ zoom: textZoom } as React.CSSProperties) : undefined}>
+    <div className={`mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8${textZoom !== 1 ? ' staff-text-large' : ''}`} style={textZoom !== 1 ? ({ zoom: textZoom } as React.CSSProperties) : undefined}>
       
       {/* Admin Title & Elevated Session Bar */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between pb-6 border-b border-[#E8E2D9] dark:border-slate-800 gap-4">
@@ -732,7 +732,7 @@ export const AdminDashboard: React.FC = () => {
                     <th className="px-5 py-3 font-medium">Receipt #</th>
                     <th className="px-5 py-3 font-medium">Donor</th>
                     <th className="px-5 py-3 font-medium">Fund</th>
-                    <th className="px-5 py-3 font-medium">Frequency</th>
+                    <th className="col-freq px-5 py-3 font-medium">Frequency</th>
                     <th className="px-5 py-3 font-medium">Method</th>
                     <th className="px-5 py-3 font-medium text-right">Amount</th>
                     <th className="px-5 py-3 font-medium text-center">Status</th>
@@ -752,7 +752,7 @@ export const AdminDashboard: React.FC = () => {
                         <div className="text-[11px] text-slate-500">{g.donorEmailMasked}</div>
                       </td>
                       <td className="px-5 py-3.5 font-medium text-slate-800 dark:text-slate-200">{g.fundName}</td>
-                      <td className="px-5 py-3.5 text-slate-500">One-time</td>
+                      <td className="col-freq px-5 py-3.5 text-slate-500">One-time</td>
                       <td className="px-5 py-3.5 text-slate-700 dark:text-slate-300">{P2P_LABEL[g.provider] || g.provider}</td>
                       <td className="px-5 py-3.5 text-right font-semibold text-slate-500 dark:text-slate-400">
                         ${g.amount.toFixed(2)}
@@ -790,8 +790,11 @@ export const AdminDashboard: React.FC = () => {
                       </td>
                       <td className="px-5 py-3.5 font-medium text-slate-800 dark:text-slate-200">
                         {d.fundName}
+                        {d.frequency !== 'one-time' && (
+                          <div className="freq-under capitalize text-[11px] font-normal text-slate-500">{d.frequency}</div>
+                        )}
                       </td>
-                      <td className="px-5 py-3.5 capitalize text-slate-600 dark:text-slate-400">
+                      <td className="col-freq px-5 py-3.5 capitalize text-slate-600 dark:text-slate-400">
                         {d.frequency}
                       </td>
                       <td className="px-5 py-3.5 whitespace-nowrap">
@@ -832,7 +835,7 @@ export const AdminDashboard: React.FC = () => {
                         )}
                       </td>
                       <td className="px-5 py-3.5 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="row-actions flex items-center justify-end gap-2">
                           {stripePaymentUrl(d) && (
                             <a
                               href={stripePaymentUrl(d)!}

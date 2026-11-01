@@ -333,3 +333,40 @@ body {
     animation: none;
   }
 }
+
+/* Staff dashboard with bigger text (A+ / A++): tables fit the screen instead of scrolling sideways. */
+.staff-text-large table th,
+.staff-text-large table td {
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  white-space: normal;
+}
+.staff-text-large table th,
+.staff-text-large table td.tabular-nums,
+.staff-text-large .row-actions > * {
+  white-space: nowrap; /* headers, amounts and buttons never split mid-word */
+}
+/* Long emails (small grey line under a name) break instead of pushing the table wider. */
+.staff-text-large table td .text-\[11px\] {
+  overflow-wrap: anywhere;
+}
+.staff-text-large table td .whitespace-nowrap,
+.staff-text-large table td.whitespace-nowrap {
+  white-space: normal;
+}
+/* Frequency is almost always "One-time": drop the column, show recurring under the fund instead. */
+.staff-text-large .col-freq {
+  display: none;
+}
+.freq-under {
+  display: none;
+}
+.staff-text-large .freq-under {
+  display: block;
+}
+/* Stripe / Receipt / Refund stack instead of sitting side by side. */
+.staff-text-large .row-actions {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+}
