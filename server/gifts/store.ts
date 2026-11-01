@@ -385,7 +385,9 @@ export async function createGift(input: CreateGiftInput): Promise<{
                 status = 'completed', amount = $2, fee_covered = $3, fee_amount = $4,
                 total_charged = $5, payment_method = $6,
                 stripe_payment_intent_id = COALESCE($7, stripe_payment_intent_id),
-                next_billing_date = COALESCE($8, next_billing_date)
+                next_billing_date = COALESCE($8, next_billing_date),
+                card_brand = COALESCE($9, card_brand),
+                card_last4 = COALESCE($10, card_last4)
               WHERE transaction_id = $1 RETURNING *`
             : "UPDATE donations SET status = 'failed' WHERE transaction_id = $1 RETURNING *",
           giftStatus === 'completed'
@@ -398,6 +400,8 @@ export async function createGift(input: CreateGiftInput): Promise<{
                 input.paymentMethod,
                 input.stripePaymentIntentId || null,
                 nextBillingDate,
+                input.cardBrand || null,
+                input.cardLast4 || null,
               ]
             : [transactionId]
         );
@@ -540,6 +544,8 @@ export async function createGift(input: CreateGiftInput): Promise<{
             fee_amount = ${feeAmount},
             total_charged = ${totalCharged},
             payment_method = ${input.paymentMethod},
+            card_brand = COALESCE(${input.cardBrand || null}, card_brand),
+            card_last4 = COALESCE(${input.cardLast4 || null}, card_last4),
             stripe_payment_intent_id = COALESCE(${input.stripePaymentIntentId || null}, stripe_payment_intent_id),
             next_billing_date = COALESCE(${nextBillingDate}, next_billing_date)
           WHERE transaction_id = ${transactionId}

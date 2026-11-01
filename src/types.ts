@@ -3,6 +3,7 @@ export type DonationFrequency = 'one-time' | 'weekly' | 'bi-weekly' | 'monthly' 
 export type PaymentMethod =
   | 'card'
   | 'ach'
+  | 'us_bank_account'
   | 'apple_pay'
   | 'cash'
   | 'check'

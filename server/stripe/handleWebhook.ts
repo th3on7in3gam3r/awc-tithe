@@ -78,18 +78,34 @@ function methodOf(type: string | undefined): GiftPaymentMethod {
   return 'card';
 }
 
-async function chargeMethod(
+type ChargeDetails = { type: string; brand?: string; last4?: string };
+
+/**
+ * How the giver paid: the method type, plus the card brand or bank name and the last 4 digits
+ * (shown to staff so a gift can be matched to Stripe). Never the full number.
+ */
+async function chargeDetails(
   stripe: Stripe,
   pi: Stripe.PaymentIntent
-): Promise<string> {
+): Promise<ChargeDetails> {
   const expanded = await stripe.paymentIntents.retrieve(pi.id, {
     expand: ['latest_charge'],
   });
   const charge = expanded.latest_charge;
   if (charge && typeof charge === 'object') {
-    return charge.payment_method_details?.type || 'card';
+    const d = charge.payment_method_details;
+    const type = d?.type || 'card';
+    if (type === 'card' && d?.card) {
+      const wallet = d.card.wallet?.type;
+      const brand = d.card.brand ? String(d.card.brand) : '';
+      return { type: wallet === 'apple_pay' ? 'apple_pay' : type, brand: brand || undefined, last4: d.card.last4 || undefined };
+    }
+    if (type === 'us_bank_account' && d?.us_bank_account) {
+      return { type, brand: d.us_bank_account.bank_name || undefined, last4: d.us_bank_account.last4 || undefined };
+    }
+    return { type };
   }
-  return 'card';
+  return { type: 'card' };
 }
 
 function isOneTimeTithePi(pi: Stripe.PaymentIntent): boolean {
@@ -163,7 +179,8 @@ async function writeOneTimeGift(
   const charged = (pi.amount_received || pi.amount || 0) / 100;
   const principal = Number(meta.principalAmount || charged);
   const feeCovered = flag(meta.feeCovered);
-  const methodType = await chargeMethod(stripe, pi);
+  const details = await chargeDetails(stripe, pi);
+  const methodType = details.type;
   const result = await createGift({
     amount: principal > 0 ? principal : charged,
     feeCovered,
@@ -174,6 +191,8 @@ async function writeOneTimeGift(
     donorName: meta.donorName || 'Donor',
     donorEmail: meta.donorEmail || pi.receipt_email || '',
     paymentMethod: methodOf(methodType),
+    cardBrand: details.brand,
+    cardLast4: details.last4,
     isAnonymous: flag(meta.isAnonymous),
     stripePaymentIntentId: pi.id,
     transactionId: pi.id,

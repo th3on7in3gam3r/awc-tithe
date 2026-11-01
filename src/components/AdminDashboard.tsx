@@ -118,6 +118,41 @@ function StaffAuthenticatorSetup() {
   );
 }
 
+/** Readable "how they paid" for the Transactions table (never more than the last 4 digits). */
+function methodText(d: { paymentMethod?: string; cardBrand?: string; cardLast4?: string }): { main: string; sub?: string } {
+  const m = String(d.paymentMethod || '');
+  const brand = d.cardBrand ? d.cardBrand.charAt(0).toUpperCase() + d.cardBrand.slice(1) : '';
+  const last4 = d.cardLast4 ? `•••• ${d.cardLast4}` : '';
+  if (m === 'us_bank_account' || m === 'ach') return { main: 'Bank account', sub: [brand, last4].filter(Boolean).join(' ') || undefined };
+  if (m === 'card') return { main: brand ? `${brand} card` : 'Card', sub: last4 || undefined };
+  if (m === 'apple_pay') return { main: 'Apple Pay', sub: [brand, last4].filter(Boolean).join(' ') || undefined };
+  const labels: Record<string, string> = { cash: 'Cash', check: 'Check', cash_app: 'Cash App', zelle: 'Zelle', venmo: 'Venmo' };
+  return { main: labels[m] || (m ? m.replace(/_/g, ' ') : '—') };
+}
+
+/** The gift's page in the church's Stripe dashboard (online gifts only). */
+function stripePaymentUrl(d: { stripePaymentIntentId?: string; transactionId?: string }): string | null {
+  const id = String(d.stripePaymentIntentId || d.transactionId || '');
+  return /^pi_[A-Za-z0-9]+$/.test(id) ? `https://dashboard.stripe.com/payments/${id}` : null;
+}
+
+const TEXT_SIZES = [
+  { id: 'normal', label: 'A', zoom: 1, title: 'Normal text' },
+  { id: 'large', label: 'A+', zoom: 1.2, title: 'Larger text' },
+  { id: 'xlarge', label: 'A++', zoom: 1.4, title: 'Largest text' },
+] as const;
+type TextSizeId = (typeof TEXT_SIZES)[number]['id'];
+const TEXT_SIZE_KEY = 'awc-staff-text-size';
+
+function readTextSize(): TextSizeId {
+  try {
+    const v = window.localStorage.getItem(TEXT_SIZE_KEY);
+    return TEXT_SIZES.some((t) => t.id === v) ? (v as TextSizeId) : 'normal';
+  } catch {
+    return 'normal';
+  }
+}
+
 export const AdminDashboard: React.FC = () => {
   const {
     config,
@@ -140,6 +175,17 @@ export const AdminDashboard: React.FC = () => {
   } = useChurch();
 
   const isPortalAdmin = staffPortalRole === 'admin';
+  // Bigger text for tired eyes — remembered on this computer.
+  const [textSize, setTextSize] = useState<TextSizeId>(() => readTextSize());
+  const chooseTextSize = (id: TextSizeId) => {
+    setTextSize(id);
+    try {
+      window.localStorage.setItem(TEXT_SIZE_KEY, id);
+    } catch {
+      /* private browsing: works for this visit only */
+    }
+  };
+  const textZoom = TEXT_SIZES.find((t) => t.id === textSize)?.zoom ?? 1;
 
   const [activeAdminSubTab, setActiveAdminSubTab] = useState<
     | 'analytics'
@@ -307,7 +353,7 @@ export const AdminDashboard: React.FC = () => {
 
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8" style={textZoom !== 1 ? ({ zoom: textZoom } as React.CSSProperties) : undefined}>
       
       {/* Admin Title & Elevated Session Bar */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between pb-6 border-b border-[#E8E2D9] dark:border-slate-800 gap-4">
@@ -334,7 +380,28 @@ export const AdminDashboard: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div role="group" aria-label="Text size" className="flex items-center gap-1 rounded-xl border border-[#E8E2D9] bg-white p-1 dark:bg-slate-900 dark:border-slate-700">
+            <span className="px-2 text-xs font-medium text-slate-500 dark:text-slate-400">Text size</span>
+            {TEXT_SIZES.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                title={t.title}
+                aria-pressed={textSize === t.id}
+                onClick={() => chooseTextSize(t.id)}
+                className={`min-w-[2.5rem] min-h-[2.25rem] rounded-lg px-2 font-bold ${
+                  t.id === 'normal' ? 'text-sm' : t.id === 'large' ? 'text-base' : 'text-lg'
+                } ${
+                  textSize === t.id
+                    ? 'bg-church-burgundy text-white'
+                    : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
           {isMfaVerified && (
             <button
               type="button"
@@ -727,25 +794,56 @@ export const AdminDashboard: React.FC = () => {
                       <td className="px-5 py-3.5 capitalize text-slate-600 dark:text-slate-400">
                         {d.frequency}
                       </td>
-                      <td className="px-5 py-3.5 font-mono text-[11px]">
-                        {d.cardBrand} •••• {d.cardLast4}
+                      <td className="px-5 py-3.5 whitespace-nowrap">
+                        {(() => {
+                          const mt = methodText(d);
+                          return (
+                            <>
+                              <div className="font-medium text-slate-800 dark:text-slate-200">{mt.main}</div>
+                              {mt.sub && <div className="font-mono text-[11px] text-slate-500">{mt.sub}</div>}
+                            </>
+                          );
+                        })()}
                       </td>
                       <td className="px-5 py-3.5 text-right font-mono font-bold text-slate-900 dark:text-white tabular-nums">
                         ${d.amount.toFixed(2)}
                       </td>
                       <td className="px-5 py-3.5 text-center">
                         <span
+                          title={
+                            d.status === 'pending' && (d.paymentMethod === 'us_bank_account' || d.paymentMethod === 'ach')
+                              ? 'Bank payment started in Stripe. Banks take up to 4 business days to clear it. Not counted until it clears.'
+                              : d.status === 'pending'
+                                ? 'Started in Stripe but not finished yet. Not counted until it clears.'
+                                : undefined
+                          }
                           className={`inline-block px-2 py-0.5 text-[10px] font-semibold rounded ${
                             d.status === 'completed'
                               ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
-                              : 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300'
+                              : d.status === 'pending'
+                                ? 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200'
+                                : 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300'
                           }`}
                         >
                           {d.status}
                         </span>
+                        {d.status === 'pending' && (d.paymentMethod === 'us_bank_account' || d.paymentMethod === 'ach') && (
+                          <div className="mt-1 text-[10px] text-slate-500 whitespace-nowrap">Bank · clears in 1–4 business days</div>
+                        )}
                       </td>
                       <td className="px-5 py-3.5 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-2">
+                          {stripePaymentUrl(d) && (
+                            <a
+                              href={stripePaymentUrl(d)!}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Open this payment in Stripe"
+                              className="text-slate-500 hover:text-church-burgundy font-medium underline underline-offset-2 dark:text-slate-400"
+                            >
+                              Stripe
+                            </a>
+                          )}
                           <button
                             onClick={() => setSelectedReceipt(d)}
                             className="text-church-burgundy hover:text-church-burgundy font-medium dark:text-church-gold"

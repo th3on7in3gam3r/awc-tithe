@@ -81,6 +81,7 @@ export function recurringMonthlyRunRate(donors: Donor[]): number {
 export const METHOD_LABELS: Record<PaymentMethod, string> = {
   card: 'Card',
   ach: 'Bank (ACH)',
+  us_bank_account: 'Bank (ACH)',
   apple_pay: 'Apple Pay / Google Pay',
   cash_app: 'Cash App',
   zelle: 'Zelle',
