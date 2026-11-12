@@ -14,6 +14,7 @@ process.env.DEV_MEMORY_STORE = 'true';
 process.env.BETTER_AUTH_SECRET = process.env.BETTER_AUTH_SECRET || 'test-only-secret-not-used-in-production-000';
 process.env.RESEND_API_KEY = '';
 process.env.CASHAPP_RECIPIENT = '$awcgiveplus';
+process.env.CASHAPP_PAUSED = 'false'; // these tests cover Cash App working
 process.env.FINANCE_ALERT_EMAILS = 'finance@example.org, bad-address, Pastor@Example.org';
 process.env.PUBLIC_APP_URL = 'https://awc-tithe.example.com/';
 

@@ -21,7 +21,7 @@ export const P2P_LABEL: Record<string, string> = {
 export function availableP2P(): TextGiveMethod[] {
   const o = publicPaymentOptions();
   const out: TextGiveMethod[] = [];
-  if (o.cashApp.enabled) out.push('cash_app');
+  if (o.cashApp.enabled && !o.cashAppPaused) out.push('cash_app');
   if (o.venmo.enabled) out.push('venmo');
   if (o.zelle.enabled) out.push('zelle');
   return out;
@@ -43,7 +43,7 @@ export function p2pInstructions(method: TextGiveMethod, cents: number, memo: str
   const o = publicPaymentOptions();
   const amount = (cents / 100).toFixed(2);
   const name = env.churchName;
-  if (method === 'cash_app' && o.cashApp.enabled) {
+  if (method === 'cash_app' && o.cashApp.enabled && !o.cashAppPaused) {
     const tag = o.cashApp.cashtag;
     return {
       method,
@@ -92,6 +92,10 @@ export function p2pSmsText(i: P2PInstructions, fundName?: string): string {
 
 /** Records the gift for Finance and returns the reply text. */
 export async function p2pGiftReply(giver: TextGiver, cents: number, fund?: FundRecord): Promise<string | null> {
+  if (giver.method === 'cash_app' && env.cashAppPaused) {
+    // Don't open a gift Finance would wait on; ask the giver to pick another way.
+    return 'Cash App giving is paused for now. Text CHANGE to choose another way to give. Thank you!';
+  }
   const created = await createManualGift({
     provider: giver.method as 'cash_app' | 'venmo' | 'zelle',
     amount: cents / 100,

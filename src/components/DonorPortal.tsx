@@ -346,6 +346,7 @@ export const DonorPortal: React.FC<{
 
   const methods: MethodOption[] = useMemo(() => {
     const list: MethodOption[] = [];
+    const cashAppPausedReason = paymentOptions?.cashAppPaused ? 'Not available right now' : undefined;
     if (stripeLive) {
       list.push({ id: 'card', label: 'Card or Apple Pay', tag: 'Pay here · instant receipt', instant: true });
       list.push({ id: 'us_bank_account', label: 'Bank account', tag: 'Pay here · lowest fee', instant: true });
@@ -355,7 +356,7 @@ export const DonorPortal: React.FC<{
           label: 'Cash App',
           tag: 'Pay here · instant receipt',
           instant: true,
-          disabledReason: frequency !== 'one-time' ? 'One-time gifts only' : undefined,
+          disabledReason: cashAppPausedReason || (frequency !== 'one-time' ? 'One-time gifts only' : undefined),
         });
       }
     }
@@ -379,7 +380,7 @@ export const DonorPortal: React.FC<{
         label: 'Cash App',
         tag: paymentOptions.cashApp.cashtag ? `Send to ${paymentOptions.cashApp.cashtag}` : 'Send from your Cash App',
         instant: false,
-        disabledReason: manualReason,
+        disabledReason: cashAppPausedReason || manualReason,
       });
     }
     return list;

@@ -16,6 +16,7 @@ process.env.TURNSTILE_SECRET_KEY = '';
 process.env.ZELLE_RECIPIENT = 'giving@example.org';
 process.env.VENMO_HANDLE = '@anointedworshipcenter';
 process.env.CASHAPP_RECIPIENT = '508-454-3599';
+process.env.CASHAPP_PAUSED = 'false'; // these tests cover Cash App working
 process.env.RATE_LIMIT_PAY_IP_PER_10MIN = '1000';
 
 let failed = 0;
@@ -104,6 +105,23 @@ async function main() {
     const giftId: string = created.json.gift.id;
     const cashGift = await call('/api/manual-gifts', { ...donor, provider: 'cash_app', amount: 20 });
     check('donor can start a Cash App gift', cashGift.status === 200 && cashGift.json.gift?.provider === 'cash_app', cashGift);
+    {
+      // Paused Cash App: greyed out on the page, refused by the API, left out of text-to-give.
+      const { env } = await import('../config');
+      const { availableP2P, p2pGiftReply } = await import('../textGive/p2p');
+      env.cashAppPaused = true;
+      check('paused flag reaches the giving page', publicPaymentOptions().cashAppPaused === true);
+      const paused = await call('/api/manual-gifts', { ...donor, provider: 'cash_app', amount: 20 });
+      check('paused Cash App gift is refused', paused.status === 400 && paused.json.error === 'PROVIDER_UNAVAILABLE', paused);
+      check('paused Cash App left out of text-to-give', !availableP2P().includes('cash_app'));
+      const reply = await p2pGiftReply(
+        { method: 'cash_app', donorName: 'Lydia', donorEmail: 'lydia@example.org' } as Parameters<typeof p2pGiftReply>[0],
+        2000,
+      );
+      check('paused Cash App text gift asks giver to switch', /paused/.test(reply || '') && /CHANGE/.test(reply || ''), reply);
+      check('Venmo and Zelle stay available while Cash App is paused', publicPaymentOptions().venmo.enabled && availableP2P().includes('venmo') && availableP2P().includes('zelle'));
+      env.cashAppPaused = false;
+    }
 
     const token: string = created.json.claimToken;
 

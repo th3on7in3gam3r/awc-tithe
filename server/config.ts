@@ -126,17 +126,24 @@ export const env = {
    * Turn on only after Cash App Pay is enabled in the Stripe Dashboard.
    */
   stripeCashAppPay: process.env.STRIPE_CASHAPP_PAY_ENABLED?.trim() === 'true',
+  /**
+   * Cash App is paused (Nov 2026): the tile shows greyed out and no new Cash App
+   * gifts can start, on the page or by text. Set CASHAPP_PAUSED=false to turn it back on.
+   */
+  cashAppPaused: process.env.CASHAPP_PAUSED?.trim() !== 'false',
 };
 
 /** Public payment options for the giving page (no secrets). */
 export function publicPaymentOptions(): {
   cashAppPay: boolean;
+  cashAppPaused: boolean;
   zelle: { enabled: boolean; recipient: string; recipientName: string };
   venmo: { enabled: boolean; handle: string };
   cashApp: { enabled: boolean; recipient: string; recipientName: string; cashtag: string | null };
 } {
   return {
     cashAppPay: env.stripeCashAppPay,
+    cashAppPaused: env.cashAppPaused,
     zelle: {
       enabled: Boolean(env.zelleRecipient),
       recipient: env.zelleRecipient,

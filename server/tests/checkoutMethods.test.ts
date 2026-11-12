@@ -18,6 +18,7 @@ async function main() {
   const same = (a: string[] | null, b: string[]) => JSON.stringify(a) === JSON.stringify(b);
   const bnpl = ['klarna', 'affirm', 'afterpay_clearpay'];
 
+  (env as { cashAppPaused: boolean }).cashAppPaused = false;
   (env as { stripeCashAppPay: boolean }).stripeCashAppPay = true;
   check('Cash App tile → only Cash App Pay', same(checkoutMethodTypes('cashapp'), ['cashapp']));
   check('Card tile → card + Link only', same(checkoutMethodTypes('card'), ['card', 'link']));
@@ -27,6 +28,12 @@ async function main() {
   for (const m of ['', 'card', 'cashapp', 'us_bank_account', 'klarna']) {
     check(`never pay-later for "${m}"`, !(checkoutMethodTypes(m) || []).some((t) => bnpl.includes(t)));
   }
+
+  // Paused Cash App is refused even when Cash App Pay is on in Stripe.
+  (env as { cashAppPaused: boolean }).cashAppPaused = true;
+  check('Cash App paused → Cash App tile refused', checkoutMethodTypes('cashapp') === null);
+  check('Cash App paused → fallback has no Cash App', !(checkoutMethodTypes('') || []).includes('cashapp'));
+  (env as { cashAppPaused: boolean }).cashAppPaused = false;
 
   (env as { stripeCashAppPay: boolean }).stripeCashAppPay = false;
   check('Cash App off → Cash App tile refused', checkoutMethodTypes('cashapp') === null);

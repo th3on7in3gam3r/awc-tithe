@@ -14,6 +14,7 @@ process.env.STRIPE_SECRET_KEY = 'sk_test_fake';
 process.env.STRIPE_PUBLISHABLE_KEY = 'pk_test_fake';
 process.env.STRIPE_WEBHOOK_SECRET = 'whsec_fake';
 process.env.CASHAPP_RECIPIENT = '$awcgiveplus';
+process.env.CASHAPP_PAUSED = 'false'; // these tests cover Cash App working
 process.env.CASHAPP_RECIPIENT_NAME = 'Anointed Worship Center';
 process.env.VENMO_HANDLE = 'anointedworshipcenter';
 process.env.ZELLE_RECIPIENT = 'give@example.org';

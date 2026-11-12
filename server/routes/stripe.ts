@@ -34,9 +34,10 @@ const CHECKOUT_METHOD_TYPES: Record<string, string[]> = {
 };
 
 export function checkoutMethodTypes(requested: string): string[] | null {
-  if (requested === 'cashapp' && !env.stripeCashAppPay) return null;
+  const cashAppPayOn = env.stripeCashAppPay && !env.cashAppPaused;
+  if (requested === 'cashapp' && !cashAppPayOn) return null;
   if (CHECKOUT_METHOD_TYPES[requested]) return CHECKOUT_METHOD_TYPES[requested];
-  return ['card', 'link', 'us_bank_account', ...(env.stripeCashAppPay ? ['cashapp'] : [])];
+  return ['card', 'link', 'us_bank_account', ...(cashAppPayOn ? ['cashapp'] : [])];
 }
 
 /** Payment Element method types we price. Everything but bank uses card-style fees. */

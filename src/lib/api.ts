@@ -7,6 +7,8 @@ export interface IntegrationStatus {
 
 export interface PaymentOptions {
   cashAppPay: boolean;
+  /** Cash App is shown greyed out and can't be picked. */
+  cashAppPaused?: boolean;
   zelle: { enabled: boolean; recipient: string; recipientName: string };
   venmo: { enabled: boolean; handle: string };
   cashApp?: { enabled: boolean; recipient: string; recipientName?: string; cashtag: string | null };
