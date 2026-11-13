@@ -158,7 +158,7 @@ export async function handleTextGive(
   }
 
   if (cmd.kind === 'change') {
-    return setupLinkReply(phone, 0, deps, 'Choose how you want to give by text (card, bank, Cash App, Venmo or Zelle):');
+    return setupLinkReply(phone, 0, deps, 'Choose how you want to give by text (card, bank, Venmo or Zelle):');
   }
 
   if (cmd.kind === 'yes') {

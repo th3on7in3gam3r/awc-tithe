@@ -350,7 +350,8 @@ export const DonorPortal: React.FC<{
     if (stripeLive) {
       list.push({ id: 'card', label: 'Card or Apple Pay', tag: 'Pay here · instant receipt', instant: true });
       list.push({ id: 'us_bank_account', label: 'Bank account', tag: 'Pay here · lowest fee', instant: true });
-      if (paymentOptions?.cashAppPay) {
+      // Cash App is off while the account is deactivated (Pastor, Nov 2026): no tile at all.
+      if (paymentOptions?.cashAppPay && !paymentOptions?.cashAppPaused) {
         list.push({
           id: 'cashapp',
           label: 'Cash App',
@@ -374,7 +375,7 @@ export const DonorPortal: React.FC<{
       });
     }
     // One Cash App tile: Cash App Pay (Stripe, instant) wins over send-to-$cashtag.
-    if (paymentOptions?.cashApp?.enabled && !(stripeLive && paymentOptions?.cashAppPay)) {
+    if (paymentOptions?.cashApp?.enabled && !paymentOptions?.cashAppPaused && !(stripeLive && paymentOptions?.cashAppPay)) {
       list.push({
         id: 'cash_app',
         label: 'Cash App',
