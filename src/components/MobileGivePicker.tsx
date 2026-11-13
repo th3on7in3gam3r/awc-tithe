@@ -4,8 +4,9 @@
  * Tapping a row opens the normal gift form with that method chosen.
  * Desktop and RSVP / balance payments never see this screen.
  */
+import TextGiveCard from './TextGiveCard';
 import React, { useEffect, useState } from 'react';
-import { ChevronRight, Landmark, Lock, MessageSquare, MoreHorizontal, Church, Mail } from 'lucide-react';
+import { ChevronRight, Landmark, Lock, MoreHorizontal, Church, Mail } from 'lucide-react';
 import type { ApiConfig } from '../lib/api';
 
 export type PickerMethodId = 'card' | 'us_bank_account' | 'cashapp' | 'zelle' | 'venmo' | 'cash_app';
@@ -200,18 +201,6 @@ export const MobileGivePicker: React.FC<{
                       <ChevronRight className="h-5 w-5 shrink-0 text-awc-muted" aria-hidden="true" />
                     </button>
                   ) : null}
-                  {textNumber ? (
-                    <a
-                      href={`sms:${textNumber.replace(/[^\d+]/g, '')}`}
-                      className="flex min-h-[60px] items-start gap-3 rounded-2xl bg-awc-cream px-3 py-3"
-                    >
-                      <MessageSquare className="mt-0.5 h-5 w-5 shrink-0 text-awc-accent" aria-hidden="true" />
-                      <span className="text-[15px] leading-snug text-awc-ink">
-                        <strong className="font-semibold">Text to give.</strong> Text an amount (like 50) to{' '}
-                        <span className="font-semibold tabular-nums">{textNumber}</span>.
-                      </span>
-                    </a>
-                  ) : null}
                   <div className="flex items-start gap-3 rounded-2xl bg-awc-cream px-3 py-3">
                     <Church className="mt-0.5 h-5 w-5 shrink-0 text-awc-accent" aria-hidden="true" />
                     <p className="text-[15px] leading-snug text-awc-ink">
@@ -251,6 +240,8 @@ export const MobileGivePicker: React.FC<{
             .
           </p>
         ) : null}
+
+        <TextGiveCard number={textNumber} className="mt-4" />
 
         <p className="mt-7 flex items-center justify-center gap-1.5 text-[13px] text-awc-muted">
           <Lock className="h-3.5 w-3.5" aria-hidden="true" />

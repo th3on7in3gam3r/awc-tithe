@@ -10,6 +10,7 @@ import {
   type DonorManualGift,
 } from '../lib/api';
 import { MobileGivePicker, useIsPhone } from './MobileGivePicker';
+import TextGiveCard from './TextGiveCard';
 import {
   loadVerifiedDonorProfile,
   normalizeDonorEmail,
@@ -599,6 +600,9 @@ export const DonorPortal: React.FC<{
                 </span>
               </li>
             </ul>
+            <div className="give-hero-rise-delay hidden max-w-[460px] sm:block">
+              <TextGiveCard number={apiConfig?.textGiveNumber} />
+            </div>
           </div>
         </section>
 
