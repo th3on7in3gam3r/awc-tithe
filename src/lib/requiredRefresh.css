@@ -1,0 +1,46 @@
+.awc-required-refresh {
+  position: fixed;
+  inset: 0;
+  width: min(28rem, calc(100% - 2rem));
+  margin: auto;
+  padding: 1.5rem;
+  border: 1px solid #e5d8c6;
+  border-radius: 1.25rem;
+  background: #fffaf2;
+  color: #341925;
+  box-shadow: 0 1rem 3rem #20101540;
+}
+
+.awc-required-refresh::backdrop {
+  background: #201015b3;
+}
+
+.awc-required-refresh h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.awc-required-refresh p {
+  margin: 0 0 1.25rem;
+  line-height: 1.5;
+}
+
+.awc-required-refresh button {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.5rem 1rem;
+  border: 0;
+  border-radius: 0.75rem;
+  background: #711c41;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.awc-required-refresh button:focus-visible {
+  outline: 2px solid #711c41;
+  outline-offset: 3px;
+}
