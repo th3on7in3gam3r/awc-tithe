@@ -1,3 +1,4 @@
+import { RequiredRefresh } from './lib/RequiredRefresh';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
@@ -19,6 +20,7 @@ function dismissBootCover(): void {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
+    <RequiredRefresh appName="AWC Tithe" />
   </StrictMode>,
 );
 

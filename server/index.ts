@@ -232,6 +232,9 @@ app.use('/api/text-give', textGiveRoutes);
 app.use(
   express.static(distPath, {
     setHeaders(res, filePath) {
+      if (path.basename(filePath) === 'build-version.json') {
+        res.setHeader('Cache-Control', 'no-store');
+      }
       if (filePath.endsWith('.webmanifest')) {
         res.setHeader('Content-Type', 'application/manifest+json');
       }
